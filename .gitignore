@@ -1,0 +1,43 @@
+# Virtuelle Umgebungen
+.venv/
+venv/
+env/
+
+# Python-Caches und Testwerkzeuge
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Builds und Paketmetadaten
+build/
+dist/
+*.egg-info/
+
+# IDEs und Betriebssystem
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Geheimnisse und lokale Konfiguration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.*
+
+# Lokale Datenbanken
+*.db
+*.sqlite
+*.sqlite3
+
+# Lokale Originalquellen und reproduzierbare Extrakte
+resources/pdf/*.pdf
+resources/extracted/*
+!resources/extracted/.gitkeep

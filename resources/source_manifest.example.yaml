@@ -1,0 +1,10 @@
+# Beispielstruktur; enthält bewusst keine echten Quellen oder Prüfsummen.
+sources:
+  - id: example-script
+    filename: example.pdf
+    title: Beispiel eines Quelleneintrags
+    source_type: script
+    priority: 2
+    page_count: null
+    sha256: null
+    notes: Nur Schema-Beispiel; vor Verwendung durch echte Metadaten ersetzen.
