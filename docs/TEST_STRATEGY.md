@@ -47,6 +47,41 @@ Normalisierung, `ast.parse`, Validierung, Übersetzung und
 `RecursionError` und `OverflowError` als `PARSE_LIMIT_EXCEEDED` gekapselt
 werden. Andere interne Programmierfehler werden nicht pauschal verschleiert.
 
+## Polynomial- und Domainvalidierungstests
+
+Das Phase-1A.2-Modell wird unabhängig vom Parser mit kontrolliert erzeugten
+`ExactExpression`-Werten geprüft. Parametrische Tests decken Null- und
+Konstantenpolynome, dichte Koeffizienten, rationale Parameterfunktionen,
+kanonische Wertgleichheit, Hashbarkeit und tatsächlich verwendete Parameter
+ab. Unbenutzte deklarierte Parameter dürfen weder Wertidentität noch internen
+SymPy-Domainkontext verändern.
+
+Gradtests unterscheiden `generic_degree` und `guaranteed_degree`. Symbolische
+führende Koeffizienten mit unbekannter Nullheit erzeugen
+Nichtnullbedingungen; `None` wird niemals als nachweislich ungleich null
+interpretiert. Definitionsbedingungen aus Parameternennern und
+Gradbedingungen aus normalisierten Zählern werden getrennt, dedupliziert und
+deterministisch sortiert geprüft.
+
+Regressionstests sichern die kanonische Feldsemantik auch bei algebraischer
+Kürzung. Sie prüfen, dass bereits entfernte Definitionslücken nicht
+rekonstruiert werden, verbleibende Nenner Bedingungen erzeugen und
+algebraisch gleiche Polynomialwerte dieselbe Gleichheit und denselben Hash
+besitzen. Zusammengesetzte Nichtnullbedingungen wie `T**2`, `T1*T2` und
+`K**2 - 1` bleiben zulässige Normalformen. Numerische Faktoren und globale
+Vorzeichen werden entfernt; eine Faktorisierung in einzelne Bedingungen ist
+für Phase 1A.2 nicht vorgesehen.
+
+Fehlertests umfassen ungültige Namen, Symbolkonflikte, nicht deklarierte oder
+annahmebehaftete Symbole, negative, nichtganzzahlige und symbolische
+Hauptvariablenexponenten, Hauptvariablen im Nenner, Funktionen, Float-Atome,
+nicht rationale Koeffizienten und jede `PolynomialLimits`-Grenze. Große
+univariate Potenzen werden anhand von Grad und maximaler dichter
+Koeffizientenzahl begrenzt, nicht durch eine unnötig exponentielle
+Termabschätzung. Gezieltes Monkeypatching prüft die Kapselung erwartbarer
+SymPy-, Speicher-, Rekursions- und Überlauffehler, ohne sonstige
+Programmierfehler zu verschleiern.
+
 ## Regressionstests mit offiziellen Aufgaben
 
 Verifizierte Aufgaben aus offiziellen Unterlagen werden später als

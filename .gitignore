@@ -42,3 +42,5 @@ resources/pdf/*
 !resources/pdf/README.md
 resources/extracted/*
 !resources/extracted/.gitkeep
+resources/reference_notebooks/*
+!resources/reference_notebooks/README.md

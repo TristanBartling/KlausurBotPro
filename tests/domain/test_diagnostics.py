@@ -18,6 +18,10 @@ def test_diagnostic_codes_are_stable_machine_values() -> None:
     assert DiagnosticSeverity.ERROR.value == "error"
     assert DiagnosticCode.PARSE_EMPTY_INPUT.value == "parse.empty_input"
     assert DiagnosticCode.MATH_DIVISION_BY_ZERO.value == "math.division_by_zero"
+    assert (
+        DiagnosticCode.POLYNOMIAL_CONDITIONAL_DEGREE.value
+        == "polynomial.conditional_degree"
+    )
 
 
 def test_diagnostic_is_immutable_and_copies_details_to_tuple() -> None:

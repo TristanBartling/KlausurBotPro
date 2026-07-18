@@ -97,9 +97,64 @@ SymPy-Erzeugung werden als `PARSE_LIMIT_EXCEEDED` gekapselt. Diese Grenzen
 reduzieren Denial-of-Service-Risiken, ersetzen aber keinen harten
 Prozess-Timeout.
 
+## Implementiertes Polynomial-Domainmodell (Phase 1A.2)
+
+`Polynomial` ist ein unveränderliches, ausschließlich durch
+`PolynomialFactory` erzeugbares Wertobjekt auf Basis von `ExactExpression`.
+Rohe Strings und Parserfunktionen sind nicht Teil dieser Domain-Schnittstelle.
+Die öffentliche API liefert keine SymPy-Typen. Sie stellt die Hauptvariable,
+tatsächlich verwendete Parameter, den kanonischen exakten Ausdruck, dichte
+Koeffizienten, Termanzahl, Null- und Konstantensemantik sowie explizite
+Bedingungen bereit.
+
+Die mathematische Wertidentität enthält keinen Deklarationskontext:
+Unbenutzte erlaubte Parameter werden weder im Wert noch im internen
+Koeffizientenkörper gespeichert und beeinflussen Gleichheit und Hash nicht.
+Verwendet werden ausschließlich kanonische, annahmenfreie Symbole mit
+eindeutigen Namen. Globale SymPy-Annahmen werden nicht verändert.
+
+`Polynomial` verwendet verbindlich kanonische Feldsemantik. Es repräsentiert
+den kanonischen mathematischen Wert über `QQ` beziehungsweise
+`QQ.frac_field`, nicht die vollständige Provenienz der ursprünglichen Eingabe.
+Definitionslücken, die vor oder während der kanonischen algebraischen
+Reduktion verschwinden, können aus dem Polynomialwert nicht rekonstruiert
+werden. So werden `(K/K)*s + 1`, `((K-1)/(K-1))*s` und
+`(K*T/K)*s + 1` zu `s + 1`, `s` beziehungsweise `T*s + 1`; die
+ursprünglichen Bedingungen `K != 0`, `K - 1 != 0` und `K != 0` sind nicht
+Bestandteil des jeweiligen `Polynomial`.
+
+`PolynomialDegreeInfo` trennt den generischen strukturellen Grad vom
+bedingungslos garantierten Grad. Ist die Nullheit des führenden symbolischen
+Koeffizienten unbekannt, bleibt `guaranteed_degree` leer und eine
+`LEADING_COEFFICIENT_NONZERO`-Bedingung nennt den normalisierten Zähler.
+Definitionsbedingungen für rationale Parameterkoeffizienten nennen getrennt
+den normalisierten Nenner der kanonisch reduzierten Koeffizientendarstellung.
+Bedingungen werden dedupliziert und deterministisch sortiert. Zusammengesetzte
+Ausdrücke wie `T**2`, `T1*T2` oder `K**2 - 1` sind dabei zulässige
+Nichtnull-Normalformen; numerische Faktoren und globale Vorzeichen werden
+entfernt. Eine spätere Zerlegung in faktorisierte Einzelbedingungen wäre eine
+Verbesserung der Darstellung, ist aber keine Voraussetzung für die
+mathematische Korrektheit.
+
+Eine spätere eingabetreue Rohdarstellung einer `TransferFunction` muss
+ursprüngliche Faktoren, Definitionsbedingungen und Provenienz vor der
+algebraischen Kürzung separat erfassen. Eine davon getrennte reduzierte
+Darstellung darf kanonische Feldsemantik verwenden. Diese eingabetreue
+Semantik wird nicht nachträglich in `Polynomial` eingebaut; ein solches
+Transferfunktionsmodell ist in Phase 1A.2 noch nicht implementiert.
+
+Vor der kontrollierten SymPy-Konvertierung prüft die Fabrik Namen, Symbole,
+Ausdrucksknoten, Float-Atome, Funktionen, Hauptvariablenpotenzen, Nenner und
+einen sicheren maximalen Grad. Danach begrenzen eigene `PolynomialLimits`
+Grad, dichte Koeffizienten, strukturelle Terme, Parameter und
+Koeffizientenkomplexität. Ohne Parameter wird `QQ`, mit tatsächlich
+verwendeten Parametern ein alphabetisch aufgebauter `QQ.frac_field`
+verwendet. Erwartbare Domain-, SymPy- und Ressourcenfehler werden als
+strukturierte Diagnosen gekapselt.
+
 ## Offene Architekturentscheidungen
 
-- genaue Grenzen und Repräsentationen der Domain-Modelle
+- genaue Grenzen und Repräsentationen weiterer Domain-Modelle
 - Erweiterung der bewusst kleinen Parsergrammatik für spätere Datentypen
 - Strategie für unveränderliche Workspace-Versionen und Verzweigungen
 - Serialisierungsformat und Migrationskonzept
