@@ -7,12 +7,14 @@ import pytest
 
 import klausurbotpro.parsing.rational_parser as rational_parser_module
 from klausurbotpro.domain import (
-    Add,
     CommonTransferFunctionInput,
     DiagnosticCode,
+    SeparatedTransferFunctionInput,
+)
+from klausurbotpro.domain.raw_algebraic_expression import (
+    Add,
     Divide,
     ExactNumber,
-    SeparatedTransferFunctionInput,
     UnaryMinus,
 )
 from klausurbotpro.parsing import (
@@ -243,6 +245,42 @@ def test_original_and_normalized_text_and_used_symbols_are_recorded() -> None:
     )
 
 
+def test_common_parser_values_ignore_unused_allowed_symbol_context() -> None:
+    minimal = SafeRationalExpressionParser(
+        ParserConfig(frozenset({"s", "K"}))
+    ).parse_common("K*s+1")
+    expanded = SafeRationalExpressionParser(
+        ParserConfig(frozenset({"s", "K", "T", "d"}))
+    ).parse_common("K*s+1")
+
+    assert isinstance(minimal.value, CommonTransferFunctionInput)
+    assert isinstance(expanded.value, CommonTransferFunctionInput)
+    assert (
+        minimal.value.allowed_symbol_names
+        != expanded.value.allowed_symbol_names
+    )
+    assert minimal.value == expanded.value
+    assert hash(minimal.value) == hash(expanded.value)
+
+
+def test_separated_parser_values_ignore_unused_allowed_symbol_context() -> None:
+    minimal = SafeRationalExpressionParser(
+        ParserConfig(frozenset({"s", "K"}))
+    ).parse_pair("K*s+1", "s+1")
+    expanded = SafeRationalExpressionParser(
+        ParserConfig(frozenset({"s", "K", "T", "d"}))
+    ).parse_pair("K*s+1", "s+1")
+
+    assert isinstance(minimal.value, SeparatedTransferFunctionInput)
+    assert isinstance(expanded.value, SeparatedTransferFunctionInput)
+    assert (
+        minimal.value.allowed_symbol_names
+        != expanded.value.allowed_symbol_names
+    )
+    assert minimal.value == expanded.value
+    assert hash(minimal.value) == hash(expanded.value)
+
+
 @pytest.mark.parametrize(
     ("numerator", "denominator", "code"),
     [
@@ -296,15 +334,41 @@ def test_combined_pair_length_uses_one_shared_parser_budget() -> None:
     )
 
 
-def test_each_pair_field_retains_its_individual_length_limit() -> None:
+def test_single_expression_retains_its_individual_length_limit() -> None:
     result = _parser(
         ParserLimits(max_input_length=3),
-    ).parse_pair("s+s+s", "1")
+    ).parse_common("s+s+s", field="expression")
 
     assert result.diagnostics[0].code is DiagnosticCode.PARSE_LIMIT_EXCEEDED
-    assert result.diagnostics[0].field == "numerator"
+    assert result.diagnostics[0].field == "expression"
     assert result.diagnostics[0].technical_details == (
         ("limit", "max_input_length"),
+    )
+
+
+def test_combined_length_is_rejected_before_individual_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parser = _parser(ParserLimits(max_input_length=5))
+    parse_calls = 0
+
+    def fail_if_called(*args: object, **kwargs: object) -> None:
+        nonlocal parse_calls
+        parse_calls += 1
+        raise AssertionError("individual parser must not run")
+
+    monkeypatch.setattr(parser, "_parse_raw", fail_if_called)
+
+    result = parser.parse_pair("s+s", "K+K", field="transfer")
+
+    assert not result.succeeded
+    assert parse_calls == 0
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.RATIONAL_INPUT_LIMIT_EXCEEDED
+    )
+    assert result.diagnostics[0].field == "transfer"
+    assert result.diagnostics[0].technical_details == (
+        ("limit", "max_combined_input_length"),
     )
 
 

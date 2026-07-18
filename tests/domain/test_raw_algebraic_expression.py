@@ -5,8 +5,9 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+import klausurbotpro.domain as domain_api
 import klausurbotpro.domain.raw_algebraic_expression as raw_expression_module
-from klausurbotpro.domain import (
+from klausurbotpro.domain.raw_algebraic_expression import (
     Add,
     Divide,
     ExactNumber,
@@ -113,3 +114,19 @@ def test_raw_tree_module_has_no_sympy_or_parsing_dependency() -> None:
 
     assert "sympy" not in source
     assert "klausurbotpro.parsing" not in source
+
+
+def test_concrete_nodes_are_not_part_of_top_level_domain_api() -> None:
+    assert hasattr(domain_api, "RawAlgebraicExpression")
+    for name in (
+        "Add",
+        "Divide",
+        "ExactNumber",
+        "Multiply",
+        "Power",
+        "Subtract",
+        "Symbol",
+        "UnaryMinus",
+        "UnaryPlus",
+    ):
+        assert not hasattr(domain_api, name)

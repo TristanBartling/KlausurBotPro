@@ -6,11 +6,14 @@ import pytest
 
 from klausurbotpro.domain import (
     CommonTransferFunctionInput,
+    SeparatedTransferFunctionInput,
+    TransferFunctionInputForm,
+)
+from klausurbotpro.domain.raw_algebraic_expression import (
+    Add,
     Divide,
     ExactNumber,
-    SeparatedTransferFunctionInput,
     Symbol,
-    TransferFunctionInputForm,
 )
 
 
@@ -59,6 +62,87 @@ def test_source_text_is_not_part_of_structural_value_equality() -> None:
     assert first == second
     assert hash(first) == hash(second)
     assert {first: "input"}[second] == "input"
+
+
+def test_common_allowed_symbol_context_does_not_affect_identity() -> None:
+    expression = Add(Symbol("K"), Symbol("s"))
+    first = CommonTransferFunctionInput(
+        expression=expression,
+        variable_name="s",
+        allowed_symbol_names=frozenset({"K", "s"}),
+        original_text="K+s",
+        normalized_text="K +s",
+    )
+    second = CommonTransferFunctionInput(
+        expression=expression,
+        variable_name="s",
+        allowed_symbol_names=frozenset({"K", "s", "T", "d"}),
+        original_text=" K + s ",
+        normalized_text="K +s ",
+    )
+
+    assert first.allowed_symbol_names != second.allowed_symbol_names
+    assert first == second
+    assert hash(first) == hash(second)
+    assert {first: "common"}[second] == "common"
+
+
+def test_separated_allowed_symbol_context_does_not_affect_identity() -> None:
+    first = _separated()
+    second = SeparatedTransferFunctionInput(
+        numerator=Symbol("K"),
+        denominator=Symbol("s"),
+        variable_name="s",
+        allowed_symbol_names=frozenset({"K", "s", "T"}),
+        original_numerator_text=" K ",
+        original_denominator_text=" s ",
+        normalized_numerator_text="K ",
+        normalized_denominator_text="s ",
+    )
+
+    assert first.allowed_symbol_names != second.allowed_symbol_names
+    assert first == second
+    assert hash(first) == hash(second)
+    assert {first: "separated"}[second] == "separated"
+
+
+def test_main_variable_remains_part_of_structural_identity() -> None:
+    expression = Symbol("K")
+    with_s = CommonTransferFunctionInput(
+        expression=expression,
+        variable_name="s",
+        allowed_symbol_names=frozenset({"K", "s", "z"}),
+        original_text="K",
+        normalized_text="K",
+    )
+    with_z = CommonTransferFunctionInput(
+        expression=expression,
+        variable_name="z",
+        allowed_symbol_names=frozenset({"K", "s", "z"}),
+        original_text="K",
+        normalized_text="K",
+    )
+
+    assert with_s != with_z
+
+
+def test_different_raw_tree_remains_structurally_unequal() -> None:
+    symbol = CommonTransferFunctionInput(
+        expression=Symbol("K"),
+        variable_name="s",
+        allowed_symbol_names=frozenset({"K", "s"}),
+        original_text="K",
+        normalized_text="K",
+    )
+    addition = CommonTransferFunctionInput(
+        expression=Add(Symbol("K"), ExactNumber(0)),
+        variable_name="s",
+        allowed_symbol_names=frozenset({"K", "s"}),
+        original_text="K+0",
+        normalized_text="K +0",
+    )
+
+    assert symbol != addition
 
 
 def test_input_forms_are_not_interchangeable() -> None:

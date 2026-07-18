@@ -171,9 +171,36 @@ Feldern, `CommonTransferFunctionInput` genau einen vollständigen Baum. Die
 gemeinsame Form verlangt keine Division auf oberster Ebene. Beide Verträge
 halten Hauptvariable, freigegebene und tatsächlich verwendete Symbolnamen
 sowie Original- und Normalisierungstexte fest. Quelltexte gehören nicht zur
-strukturellen Wertgleichheit. Ein mathematisches `TransferFunction`-Modell,
-Definitionsbedingungen, Polynome, Kürzung und reduzierte Darstellung sind
-bewusst noch nicht Teil dieser Schicht.
+strukturellen Wertgleichheit. Auch die freigegebenen Symbolnamen sind nur
+Validierungskontext: Die Wertidentität besteht ausschließlich aus konkreter
+Eingabeform, Hauptvariable und vollständigem Rohbaum beziehungsweise beiden
+Rohbäumen. Zusätzliche unbenutzte Freigaben ändern Gleichheit und Hash nicht.
+Ein mathematisches `TransferFunction`-Modell, Definitionsbedingungen,
+Polynome, Kürzung und reduzierte Darstellung sind bewusst noch nicht Teil
+dieser Schicht.
+
+Das öffentliche Domain-Facade exportiert `RawAlgebraicExpression` als
+Lesetyp, die beiden konkreten Eingabeverträge und ihren gemeinsamen
+Union-Typ. Konkrete Knoten wie `Add`, `Divide` oder `Symbol` werden dort nicht
+als allgemeine Konstruktions-API angeboten; Parser und kontrollierte interne
+Domainmodule importieren sie direkt aus `raw_algebraic_expression`. Dies ist
+eine API- und Vertrauensgrenze, keine durch Python-Privatheit erzwungene
+Sicherheitsgrenze.
+
+Die Eingabeverträge bleiben frei konstruierbar, weil eine zusätzliche Factory
+in dieser Phase nur kosmetische Zugriffskontrolle liefern würde. Ihre lokalen
+Invarianten prüfen Typen, Namen und deklarierte Symbole, jedoch keine
+`ParserLimits`. Nur parsererzeugte Werte sind nachweislich durch
+Normalisierung, AST-Whitelist und Parserlimits gelaufen. Manuell erzeugte
+Rohbäume gelten als nicht vertrauenswürdig; eine spätere
+`RawTransferFunctionFactory` muss Struktur, Symbole und Ressourcen defensiv
+erneut validieren. Sie darf Original- oder Normalisierungstexte niemals als
+mathematische Wahrheit auswerten. Fachliche Verarbeitung basiert
+ausschließlich auf dem validierten Rohbaum; Texte dienen Anzeige,
+Rückverfolgung und späterer Workspace-Provenienz. Bei parsererzeugten Werten
+garantiert der Parser die Zuordnung: Originaltexte sind die unveränderten
+Eingaben, Normalisierungstexte stammen jeweils aus genau deren erfolgreichem
+Normalisierungslauf. Frei konstruierte Werte besitzen diese Garantie nicht.
 
 `SafeExpressionParser` und `SafeRationalExpressionParser` verwenden dieselbe
 interne AST-Whitelist, Exponentenprüfung, Komplexitätsschätzung und
@@ -187,7 +214,11 @@ abgelehnt werden.
 Für die getrennte Form gelten `ParserLimits` sowohl je Teilausdruck als auch
 als gemeinsames Budget: Die Summe der Eingabelängen und die gesamte AST- und
 Rohknotenzahl dürfen die jeweiligen konfigurierten Einzelgrenzen nicht
-überschreiten. Damit entsteht kein zweiter, abweichender Sicherheitsvertrag.
+überschreiten. Die kombinierte rohe Länge wird nach Typ-, Variablen- und
+Leerprüfung, aber vor Normalisierung und AST-Erzeugung der Teilfelder
+abgelehnt. Gesamte AST- und Rohknotenzahl werden zusätzlich nach beiden
+Einzelparsings geprüft. Damit entsteht kein zweiter, abweichender
+Sicherheitsvertrag.
 
 ## Offene Architekturentscheidungen
 

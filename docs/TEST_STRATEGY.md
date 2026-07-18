@@ -94,6 +94,13 @@ Dezimalkommawerte, deterministische Präfixdarstellung, Symbolmengen,
 Knotenzahl, Tiefe, Unveränderlichkeit, Gleichheit, Hash und
 Dictionary-Key-Verwendung sind ebenfalls abgedeckt.
 
+Identitätstests variieren den erlaubten Symbolkontext bei unverändertem Baum.
+Zusätzliche unbenutzte Freigaben dürfen weder gemeinsame noch getrennte
+Eingabewerte oder deren Hash verändern. Eingabeform, Hauptvariable und
+Baumstruktur bleiben dagegen identitätsbildend. Tests prüfen außerdem, dass
+konkrete Knoten nicht über das öffentliche Domain-Facade exportiert werden;
+bewusste interne Konstruktion erfolgt über das konkrete Rohbaummodul.
+
 Parsertests behandeln die getrennte Zähler-/Nennerform und den gemeinsamen
 Ausdruck separat. Sie prüfen Original- und Normalisierungstext,
 Hauptvariable, erlaubte und verwendete Symbole, feldbezogene Diagnosen,
@@ -101,6 +108,10 @@ spezifische Leereingaben sowie kombinierte Längen- und Knotenbudgets. Ein
 gemeinsamer Ausdruck ohne Division auf oberster Ebene und ein syntaktischer
 Nullnenner sind ausdrücklich gültige Rohstrukturen; fachliche
 Nennerbedingungen werden in dieser Phase nicht getestet oder abgeleitet.
+Monkeypatching belegt, dass eine bereits überschrittene kombinierte Paarlänge
+vor jedem Einzelparse diagnostiziert wird. Metadatentests behandeln
+Original- und Normalisierungstexte ausschließlich als Provenienz; spätere
+Fachlogik darf daraus keine mathematische Aussage rekonstruieren.
 
 Die vollständige Angriffsmatrix des bestehenden Ausdrucksparsers läuft für
 die gemeinsame Form und für jedes einzelne Feld der getrennten Form. Sie

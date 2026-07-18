@@ -87,6 +87,14 @@ class SafeRationalExpressionParser:
                 field,
                 (("part", "denominator"),),
             )
+        if (
+            len(numerator_text) + len(denominator_text)
+            > self._config.limits.max_input_length
+        ):
+            return self._combined_limit_failure(
+                "max_combined_input_length",
+                field,
+            )
         numerator = self._parse_raw(
             numerator_text,
             self._part_field(field, "numerator"),
@@ -102,14 +110,6 @@ class SafeRationalExpressionParser:
         assert numerator.value is not None
         assert denominator.value is not None
 
-        if (
-            len(numerator_text) + len(denominator_text)
-            > self._config.limits.max_input_length
-        ):
-            return self._combined_limit_failure(
-                "max_combined_input_length",
-                field,
-            )
         total_ast_nodes = (
             numerator.value.ast_info.node_count
             + denominator.value.ast_info.node_count

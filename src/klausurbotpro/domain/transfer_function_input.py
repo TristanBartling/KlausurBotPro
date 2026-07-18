@@ -1,4 +1,9 @@
-"""Input-faithful contracts for separated and common rational expressions."""
+"""Input-faithful contracts for separated and common rational expressions.
+
+Direct construction enforces local invariants but does not apply parser
+resource limits. Such values remain untrusted until a later domain boundary
+validates their raw trees defensively.
+"""
 
 from __future__ import annotations
 
@@ -90,9 +95,8 @@ class SeparatedTransferFunctionInput(_TransferFunctionInputValue):
 
     @property
     def _structural_identity(self) -> str:
-        allowed = ",".join(sorted(self.allowed_symbol_names))
         return (
-            f"{self.input_form.value}|{self.variable_name}|{allowed}|"
+            f"{self.input_form.value}|{self.variable_name}|"
             f"{self.numerator.canonical_tree}|"
             f"{self.denominator.canonical_tree}"
         )
@@ -135,9 +139,8 @@ class CommonTransferFunctionInput(_TransferFunctionInputValue):
 
     @property
     def _structural_identity(self) -> str:
-        allowed = ",".join(sorted(self.allowed_symbol_names))
         return (
-            f"{self.input_form.value}|{self.variable_name}|{allowed}|"
+            f"{self.input_form.value}|{self.variable_name}|"
             f"{self.expression.canonical_tree}"
         )
 
