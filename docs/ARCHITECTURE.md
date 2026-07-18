@@ -308,6 +308,42 @@ Ressourcenfehler werden als strukturierte Diagnosen gekapselt.
 Die Reduktion bestimmt noch keine Properness, Pole, Nullstellen, Stabilität
 oder regelungstechnische Analysegrößen.
 
+## Implementierte exakte Pol-/Nullstellenanalyse (Phase 2A)
+
+`TransferFunctionRootAnalyzer` analysiert ausschließlich defensiv
+revalidierte `ReducedTransferFunction`-Werte. Parameterfreie Polynome und
+vollständig mit gekürzten rationalen Werten belegte Parameter werden über
+`QQ` spezialisiert. Fehlende Belegungen erzeugen ein erfolgreiches,
+strukturiertes `SYMBOLIC_UNDETERMINED`; partielle oder zusätzliche Belegungen
+sind Fehler. Erhaltene `EXPRESSION_NONZERO`- und `NOT_ALL_ZERO`-Prädikate
+werden vor der Wurzelbestimmung exakt ausgewertet. Ein Gradabfall bleibt als
+strukturierte Warnung sichtbar.
+
+Die exakte Wurzelliste ist fachlich autoritativ. Rationale Faktorisierung,
+explizite lineare und quadratische Wurzeln sowie kanonische
+`RootOfValue`-Werte für verbleibende höhere irreduzible Faktoren liefern eine
+vollständige Liste mit exakten Multiplizitäten. Öffentliche Verträge enthalten
+keine SymPy-Objekte. Numerische Real-/Imaginärteile und Residuen sind
+ausschließlich nachgelagerte, nicht hashbare Prüfwerte; sie bestimmen weder
+Identität noch Multiplizität der exakten Wurzeln. Mehrfachwurzeln, nahe Cluster,
+zu große Residuen und fehlende konjugierte Gegenstücke erzeugen strukturierte
+Warnungen.
+
+Reduzierte Nullstellen, reduzierte Pole und Nullstellen jedes erhaltenen
+Definitionsausschlusses bleiben getrennt. Gleiche Ausschlussorte werden
+deterministisch dedupliziert, ohne ihre Herkunft zu verlieren. Die normale
+`analyze`-Operation rekonstruiert keine Kürzungen und meldet dafür
+`NOT_EVALUATED`. Nur `analyze_reduction` darf aus einem lückenlos
+revalidierten `TransferFunctionReductionResult` Orte der ausdrücklichen
+`REMOVE_COMMON_POLYNOMIAL_FACTOR`-Schritte ableiten. Parameterreine
+Kürzungsfaktoren erzeugen keine Orte der Hauptvariablen.
+
+Eigene Grenzen beschränken Grad, Parameter, Ausdrucks- und Faktorknoten,
+RootOf-Anzahl, Ergebniszahl, Substitutionen, Definitionsausschlüsse und
+Kürzungsfaktoren. Die Phase implementiert weder Stabilität, Properness,
+Frequenz- oder Zeitbereichsanalyse noch allgemeine symbolische,
+Gleitkomma- oder komplexe Parametersubstitutionen.
+
 ## Offene Architekturentscheidungen
 
 - genaue Grenzen und Repräsentationen weiterer Domain-Modelle

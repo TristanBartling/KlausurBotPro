@@ -104,6 +104,34 @@ class DiagnosticCode(StrEnum):
     TRANSFER_REDUCTION_NORMALIZATION_SKIPPED = (
         "transfer_reduction.normalization_skipped"
     )
+    ROOT_ANALYSIS_INVALID_TRANSFER_FUNCTION = (
+        "root_analysis.invalid_transfer_function"
+    )
+    ROOT_ANALYSIS_INVALID_SUBSTITUTION = "root_analysis.invalid_substitution"
+    ROOT_ANALYSIS_PREREQUISITE_VIOLATED = (
+        "root_analysis.prerequisite_violated"
+    )
+    ROOT_ANALYSIS_MISSING_PARAMETERS = "root_analysis.missing_parameters"
+    ROOT_ANALYSIS_DOMAIN_EMPTY = "root_analysis.domain_empty"
+    ROOT_ANALYSIS_EXACT_SOLVER_FAILED = "root_analysis.exact_solver_failed"
+    ROOT_ANALYSIS_LIMIT_EXCEEDED = "root_analysis.limit_exceeded"
+    ROOT_ANALYSIS_RESOURCE_LIMIT_EXCEEDED = (
+        "root_analysis.resource_limit_exceeded"
+    )
+    ROOT_ANALYSIS_SYMBOLIC_UNDETERMINED = (
+        "root_analysis.symbolic_undetermined"
+    )
+    ROOT_ANALYSIS_DEGREE_DROPPED = "root_analysis.degree_dropped"
+    ROOT_ANALYSIS_NUMERIC_SOLVER_FAILED = (
+        "root_analysis.numeric_solver_failed"
+    )
+    ROOT_ANALYSIS_RESIDUAL_TOO_LARGE = "root_analysis.residual_too_large"
+    ROOT_ANALYSIS_ILL_CONDITIONED = "root_analysis.ill_conditioned"
+    ROOT_ANALYSIS_CONJUGATE_MISMATCH = "root_analysis.conjugate_mismatch"
+    ROOT_ANALYSIS_ZERO_POLYNOMIAL = "root_analysis.zero_polynomial"
+    ROOT_ANALYSIS_NUMERIC_CHECK_SKIPPED = (
+        "root_analysis.numeric_check_skipped"
+    )
 
 
 @dataclass(frozen=True, slots=True)
