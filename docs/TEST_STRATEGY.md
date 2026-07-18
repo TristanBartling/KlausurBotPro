@@ -150,8 +150,32 @@ rationalisierte Vorkommen, Zwischenausdrücke, Übersetzungsschritte, Grade,
 Parameter, Voraussetzungen und Definitionsausschlüsse ab. Tests prüfen
 außerdem die Domain→Parsing-Trennung, das Fehlen eines unsicheren Stringpfads
 und das Fehlen gemeinsamer `cancel`-/`together`-Operationen in der neuen
-Factory. Reduktion, Properness, Pole, Nullstellen und Stabilität bleiben
-ausdrücklich außerhalb dieser Testphase.
+Factory. Properness, Pole, Nullstellen und Stabilität bleiben ausdrücklich
+außerhalb dieser Testphase.
+
+## Tests der exakten Transferfunktionsreduktion
+
+Phase 1A.3c wird unabhängig vom Parser mit validierten
+`RawTransferFunction`-Werten geprüft. Die Akzeptanzmatrix umfasst vollständige
+und partielle gemeinsame Polynomfaktoren, numerische Faktoren,
+Parameterfaktoren mit Voraussetzungen, identische parametrische Polynome ohne
+zusätzliche Annahmen, den Nullzähler, unveränderte Paare und exakt verschiedene
+Dezimalbrüche. Sie sichert insbesondere, dass `1/(T*s+1)` nicht durch `T`
+normiert wird, während `1/(K*s+K)` bei bereits vorhandenem `K != 0` sicher
+normiert werden darf.
+
+Invarianten- und Werttests prüfen factory-only Konstruktion,
+Unveränderlichkeit, Gleichheit, Hash und Dictionary-Schlüssel. Voraussetzungen
+und Definitionsausschlüsse müssen nach jeder Kürzung unverändert erhalten
+bleiben und identitätsbildend sein; Snapshot, Bericht und Herkunft sind keine
+Identität. Öffentliche Verträge dürfen keine SymPy-Typen enthalten.
+
+Berichtstests prüfen stabile Schritttypen, exakte Faktoren,
+Vorher-/Nachher-Paare, verwendete Voraussetzungen, Reihenfolge und
+Determinismus. Limit- und Fehlertests decken jede
+`TransferFunctionReductionLimits`-Grenze, manipulierte Raw-Werte,
+Ressourcenfehler und die unabhängige Polynomial-Revalidierung ab. Zusätzlich
+bleiben Domain→Parsing-Trennung und globale SymPy-Konfiguration unverändert.
 
 Die vollständige Angriffsmatrix des bestehenden Ausdrucksparsers läuft für
 die gemeinsame Form und für jedes einzelne Feld der getrennten Form. Sie
