@@ -5,6 +5,7 @@ import token
 import tokenize
 from dataclasses import dataclass
 from io import StringIO
+from keyword import iskeyword
 
 from klausurbotpro.domain.diagnostics import (
     Diagnostic,
@@ -37,6 +38,7 @@ def normalize_expression(
     text: str,
     *,
     limits: ParserLimits,
+    allowed_symbols: frozenset[str] = frozenset(),
     field: str | None = None,
 ) -> ParseResult[str]:
     """Normalize decimal commas and caret powers without evaluating input."""
@@ -74,7 +76,6 @@ def normalize_expression(
 
     output: list[tuple[int, str]] = []
     processed: list[_NormalizedToken] = []
-    parenthesis_depth = 0
     index = 0
 
     while index < len(significant):
@@ -125,7 +126,7 @@ def normalize_expression(
                     index += 3
                     continue
 
-        if current.text == "," and parenthesis_depth == 0:
+        if current.text == ",":
             return _invalid_number(current.text, field)
 
         if current.type == token.ERRORTOKEN and not current.text.isspace():
@@ -144,7 +145,11 @@ def normalize_expression(
             current.end,
         )
 
-        if processed and _is_implicit_multiplication(processed[-1], normalized):
+        if processed and _is_implicit_multiplication(
+            processed,
+            normalized,
+            allowed_symbols,
+        ):
             return _failure(
                 DiagnosticCode.PARSE_IMPLICIT_MULTIPLICATION,
                 "Implizite Multiplikation ist nicht erlaubt; verwende '*'.",
@@ -154,10 +159,6 @@ def normalize_expression(
         output.append((current.type, normalized_text))
         processed.append(normalized)
 
-        if current.type == token.OP and current.text in "([{":
-            parenthesis_depth += 1
-        elif current.type == token.OP and current.text in ")]}":
-            parenthesis_depth = max(0, parenthesis_depth - 1)
         index += 1
 
     normalized_source = tokenize.untokenize(output).strip()
@@ -175,12 +176,69 @@ def _digit_count(value: str) -> int:
 
 
 def _is_implicit_multiplication(
-    previous: _NormalizedToken,
+    processed: list[_NormalizedToken],
     current: _NormalizedToken,
+    allowed_symbols: frozenset[str],
 ) -> bool:
-    if previous.type == token.NUMBER:
-        return current.type in {token.NUMBER, token.NAME} or current.text == "("
-    return False
+    previous = processed[-1]
+    left_is_factor = (
+        previous.type == token.NUMBER
+        or (
+            previous.type == token.NAME
+            and previous.text in allowed_symbols
+        )
+        or (
+            previous.text == ")"
+            and _ends_with_math_group(processed, allowed_symbols)
+        )
+    )
+    right_is_factor = (
+        current.type == token.NUMBER
+        or (
+            current.type == token.NAME
+            and not iskeyword(current.text)
+        )
+        or current.text == "("
+    )
+    return left_is_factor and right_is_factor
+
+
+def _ends_with_math_group(
+    processed: list[_NormalizedToken],
+    allowed_symbols: frozenset[str],
+) -> bool:
+    depth = 0
+    opening_index: int | None = None
+    for index in range(len(processed) - 1, -1, -1):
+        item = processed[index]
+        if item.text == ")":
+            depth += 1
+        elif item.text == "(":
+            depth -= 1
+            if depth == 0:
+                opening_index = index
+                break
+
+    if opening_index is None:
+        return False
+
+    contents = processed[opening_index + 1 : -1]
+    if not contents:
+        return False
+
+    allowed_operators = {"+", "-", "*", "/", "**", "(", ")"}
+    return all(
+        item.type == token.NUMBER
+        or (
+            item.type == token.NAME
+            and item.text in allowed_symbols
+        )
+        or (
+            item.type == token.OP
+            and item.text in allowed_operators
+        )
+        for item in contents
+    )
 
 
 def _invalid_number(value: str, field: str | None) -> ParseResult[str]:

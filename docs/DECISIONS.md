@@ -17,9 +17,9 @@ Produktionsabhängigkeiten müssen hier vor ihrer Aufnahme begründet werden.
 | Schichtengrenze | Fachlogik unabhängig von GUI | Wiederverwendung in Werkzeugen, Workflows und Tests. |
 | Ergebnisformat | Strukturierte Objekte | Rechenweg, Provenienz, Warnungen und mehrere Darstellungen ermöglichen. |
 | Phase-0.5-Laufzeit | Sechs geprüfte Produktionsabhängigkeiten | Konkrete Versionen und Grenzen sind in `docs/COMPATIBILITY.md` dokumentiert. |
-| Ausdrucksparser | Python-AST mit Whitelist und manueller SymPy-Übersetzung geprüft | Kein `eval`, keine rohe Übergabe an `sympify` oder `parse_expr`; erlaubte und bösartige Eingaben sind automatisiert getestet. |
+| Ausdrucksparser | Token-Normalisierung, Python-AST-Whitelist und manuelle SymPy-Übersetzung geprüft | Kein `eval`, keine rohe Übergabe an `sympify` oder `parse_expr`; Token-Adjazenz erkennt implizite Multiplikation, und nur unmittelbar zwischen Ziffernfolgen verbrauchte Dezimalkommas sind gültig. |
 | Exakte Ausdrücke | Unveränderliches `ExactExpression` kapselt SymPy | Rationale Dezimalwerte, wertbasierte Gleichheit, stabile Darstellung und interne Fachkern-Schnittstelle sind geprüft. |
-| Parsergrenzen | Zentraler `ParserLimits`-Vertrag | Standardgrenzen: 1.000 Zeichen, 256 AST-Knoten, Tiefe 32, 16 Symbole, 128 Ganzzahlziffern, Exponentenbetrag 32 und 2.048 geschätzte Terme. |
+| Parsergrenzen | Zentraler `ParserLimits`-Vertrag | Standardgrenzen: 1.000 Zeichen, 256 AST-Knoten, Tiefe 32, 16 konfigurierte und verwendete Symbole, 128 Ganzzahlziffern, Exponentenbetrag 32 und 2.048 geschätzte Terme. Die Symbolmenge wird vor der SymPy-Tabelle begrenzt; erwartbare Ressourcenfehler werden als `PARSE_LIMIT_EXCEEDED` diagnostiziert. |
 | Build-Trennung | Separater Klausur-Build ohne KI | Technischer Nachweis und konkrete Build-Profile sind noch offen. |
 
 ## Aktuelle Entwicklungsabhängigkeiten

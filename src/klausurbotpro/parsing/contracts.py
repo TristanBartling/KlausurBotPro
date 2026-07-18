@@ -34,6 +34,10 @@ class ParserConfig:
 
     def __post_init__(self) -> None:
         symbols = frozenset(self.allowed_symbols)
+        if len(symbols) > self.limits.max_symbols:
+            raise ValueError(
+                "allowed_symbols exceeds limits.max_symbols."
+            )
         for name in symbols:
             if (
                 not name.isidentifier()

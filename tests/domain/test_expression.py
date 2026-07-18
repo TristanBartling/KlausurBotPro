@@ -16,6 +16,7 @@ def test_exact_expression_has_value_equality_and_stable_hash() -> None:
     assert first == second
     assert hash(first) == hash(second)
     assert {first, second} == {first}
+    assert {first: "value"}[second] == "value"
 
 
 def test_exact_expression_exposes_safe_representations_and_used_symbols() -> None:

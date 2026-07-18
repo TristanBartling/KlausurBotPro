@@ -68,6 +68,14 @@ freigegebenen Symbolen, Klammern, unären Vorzeichen und den Operatoren
 AST-Kontext `Load`; er trägt keine ausführbare Semantik. Alle anderen
 Sprachkonstrukte werden durch eine explizite Whitelist abgelehnt.
 
+Die Normalisierung fügt unmittelbar benachbarte Ziffernfolgen um ein
+Dezimalkomma zuerst zu einem Zahlentoken zusammen. Jedes danach verbleibende
+Komma ist unabhängig von der Klammertiefe ungültig. Eine vollständige
+Token-Adjazenzprüfung erkennt implizite Multiplikation zwischen Zahlen,
+freigegebenen Symbolen und mathematischen Klammergruppen; Multiplikation muss
+immer mit `*` geschrieben werden. Unbekannte Funktionsnamen werden dadurch
+nicht freigegeben, und Funktionsaufrufe bleiben verboten.
+
 Erlaubte AST-Knoten werden manuell in SymPy-Objekte übersetzt. Weder `eval`
 noch `sympify` oder `parse_expr` erhalten Nutzereingaben. Dezimalzahlen werden
 direkt aus ihrem geprüften Token als rationale Werte konstruiert, sodass keine
@@ -80,9 +88,14 @@ ist ausschließlich für kontrollierte mathematische Domain-Module vorgesehen,
 nicht für rohe Eingaben oder GUI-Code.
 
 Vor symbolischer Verarbeitung gelten zentral konfigurierbare Grenzen für
-Eingabelänge, AST-Größe und -Tiefe, verwendete Symbole, Ganzzahlziffern,
-Exponenten und geschätzte Termanzahl. Diese Grenzen reduzieren
-Denial-of-Service-Risiken, ersetzen aber keinen harten Prozess-Timeout.
+Eingabelänge, AST-Größe und -Tiefe, konfigurierte und verwendete Symbole,
+Ganzzahlziffern, Exponenten und geschätzte Termanzahl. Eine zu große
+`allowed_symbols`-Menge wird bereits bei der Konfiguration abgelehnt, bevor
+SymPy-Symbole entstehen. Erwartbare `MemoryError`, `RecursionError` und
+`OverflowError` aus Normalisierung, Parsing, Validierung und kontrollierter
+SymPy-Erzeugung werden als `PARSE_LIMIT_EXCEEDED` gekapselt. Diese Grenzen
+reduzieren Denial-of-Service-Risiken, ersetzen aber keinen harten
+Prozess-Timeout.
 
 ## Offene Architekturentscheidungen
 

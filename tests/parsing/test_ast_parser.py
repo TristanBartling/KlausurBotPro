@@ -1,10 +1,12 @@
 """Functional and resource-limit tests for the safe AST parser."""
 
+import ast
 from dataclasses import FrozenInstanceError
 
 import pytest
 import sympy as sp
 
+import klausurbotpro.parsing.ast_parser as ast_parser_module
 from klausurbotpro.domain import (
     Diagnostic,
     DiagnosticCode,
@@ -152,16 +154,44 @@ def test_deep_input_returns_diagnostic_instead_of_recursion_error() -> None:
     )
 
 
-def test_used_symbol_limit_is_enforced() -> None:
-    result = _parser(
-        symbols=frozenset({"s", "K"}),
-        limits=ParserLimits(max_symbols=1),
-    ).parse("s + K")
-
-    assert result.diagnostics[0].code is DiagnosticCode.PARSE_LIMIT_EXCEEDED
-    assert result.diagnostics[0].technical_details == (
-        ("limit", "max_symbols"),
+def test_parser_config_accepts_exact_symbol_limit() -> None:
+    config = ParserConfig(
+        frozenset({"s", "K"}),
+        limits=ParserLimits(max_symbols=2),
     )
+
+    assert config.allowed_symbols == frozenset({"s", "K"})
+
+
+def test_parser_config_rejects_more_than_symbol_limit() -> None:
+    with pytest.raises(ValueError, match="exceeds limits.max_symbols"):
+        ParserConfig(
+            frozenset({"s", "K"}),
+            limits=ParserLimits(max_symbols=1),
+        )
+
+
+def test_invalid_config_creates_no_sympy_symbols(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    symbol_calls = 0
+
+    def count_symbol_calls(name: str) -> sp.Symbol:
+        nonlocal symbol_calls
+        symbol_calls += 1
+        return sp.Symbol(name)
+
+    monkeypatch.setattr(sp, "Symbol", count_symbol_calls)
+
+    with pytest.raises(ValueError, match="exceeds limits.max_symbols"):
+        SafeExpressionParser(
+            ParserConfig(
+                frozenset({"s", "K"}),
+                limits=ParserLimits(max_symbols=1),
+            )
+        )
+
+    assert symbol_calls == 0
 
 
 def test_estimated_term_limit_prevents_expansion_risk() -> None:
@@ -221,3 +251,96 @@ def test_same_failure_is_deterministic() -> None:
 
     assert first == second
     assert first.diagnostics[0].message == second.diagnostics[0].message
+
+
+def test_same_success_is_deterministic() -> None:
+    parser = _parser()
+
+    assert parser.parse("(s + 1)/(K*s + 1)") == parser.parse(
+        "(s + 1)/(K*s + 1)"
+    )
+
+
+@pytest.mark.parametrize(
+    ("stage", "error_type"),
+    [
+        ("normalization", MemoryError),
+        ("ast", RecursionError),
+        ("validation", OverflowError),
+        ("translation", MemoryError),
+        ("sympy_operation", OverflowError),
+        ("exact_expression", RecursionError),
+    ],
+)
+def test_resource_errors_are_deterministic_limit_diagnostics(
+    stage: str,
+    error_type: type[MemoryError | RecursionError | OverflowError],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parser = _parser()
+
+    def raise_resource_error(*args: object, **kwargs: object) -> None:
+        raise error_type
+
+    if stage == "normalization":
+        monkeypatch.setattr(
+            ast_parser_module,
+            "normalize_expression",
+            raise_resource_error,
+        )
+    elif stage == "ast":
+        monkeypatch.setattr(
+            ast,
+            "parse",
+            raise_resource_error,
+        )
+    elif stage == "validation":
+        monkeypatch.setattr(
+            SafeExpressionParser,
+            "_validate_tree",
+            raise_resource_error,
+        )
+    elif stage == "translation":
+        monkeypatch.setattr(
+            SafeExpressionParser,
+            "_translate",
+            raise_resource_error,
+        )
+    elif stage == "sympy_operation":
+        monkeypatch.setattr(
+            sp,
+            "Integer",
+            raise_resource_error,
+        )
+    else:
+        monkeypatch.setattr(
+            ExactExpression,
+            "_from_sympy",
+            raise_resource_error,
+        )
+
+    source = "1" if stage == "sympy_operation" else "s + 1"
+    first = parser.parse(source)
+    second = parser.parse(source)
+
+    assert first == second
+    assert first.diagnostics[0].code is DiagnosticCode.PARSE_LIMIT_EXCEEDED
+    assert first.diagnostics[0].technical_details == (
+        ("exception", error_type.__name__),
+    )
+
+
+def test_unexpected_programming_errors_are_not_hidden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_runtime_error(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("programming defect")
+
+    monkeypatch.setattr(
+        SafeExpressionParser,
+        "_translate",
+        raise_runtime_error,
+    )
+
+    with pytest.raises(RuntimeError, match="programming defect"):
+        _parser().parse("s + 1")

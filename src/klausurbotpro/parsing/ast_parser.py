@@ -18,6 +18,7 @@ from klausurbotpro.parsing.normalization import normalize_expression
 
 _INTEGER_PATTERN = re.compile(r"[0-9]+\Z")
 _DECIMAL_PATTERN = re.compile(r"[0-9]+\.[0-9]+\Z")
+_RESOURCE_ERRORS = (MemoryError, RecursionError, OverflowError)
 _ALLOWED_NODE_TYPES = (
     ast.Expression,
     ast.Constant,
@@ -57,18 +58,24 @@ class SafeExpressionParser:
         field: str | None = None,
     ) -> ParseResult[ExactExpression]:
         """Return an exact expression or deterministic structured diagnostics."""
-        normalized = normalize_expression(
-            text,
-            limits=self._config.limits,
-            field=field,
-        )
+        try:
+            normalized = normalize_expression(
+                text,
+                limits=self._config.limits,
+                allowed_symbols=self._config.allowed_symbols,
+                field=field,
+            )
+        except _RESOURCE_ERRORS as error:
+            return self._resource_failure_result(error, field)
         if not normalized.succeeded:
             return ParseResult(value=None, diagnostics=normalized.diagnostics)
         assert normalized.value is not None
 
         try:
             tree = ast.parse(normalized.value, mode="eval")
-        except (SyntaxError, ValueError, MemoryError, RecursionError) as error:
+        except _RESOURCE_ERRORS as error:
+            return self._resource_failure_result(error, field)
+        except (SyntaxError, ValueError) as error:
             return self._failure_result(
                 DiagnosticCode.PARSE_INVALID_SYNTAX,
                 "Der Ausdruck ist syntaktisch ungültig.",
@@ -80,6 +87,8 @@ class SafeExpressionParser:
             self._validate_tree(tree)
             expression = self._translate(tree.body, normalized.value)
             exact = ExactExpression._from_sympy(expression)
+        except _RESOURCE_ERRORS as error:
+            return self._resource_failure_result(error, field)
         except _ParseFailure as failure:
             return self._failure_result(
                 failure.code,
@@ -252,6 +261,18 @@ class SafeExpressionParser:
             DiagnosticCode.PARSE_FORBIDDEN_NODE,
             "Der Ausdruck enthält eine nicht erlaubte Sprachstruktur.",
             (("node", type(node).__name__),),
+        )
+
+    @staticmethod
+    def _resource_failure_result(
+        error: MemoryError | RecursionError | OverflowError,
+        field: str | None,
+    ) -> ParseResult[ExactExpression]:
+        return SafeExpressionParser._failure_result(
+            DiagnosticCode.PARSE_LIMIT_EXCEEDED,
+            "Der Ausdruck überschreitet die verfügbaren Ressourcen.",
+            field,
+            (("exception", type(error).__name__),),
         )
 
     @staticmethod
