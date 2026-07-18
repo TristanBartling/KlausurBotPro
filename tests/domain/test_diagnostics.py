@@ -22,6 +22,10 @@ def test_diagnostic_codes_are_stable_machine_values() -> None:
         DiagnosticCode.POLYNOMIAL_CONDITIONAL_DEGREE.value
         == "polynomial.conditional_degree"
     )
+    assert (
+        DiagnosticCode.RAW_TRANSFER_ZERO_DENOMINATOR.value
+        == "raw_transfer.zero_denominator"
+    )
 
 
 def test_diagnostic_is_immutable_and_copies_details_to_tuple() -> None:

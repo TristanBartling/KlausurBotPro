@@ -113,6 +113,40 @@ vor jedem Einzelparse diagnostiziert wird. Metadatentests behandeln
 Original- und Normalisierungstexte ausschließlich als Provenienz; spätere
 Fachlogik darf daraus keine mathematische Aussage rekonstruieren.
 
+## Raw-Transferfunktions- und Revalidierungstests
+
+Phase 1A.3b wird unabhängig vom Parser mit gemeinsamen und getrennten
+Rohverträgen geprüft. Parametrische Regeltests decken Addition, Subtraktion,
+Multiplikation, verschachtelte Division sowie positive, negative und
+Nullpotenzen ab. Strukturtests sichern, dass `K/K` im Snapshot sichtbar
+bleibt, skalierte Zähler-/Nennerpaare nicht gemeinsam gekürzt werden und nur
+die einzelne Polynomialseite kanonisiert wird.
+
+Defensive Tests manipulieren frozen Dataclasses über `object.__setattr__` und
+prüfen unbekannte Typen und Unterklassen, Zyklen, falsche Kinder, Bool-Werte
+in Ganzzahlfeldern, ungekürzte oder zu große exakte Zahlen, unsichere und
+nicht deklarierte Symbole, ungültige Exponenten, geteilte Teilbäume und
+inkonsistente Metadaten. Der Snapshot muss knotenweise von der Quelle
+disjunkt sein. Ressourcenfehler in Revalidierung, Rationalisierung und
+kontrollierter Übersetzung werden mit stabilen Codes gekapselt.
+
+Bedingungstests unterscheiden verbindlich reine Parameter-Voraussetzungen von
+polynomialen Ausschlüssen der Hauptvariablen. Sie prüfen `1/(s+1)`, `1/K`,
+`1/(K*s)`, `1/(K*s+1)` und `1/((K-1)*s+T)`, verschachtelte und wiederholte
+Divisoren sowie identische und konditionale Nullnenner. Insbesondere werden
+führende Koeffizientenbedingungen nicht pauschal als
+Transferfunktionsvoraussetzung übernommen. Sortierung, Deduplizierung,
+Herkunft, Unveränderlichkeit, Gleichheit, Hash und Dictionary-Key-Verwendung
+sind deterministisch geprüft.
+
+Limitfälle decken Rohknoten, Tiefe, Ganzzahlziffern, Exponenten,
+rationalisierte Vorkommen, Zwischenausdrücke, Übersetzungsschritte, Grade,
+Parameter, Voraussetzungen und Definitionsausschlüsse ab. Tests prüfen
+außerdem die Domain→Parsing-Trennung, das Fehlen eines unsicheren Stringpfads
+und das Fehlen gemeinsamer `cancel`-/`together`-Operationen in der neuen
+Factory. Reduktion, Properness, Pole, Nullstellen und Stabilität bleiben
+ausdrücklich außerhalb dieser Testphase.
+
 Die vollständige Angriffsmatrix des bestehenden Ausdrucksparsers läuft für
 die gemeinsame Form und für jedes einzelne Feld der getrennten Form. Sie
 umfasst auch ungültige Kommas, implizite Multiplikation und sonstige

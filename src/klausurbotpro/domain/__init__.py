@@ -16,6 +16,17 @@ from klausurbotpro.domain.polynomial_contracts import (
 )
 from klausurbotpro.domain.polynomial_factory import PolynomialFactory
 from klausurbotpro.domain.raw_algebraic_expression import RawAlgebraicExpression
+from klausurbotpro.domain.raw_transfer_function import RawTransferFunction
+from klausurbotpro.domain.raw_transfer_function_contracts import (
+    RawTransferFunctionCreationResult,
+    RawTransferFunctionLimits,
+    TransferFunctionDomainExclusion,
+    TransferFunctionPrerequisite,
+    TransferFunctionPrerequisiteKind,
+)
+from klausurbotpro.domain.raw_transfer_function_factory import (
+    RawTransferFunctionFactory,
+)
 from klausurbotpro.domain.transfer_function_input import (
     CommonTransferFunctionInput,
     SeparatedTransferFunctionInput,
@@ -37,7 +48,14 @@ __all__ = [
     "PolynomialFactory",
     "PolynomialLimits",
     "RawAlgebraicExpression",
+    "RawTransferFunction",
+    "RawTransferFunctionCreationResult",
+    "RawTransferFunctionFactory",
+    "RawTransferFunctionLimits",
     "SeparatedTransferFunctionInput",
+    "TransferFunctionDomainExclusion",
     "TransferFunctionInput",
     "TransferFunctionInputForm",
+    "TransferFunctionPrerequisite",
+    "TransferFunctionPrerequisiteKind",
 ]
