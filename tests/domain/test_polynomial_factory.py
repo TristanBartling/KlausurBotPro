@@ -307,6 +307,318 @@ def test_conditions_are_deduplicated_and_deterministically_sorted() -> None:
     )
 
 
+def _unevaluated_ratio(
+    numerator: sp.Expr,
+    denominator: sp.Expr,
+) -> sp.Expr:
+    return sp.Mul(
+        numerator,
+        sp.Pow(denominator, -1, evaluate=False),
+        evaluate=False,
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "expression",
+        "reduced",
+        "parameters",
+        "canonical",
+        "coefficients",
+        "generic",
+        "guaranteed",
+        "definitions",
+        "degree_conditions",
+    ),
+    [
+        (
+            lambda s, K, T, T1, T2: _unevaluated_ratio(K, K) * s + 1,
+            lambda s, K, T, T1, T2: s + 1,
+            frozenset({"K"}),
+            "s + 1",
+            ("1", "1"),
+            1,
+            1,
+            (),
+            (),
+        ),
+        (
+            lambda s, K, T, T1, T2: (
+                _unevaluated_ratio(K - 1, K - 1) * s
+            ),
+            lambda s, K, T, T1, T2: s,
+            frozenset({"K"}),
+            "s",
+            ("1", "0"),
+            1,
+            1,
+            (),
+            (),
+        ),
+        (
+            lambda s, K, T, T1, T2: _unevaluated_ratio(K * T, K) * s + 1,
+            lambda s, K, T, T1, T2: T * s + 1,
+            frozenset({"K", "T"}),
+            "T*s + 1",
+            ("T", "1"),
+            1,
+            None,
+            (),
+            ("T",),
+        ),
+        (
+            lambda s, K, T, T1, T2: _unevaluated_ratio(K - 1, T + 1) * s,
+            lambda s, K, T, T1, T2: (K - 1) / (T + 1) * s,
+            frozenset({"K", "T"}),
+            "s*(K - 1)/(T + 1)",
+            ("(K - 1)/(T + 1)", "0"),
+            1,
+            None,
+            ("T + 1",),
+            ("K - 1",),
+        ),
+        (
+            lambda s, K, T, T1, T2: (
+                _unevaluated_ratio((K - 1) * (T + 1), T + 1) * s
+            ),
+            lambda s, K, T, T1, T2: (K - 1) * s,
+            frozenset({"K", "T"}),
+            "s*(K - 1)",
+            ("K - 1", "0"),
+            1,
+            None,
+            (),
+            ("K - 1",),
+        ),
+        (
+            lambda s, K, T, T1, T2: _unevaluated_ratio(K, T * T) * s,
+            lambda s, K, T, T1, T2: K / T**2 * s,
+            frozenset({"K", "T"}),
+            "K*s/T**2",
+            ("K/T**2", "0"),
+            1,
+            None,
+            ("T**2",),
+            ("K",),
+        ),
+        (
+            lambda s, K, T, T1, T2: _unevaluated_ratio(K, T1 * T2) * s,
+            lambda s, K, T, T1, T2: K / (T1 * T2) * s,
+            frozenset({"K", "T1", "T2"}),
+            "K*s/(T1*T2)",
+            ("K/(T1*T2)", "0"),
+            1,
+            None,
+            ("T1*T2",),
+            ("K",),
+        ),
+        (
+            lambda s, K, T, T1, T2: _unevaluated_ratio(K, T1 + T2) * s,
+            lambda s, K, T, T1, T2: K / (T1 + T2) * s,
+            frozenset({"K", "T1", "T2"}),
+            "K*s/(T1 + T2)",
+            ("K/(T1 + T2)", "0"),
+            1,
+            None,
+            ("T1 + T2",),
+            ("K",),
+        ),
+    ],
+)
+def test_canonical_field_semantics_after_algebraic_cancellation(
+    expression: object,
+    reduced: object,
+    parameters: frozenset[str],
+    canonical: str,
+    coefficients: tuple[str, ...],
+    generic: int,
+    guaranteed: int | None,
+    definitions: tuple[str, ...],
+    degree_conditions: tuple[str, ...],
+) -> None:
+    s, K, T, T1, T2 = sp.symbols("s K T T1 T2")
+    assert callable(expression)
+    assert callable(reduced)
+    original = _create(
+        expression(s, K, T, T1, T2),
+        parameters=parameters,
+    )
+    canonical_value = _create(
+        reduced(s, K, T, T1, T2),
+        parameters=parameters,
+    )
+    assert original.value is not None
+    assert canonical_value.value is not None
+    polynomial = original.value
+
+    assert polynomial.expression.canonical_text == canonical
+    assert tuple(
+        coefficient.canonical_text for coefficient in polynomial.coefficients
+    ) == coefficients
+    assert polynomial.degree_info.generic_degree == generic
+    assert polynomial.degree_info.guaranteed_degree == guaranteed
+    assert tuple(
+        condition.expression.canonical_text
+        for condition in polynomial.conditions
+        if condition.kind is PolynomialConditionKind.DEFINITION_NONZERO
+    ) == definitions
+    assert tuple(
+        condition.expression.canonical_text
+        for condition in polynomial.degree_info.conditions
+    ) == degree_conditions
+    assert polynomial == canonical_value.value
+    assert hash(polynomial) == hash(canonical_value.value)
+
+
+@pytest.mark.parametrize(
+    (
+        "expression",
+        "parameters",
+        "canonical",
+        "coefficients",
+        "generic",
+        "guaranteed",
+        "leading",
+        "definitions",
+        "degree_conditions",
+        "is_zero",
+        "is_constant",
+    ),
+    [
+        (
+            lambda s, K, T: K**2 * s + 1,
+            frozenset({"K"}),
+            "K**2*s + 1",
+            ("K**2", "1"),
+            1,
+            None,
+            "K**2",
+            (),
+            ("K**2",),
+            False,
+            False,
+        ),
+        (
+            lambda s, K, T: (K**2 - 1) * s**2 + s,
+            frozenset({"K"}),
+            "s**2*(K**2 - 1) + s",
+            ("K**2 - 1", "1", "0"),
+            2,
+            None,
+            "K**2 - 1",
+            (),
+            ("K**2 - 1",),
+            False,
+            False,
+        ),
+        (
+            lambda s, K, T: K / T * s + 1,
+            frozenset({"K", "T"}),
+            "K*s/T + 1",
+            ("K/T", "1"),
+            1,
+            None,
+            "K/T",
+            ("T",),
+            ("K",),
+            False,
+            False,
+        ),
+        (
+            lambda s, K, T: sp.Mul(0, s**4, evaluate=False) + K * s + 1,
+            frozenset({"K"}),
+            "K*s + 1",
+            ("K", "1"),
+            1,
+            None,
+            "K",
+            (),
+            ("K",),
+            False,
+            False,
+        ),
+        (
+            lambda s, K, T: sp.Add(K, -K, evaluate=False),
+            frozenset({"K"}),
+            "0",
+            ("0",),
+            None,
+            None,
+            "0",
+            (),
+            (),
+            True,
+            True,
+        ),
+        (
+            lambda s, K, T: K,
+            frozenset({"K"}),
+            "K",
+            ("K",),
+            0,
+            None,
+            "K",
+            (),
+            ("K",),
+            False,
+            True,
+        ),
+    ],
+)
+def test_degree_and_condition_normal_forms_are_conservative(
+    expression: object,
+    parameters: frozenset[str],
+    canonical: str,
+    coefficients: tuple[str, ...],
+    generic: int | None,
+    guaranteed: int | None,
+    leading: str,
+    definitions: tuple[str, ...],
+    degree_conditions: tuple[str, ...],
+    is_zero: bool,
+    is_constant: bool,
+) -> None:
+    s, K, T = sp.symbols("s K T")
+    assert callable(expression)
+    result = _create(expression(s, K, T), parameters=parameters)
+    assert result.value is not None
+    polynomial = result.value
+
+    assert polynomial.expression.canonical_text == canonical
+    assert tuple(
+        coefficient.canonical_text for coefficient in polynomial.coefficients
+    ) == coefficients
+    assert polynomial.degree_info.generic_degree == generic
+    assert polynomial.degree_info.guaranteed_degree == guaranteed
+    assert polynomial.leading_coefficient.canonical_text == leading
+    assert tuple(
+        condition.expression.canonical_text
+        for condition in polynomial.conditions
+        if condition.kind is PolynomialConditionKind.DEFINITION_NONZERO
+    ) == definitions
+    assert tuple(
+        condition.expression.canonical_text
+        for condition in polynomial.degree_info.conditions
+    ) == degree_conditions
+    assert polynomial.is_zero is is_zero
+    assert polynomial.is_constant is is_constant
+
+
+def test_condition_normalization_removes_numeric_factors_and_global_signs() -> None:
+    s, K, T = sp.symbols("s K T")
+    expression = _unevaluated_ratio(-2 * K, -2 * T) * s + 1
+    result = _create(expression, parameters=frozenset({"K", "T"}))
+    assert result.value is not None
+
+    assert tuple(
+        (condition.kind, condition.expression.canonical_text)
+        for condition in result.value.conditions
+    ) == (
+        (PolynomialConditionKind.DEFINITION_NONZERO, "T"),
+        (PolynomialConditionKind.LEADING_COEFFICIENT_NONZERO, "K"),
+    )
+
+
 @pytest.mark.parametrize(
     ("expression", "parameters", "expected_code"),
     [

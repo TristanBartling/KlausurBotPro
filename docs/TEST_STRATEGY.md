@@ -63,6 +63,15 @@ interpretiert. Definitionsbedingungen aus Parameternennern und
 Gradbedingungen aus normalisierten Zählern werden getrennt, dedupliziert und
 deterministisch sortiert geprüft.
 
+Regressionstests sichern die kanonische Feldsemantik auch bei algebraischer
+Kürzung. Sie prüfen, dass bereits entfernte Definitionslücken nicht
+rekonstruiert werden, verbleibende Nenner Bedingungen erzeugen und
+algebraisch gleiche Polynomialwerte dieselbe Gleichheit und denselben Hash
+besitzen. Zusammengesetzte Nichtnullbedingungen wie `T**2`, `T1*T2` und
+`K**2 - 1` bleiben zulässige Normalformen. Numerische Faktoren und globale
+Vorzeichen werden entfernt; eine Faktorisierung in einzelne Bedingungen ist
+für Phase 1A.2 nicht vorgesehen.
+
 Fehlertests umfassen ungültige Namen, Symbolkonflikte, nicht deklarierte oder
 annahmebehaftete Symbole, negative, nichtganzzahlige und symbolische
 Hauptvariablenexponenten, Hauptvariablen im Nenner, Funktionen, Float-Atome,
