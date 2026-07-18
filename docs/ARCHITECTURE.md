@@ -152,6 +152,43 @@ verwendeten Parametern ein alphabetisch aufgebauter `QQ.frac_field`
 verwendet. Erwartbare Domain-, SymPy- und Ressourcenfehler werden als
 strukturierte Diagnosen gekapselt.
 
+## Implementierte rationale Eingaberepräsentation (Phase 1A.3a)
+
+Vor jeder algebraischen Vereinfachung steht jetzt ein unveränderlicher,
+nicht ausführbarer Rohbaum. Seine Knotentypen bilden exakte Zahlen, Symbole,
+unäre Vorzeichen, Addition, Subtraktion, Multiplikation, Division und Potenz
+direkt ab. Operandenreihenfolge und Verschachtelung bleiben erhalten:
+`K/K`, `K-K`, `(K/T)/s` und `K/(T/s)` werden weder ausgewertet noch
+untereinander oder mit reduzierten Werten gleichgesetzt. Ausschließlich ein
+Zahlenliteral wird exakt als vollständig gekürzter Bruch mit positivem Nenner
+gespeichert. Der Baum enthält keine SymPy- oder Python-AST-Typen und bietet
+eine deterministische Präfixdarstellung, strukturelle Gleichheit und
+Hashbarkeit, Symbolnamen, Knotenzahl und Tiefe.
+
+Die Eingabeform ist durch zwei getrennte Verträge diskriminiert:
+`SeparatedTransferFunctionInput` speichert Zähler- und Nennerbaum aus zwei
+Feldern, `CommonTransferFunctionInput` genau einen vollständigen Baum. Die
+gemeinsame Form verlangt keine Division auf oberster Ebene. Beide Verträge
+halten Hauptvariable, freigegebene und tatsächlich verwendete Symbolnamen
+sowie Original- und Normalisierungstexte fest. Quelltexte gehören nicht zur
+strukturellen Wertgleichheit. Ein mathematisches `TransferFunction`-Modell,
+Definitionsbedingungen, Polynome, Kürzung und reduzierte Darstellung sind
+bewusst noch nicht Teil dieser Schicht.
+
+`SafeExpressionParser` und `SafeRationalExpressionParser` verwenden dieselbe
+interne AST-Whitelist, Exponentenprüfung, Komplexitätsschätzung und
+Ressourcenpolitik. Der bestehende Parser übersetzt danach weiterhin manuell
+nach SymPy und behält seine öffentliche Semantik. Der neue Parser übersetzt
+dagegen direkt in den Rohbaum; er durchläuft nie `ExactExpression` oder
+SymPy. Deshalb ist beispielsweise ein syntaktischer Nenner `0` in dieser
+Phase zulässig und kann erst durch ein späteres Domainmodell fachlich
+abgelehnt werden.
+
+Für die getrennte Form gelten `ParserLimits` sowohl je Teilausdruck als auch
+als gemeinsames Budget: Die Summe der Eingabelängen und die gesamte AST- und
+Rohknotenzahl dürfen die jeweiligen konfigurierten Einzelgrenzen nicht
+überschreiten. Damit entsteht kein zweiter, abweichender Sicherheitsvertrag.
+
 ## Offene Architekturentscheidungen
 
 - genaue Grenzen und Repräsentationen weiterer Domain-Modelle
