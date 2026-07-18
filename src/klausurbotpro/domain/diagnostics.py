@@ -85,6 +85,25 @@ class DiagnosticCode(StrEnum):
     )
     RAW_TRANSFER_ZERO_DIVISOR = "raw_transfer.zero_divisor"
     RAW_TRANSFER_CONDITIONAL_DIVISOR = "raw_transfer.conditional_divisor"
+    TRANSFER_REDUCTION_INVALID_RAW_VALUE = (
+        "transfer_reduction.invalid_raw_value"
+    )
+    TRANSFER_REDUCTION_LIMIT_EXCEEDED = "transfer_reduction.limit_exceeded"
+    TRANSFER_REDUCTION_COMMON_FACTOR_FAILED = (
+        "transfer_reduction.common_factor_failed"
+    )
+    TRANSFER_REDUCTION_EXACT_DIVISION_FAILED = (
+        "transfer_reduction.exact_division_failed"
+    )
+    TRANSFER_REDUCTION_RESULT_INVALID = (
+        "transfer_reduction.result_invalid"
+    )
+    TRANSFER_REDUCTION_RESOURCE_LIMIT_EXCEEDED = (
+        "transfer_reduction.resource_limit_exceeded"
+    )
+    TRANSFER_REDUCTION_NORMALIZATION_SKIPPED = (
+        "transfer_reduction.normalization_skipped"
+    )
 
 
 @dataclass(frozen=True, slots=True)

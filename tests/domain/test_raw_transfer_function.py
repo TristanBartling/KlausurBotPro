@@ -44,7 +44,7 @@ def _create(expression: object, *, text: str = "") -> RawTransferFunction:
     return result.value
 
 
-def test_value_is_factory_only_immutable_and_has_no_reduced_value() -> None:
+def test_value_is_factory_only_immutable_and_has_no_embedded_reduced_value() -> None:
     value = _create(Divide(ExactNumber(1), Add(Symbol("s"), ExactNumber(1))))
 
     with pytest.raises(TypeError):
@@ -52,7 +52,7 @@ def test_value_is_factory_only_immutable_and_has_no_reduced_value() -> None:
     with pytest.raises(FrozenInstanceError):
         value.variable_name = "z"  # type: ignore[misc]
     assert not hasattr(value, "reduced_transfer_function")
-    assert not hasattr(domain_api, "ReducedTransferFunction")
+    assert hasattr(domain_api, "ReducedTransferFunction")
 
 
 def test_scalar_multiples_remain_unequal_before_reduction() -> None:

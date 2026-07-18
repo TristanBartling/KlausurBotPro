@@ -267,9 +267,46 @@ aus dem Polynomialpaar, den Voraussetzungen und den Definitionsausschlüssen
 abgeleitet; nur im Ursprungsausdruck vorkommende Parameternamen bleiben über
 `input_snapshot.used_symbol_names` zugänglich. Gleiche Raw-Werte besitzen
 damit dieselben mathematischen und abgeleiteten Eigenschaften, dürfen aber
-unterschiedliche Provenienz-Snapshots besitzen. Reduktion, Properness, Pole,
-Nullstellen, Stabilität und eine `ReducedTransferFunction` sind noch nicht
-implementiert.
+unterschiedliche Provenienz-Snapshots besitzen. Properness, Pole, Nullstellen
+und Stabilität sind noch nicht implementiert.
+
+## Implementierte exakte Transferfunktionsreduktion (Phase 1A.3c)
+
+`TransferFunctionReducer` überführt ausschließlich eine defensiv erneut
+geprüfte `RawTransferFunction` in eine factory-only
+`ReducedTransferFunction`. Die Reduktion arbeitet exakt und begrenzt mit einer
+multivariaten Polynomdarstellung über `QQ`; sie verwendet weder Parser noch
+Strings als mathematische Quelle. Das Ergebnis wird unabhängig durch
+`PolynomialFactory` revalidiert.
+
+Die reduzierte Wertidentität besteht aus Hauptvariable, geordnetem reduziertem
+Zähler-/Nennerpaar sowie den unverändert übernommenen Voraussetzungen und
+Definitionsausschlüssen. Eingabesnapshot, Reduktionsbericht, Diagnosen,
+Darstellungstexte und Herkunftsangaben gehören nicht zur Identität.
+`used_parameter_names` und `is_zero` werden aus diesen mathematischen Feldern
+abgeleitet. Dadurch verschwinden Parameter nicht aus der Semantik, wenn ihr
+Faktor zwar gekürzt wurde, aber eine ursprüngliche Voraussetzung oder ein
+Ausschluss fortbesteht.
+
+Gemeinsame Polynomfaktoren und gemeinsame rationale Zahlenfaktoren werden
+exakt entfernt; das Vorzeichen wird deterministisch normalisiert. Ein
+Nullzähler wird zu `0/1`, ohne die Raw-Bedingungen zu verlieren. Eine Division
+durch einen symbolischen Skalenfaktor erfolgt nur, wenn eine bereits
+vorhandene `EXPRESSION_NONZERO`-Voraussetzung dessen Nichtnullheit beweist.
+Insbesondere bleibt `1/(T*s+1)` ohne Voraussetzung `T != 0` unverändert.
+Monische Normierung erzeugt keine künstlichen Annahmen. Parameternenner werden
+nur unter bereits abgesicherten Definitionen beseitigt.
+
+Jede tatsächliche Transformation wird als geordneter,
+`ExactExpression`-basierter Schritt mit Faktor, Vorher-/Nachher-Paar und
+gegebenenfalls verwendeter Voraussetzung berichtet. Auch eine unveränderte
+Reduktion erhält einen strukturierten `NO_REDUCTION`-Schritt. Eigene Limits
+begrenzen Eingabe, multivariate Zwischenrepräsentation, Faktoren, Ergebnis und
+Schrittzahl. Erwartbare Limit-, SymPy-, Divisions-, Ergebnis- und
+Ressourcenfehler werden als strukturierte Diagnosen gekapselt.
+
+Die Reduktion bestimmt noch keine Properness, Pole, Nullstellen, Stabilität
+oder regelungstechnische Analysegrößen.
 
 ## Offene Architekturentscheidungen
 
