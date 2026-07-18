@@ -220,6 +220,57 @@ abgelehnt. Gesamte AST- und Rohknotenzahl werden zusätzlich nach beiden
 Einzelparsings geprüft. Damit entsteht kein zweiter, abweichender
 Sicherheitsvertrag.
 
+## Implementierte validierte RawTransferFunction (Phase 1A.3b)
+
+`RawTransferFunctionFactory` bildet ausschließlich bereits strukturierte
+`CommonTransferFunctionInput`- oder `SeparatedTransferFunctionInput`-Werte auf
+ein unveränderliches, factory-only `RawTransferFunction` ab. Die
+Factorykonfiguration für Hauptvariable und Parameter ist maßgeblich;
+Parsermetadaten und Provenienztexte sind keine mathematische Vertrauensquelle.
+Der Domainkern importiert dafür weder Parsing noch UI.
+
+Vor jeder mathematischen Übersetzung revalidiert ein internes Modul jeden
+logisch auftretenden Rohknoten. Nur exakt bekannte Knotentypen, sichere Felder,
+gekürzte exakte Zahlen, sichere deklarierte Symbole und rein numerische,
+ganzzahlige, begrenzte Exponenten werden akzeptiert. Zyklische, manipulierte
+oder zu große Strukturen werden diagnostiziert. Geteilte Teilbäume sind
+zulässig, zählen aber pro logischem Vorkommen. Der erfolgreiche Snapshot
+besteht vollständig aus neuen Knoten und besitzt keine Aliasbeziehung zur
+Eingabe.
+
+Die interne Rationalisierung folgt mechanisch den Bruchrechenregeln. Sie
+erzeugt getrennte Zähler- und Nennerbäume und zeichnet die rationalisierten
+Zähler ursprünglicher Divisoren auf. Vor jedem wachsenden Baum werden
+Vorkommen, Zwischenausdrücke und Übersetzungsschritte gekappt geschätzt. Es
+gibt keine gemeinsame Kürzung, Faktorisierung, GGT-, monische oder skalare
+Paar-Normalisierung. Erst anschließend werden beide Seiten getrennt und ohne
+Stringpfad in kontrollierte, annahmenfreie SymPy-Ausdrücke übersetzt und
+jeweils durch `PolynomialFactory` kanonisiert.
+
+Parameter-Voraussetzungen und Definitionsausschlüsse der Hauptvariablen sind
+getrennte öffentliche Prädikate. `EXPRESSION_NONZERO` und `NOT_ALL_ZERO`
+betreffen ausschließlich parameterabhängige Koeffizienten. Ein
+`TransferFunctionDomainExclusion` enthält dagegen ein validiertes Polynom mit
+Hauptvariable, dessen Nullstellen aus ursprünglichen Divisoren oder dem
+finalen Nenner ausgeschlossen sind. So erzeugt `1/K` nur `K != 0`,
+`1/(s+1)` nur den Ausschluss `s + 1 != 0`, und `1/(K*s)` beides. Die
+Gradbedingung eines führenden Polynomialkoeffizienten wird nicht automatisch
+zur Gültigkeitsvoraussetzung der Transferfunktion.
+
+Die mathematische Raw-Identität besteht aus Hauptvariable, geordnetem
+Zähler-/Nennerpolynom, Voraussetzungen und Definitionsausschlüssen.
+Provenienztexte, Eingabeform, Quellpfade, unbenutzte Freigaben und interne
+Schritte beeinflussen Gleichheit und Hash nicht. Deshalb können getrennte und
+gemeinsame Eingaben denselben Wert erzeugen. Skalare Vielfache bleiben vor
+einer späteren Reduktion ungleich. `used_parameter_names` wird ausschließlich
+aus dem Polynomialpaar, den Voraussetzungen und den Definitionsausschlüssen
+abgeleitet; nur im Ursprungsausdruck vorkommende Parameternamen bleiben über
+`input_snapshot.used_symbol_names` zugänglich. Gleiche Raw-Werte besitzen
+damit dieselben mathematischen und abgeleiteten Eigenschaften, dürfen aber
+unterschiedliche Provenienz-Snapshots besitzen. Reduktion, Properness, Pole,
+Nullstellen, Stabilität und eine `ReducedTransferFunction` sind noch nicht
+implementiert.
+
 ## Offene Architekturentscheidungen
 
 - genaue Grenzen und Repräsentationen weiterer Domain-Modelle

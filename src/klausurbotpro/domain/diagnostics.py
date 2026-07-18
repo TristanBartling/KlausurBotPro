@@ -62,6 +62,29 @@ class DiagnosticCode(StrEnum):
     POLYNOMIAL_SYMBOL_ASSUMPTION_NOT_ALLOWED = (
         "polynomial.symbol_assumption_not_allowed"
     )
+    RAW_TRANSFER_INVALID_TREE = "raw_transfer.invalid_tree"
+    RAW_TRANSFER_CYCLIC_TREE = "raw_transfer.cyclic_tree"
+    RAW_TRANSFER_LIMIT_EXCEEDED = "raw_transfer.limit_exceeded"
+    RAW_TRANSFER_RATIONALIZATION_FAILED = (
+        "raw_transfer.rationalization_failed"
+    )
+    RAW_TRANSFER_NONPOLYNOMIAL_NUMERATOR = (
+        "raw_transfer.nonpolynomial_numerator"
+    )
+    RAW_TRANSFER_NONPOLYNOMIAL_DENOMINATOR = (
+        "raw_transfer.nonpolynomial_denominator"
+    )
+    RAW_TRANSFER_ZERO_DENOMINATOR = "raw_transfer.zero_denominator"
+    RAW_TRANSFER_CONDITIONAL_DENOMINATOR = (
+        "raw_transfer.conditional_denominator"
+    )
+    RAW_TRANSFER_VARIABLE_MISMATCH = "raw_transfer.variable_mismatch"
+    RAW_TRANSFER_UNDECLARED_SYMBOL = "raw_transfer.undeclared_symbol"
+    RAW_TRANSFER_RESOURCE_LIMIT_EXCEEDED = (
+        "raw_transfer.resource_limit_exceeded"
+    )
+    RAW_TRANSFER_ZERO_DIVISOR = "raw_transfer.zero_divisor"
+    RAW_TRANSFER_CONDITIONAL_DIVISOR = "raw_transfer.conditional_divisor"
 
 
 @dataclass(frozen=True, slots=True)
