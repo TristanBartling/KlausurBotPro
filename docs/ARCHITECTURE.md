@@ -262,8 +262,14 @@ Zähler-/Nennerpolynom, Voraussetzungen und Definitionsausschlüssen.
 Provenienztexte, Eingabeform, Quellpfade, unbenutzte Freigaben und interne
 Schritte beeinflussen Gleichheit und Hash nicht. Deshalb können getrennte und
 gemeinsame Eingaben denselben Wert erzeugen. Skalare Vielfache bleiben vor
-einer späteren Reduktion ungleich. Reduktion, Properness, Pole, Nullstellen,
-Stabilität und eine `ReducedTransferFunction` sind noch nicht implementiert.
+einer späteren Reduktion ungleich. `used_parameter_names` wird ausschließlich
+aus dem Polynomialpaar, den Voraussetzungen und den Definitionsausschlüssen
+abgeleitet; nur im Ursprungsausdruck vorkommende Parameternamen bleiben über
+`input_snapshot.used_symbol_names` zugänglich. Gleiche Raw-Werte besitzen
+damit dieselben mathematischen und abgeleiteten Eigenschaften, dürfen aber
+unterschiedliche Provenienz-Snapshots besitzen. Reduktion, Properness, Pole,
+Nullstellen, Stabilität und eine `ReducedTransferFunction` sind noch nicht
+implementiert.
 
 ## Offene Architekturentscheidungen
 

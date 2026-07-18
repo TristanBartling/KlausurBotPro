@@ -21,6 +21,7 @@ from klausurbotpro.domain.raw_algebraic_expression import (
     ExactNumber,
     Multiply,
     Power,
+    Subtract,
     Symbol,
 )
 
@@ -120,14 +121,71 @@ def test_snapshot_is_disjoint_and_keeps_k_over_k_visible() -> None:
     assert value.denominator.expression.canonical_text == "K"
 
 
-def test_used_parameters_come_from_validated_input_snapshot() -> None:
-    value = _create(
-        Power(Divide(Symbol("K"), ExactNumber(2)), ExactNumber(0))
+def test_provenance_only_parameter_does_not_change_value_or_derived_facts() -> None:
+    plain = _create(ExactNumber(1))
+    with_provenance_parameter = _create(
+        Power(Divide(Symbol("K"), ExactNumber(2)), ExactNumber(0)),
+        text="(K/2)^0",
     )
 
-    assert value.numerator.expression.canonical_text == "1"
-    assert value.denominator.expression.canonical_text == "1"
-    assert value.used_parameter_names == frozenset({"K"})
+    assert plain == with_provenance_parameter
+    assert hash(plain) == hash(with_provenance_parameter)
+    assert plain.used_parameter_names == frozenset()
+    assert with_provenance_parameter.used_parameter_names == frozenset()
+    assert isinstance(
+        with_provenance_parameter.input_snapshot,
+        CommonTransferFunctionInput,
+    )
+    assert with_provenance_parameter.input_snapshot.used_symbol_names == (
+        frozenset({"K"})
+    )
+    assert {plain: "canonical"}[with_provenance_parameter] == "canonical"
+
+
+def test_canonical_zero_inputs_have_consistent_derived_properties() -> None:
+    denominator = Add(Symbol("s"), ExactNumber(1))
+    plain_zero = _create(Divide(ExactNumber(0), denominator))
+    cancelled_zero = _create(
+        Divide(
+            Subtract(Symbol("K"), Symbol("K")),
+            denominator,
+        )
+    )
+
+    assert plain_zero == cancelled_zero
+    assert hash(plain_zero) == hash(cancelled_zero)
+    assert plain_zero.used_parameter_names == frozenset()
+    assert cancelled_zero.used_parameter_names == frozenset()
+    assert plain_zero.input_snapshot != cancelled_zero.input_snapshot
+
+
+def test_parameters_in_raw_pair_and_validity_conditions_remain_used() -> None:
+    k_over_k = _create(Divide(Symbol("K"), Symbol("K")))
+    reciprocal_k_s = _create(
+        Divide(
+            ExactNumber(1),
+            Multiply(Symbol("K"), Symbol("s")),
+        )
+    )
+
+    assert k_over_k.used_parameter_names == frozenset({"K"})
+    assert reciprocal_k_s.used_parameter_names == frozenset({"K"})
+
+
+def test_unused_factory_parameter_permissions_do_not_become_used() -> None:
+    input_value = CommonTransferFunctionInput(
+        expression=ExactNumber(1),
+        variable_name="s",
+        allowed_symbol_names=frozenset({"s"}),
+        original_text="1",
+        normalized_text="1",
+    )
+    result = RawTransferFunctionFactory(
+        allowed_parameter_names=frozenset({"K", "T"})
+    ).create(input_value)
+
+    assert result.value is not None
+    assert result.value.used_parameter_names == frozenset()
 
 
 def test_prerequisites_and_exclusions_are_part_of_value_identity() -> None:
@@ -147,8 +205,39 @@ def test_prerequisites_and_exclusions_are_part_of_value_identity() -> None:
 
     assert plain.numerator == with_parameter_gap.numerator
     assert plain.denominator == with_parameter_gap.denominator
+    assert with_parameter_gap.used_parameter_names == frozenset({"K"})
     assert plain != with_parameter_gap
     assert plain != with_variable_gap
+
+
+def test_equal_values_expose_identical_mathematical_and_derived_properties() -> None:
+    first = _create(ExactNumber(1))
+    second = _create(
+        Power(Divide(Symbol("K"), ExactNumber(2)), ExactNumber(0))
+    )
+
+    assert first == second
+    assert (
+        first.variable_name,
+        first.numerator,
+        first.denominator,
+        first.used_parameter_names,
+        first.prerequisites,
+        first.domain_exclusions,
+        first.numerator_conditions,
+        first.denominator_conditions,
+        first.is_zero,
+    ) == (
+        second.variable_name,
+        second.numerator,
+        second.denominator,
+        second.used_parameter_names,
+        second.prerequisites,
+        second.domain_exclusions,
+        second.numerator_conditions,
+        second.denominator_conditions,
+        second.is_zero,
+    )
 
 
 def test_public_values_expose_no_sympy_objects() -> None:

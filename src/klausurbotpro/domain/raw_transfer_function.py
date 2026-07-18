@@ -55,7 +55,13 @@ class RawTransferFunction:
         object.__setattr__(
             instance,
             "used_parameter_names",
-            input_snapshot.used_symbol_names - {variable_name},
+            _used_parameter_names(
+                variable_name=variable_name,
+                numerator=numerator,
+                denominator=denominator,
+                prerequisites=prerequisites,
+                domain_exclusions=domain_exclusions,
+            ),
         )
         object.__setattr__(instance, "input_snapshot", input_snapshot)
         object.__setattr__(instance, "prerequisites", tuple(prerequisites))
@@ -102,6 +108,25 @@ class RawTransferFunction:
         )
         digest = sha256("\0".join(parts).encode("utf-8")).digest()[:8]
         return int.from_bytes(digest, byteorder="big", signed=True)
+
+
+def _used_parameter_names(
+    *,
+    variable_name: str,
+    numerator: Polynomial,
+    denominator: Polynomial,
+    prerequisites: tuple[TransferFunctionPrerequisite, ...],
+    domain_exclusions: tuple[TransferFunctionDomainExclusion, ...],
+) -> frozenset[str]:
+    names = set(numerator.used_parameter_names)
+    names.update(denominator.used_parameter_names)
+    for prerequisite in prerequisites:
+        for expression in prerequisite.expressions:
+            names.update(expression.symbol_names)
+    for exclusion in domain_exclusions:
+        names.update(exclusion.polynomial.used_parameter_names)
+    names.discard(variable_name)
+    return frozenset(names)
 
 
 __all__ = ["RawTransferFunction"]

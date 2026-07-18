@@ -137,7 +137,13 @@ Divisoren sowie identische und konditionale Nullnenner. Insbesondere werden
 führende Koeffizientenbedingungen nicht pauschal als
 Transferfunktionsvoraussetzung übernommen. Sortierung, Deduplizierung,
 Herkunft, Unveränderlichkeit, Gleichheit, Hash und Dictionary-Key-Verwendung
-sind deterministisch geprüft.
+sind deterministisch geprüft. Regressionstests vergleichen algebraisch gleiche
+Raw-Werte mit unterschiedlicher Eingabeprovenienz. Sie sichern, dass
+`used_parameter_names` ausschließlich aus Polynomialpaar, Voraussetzungen und
+Ausschlüssen folgt, während nur im Ursprung vorkommende Parameternamen im
+Snapshot erhalten bleiben. Für gleiche Raw-Werte müssen sämtliche
+mathematischen und daraus abgeleiteten öffentlichen Eigenschaften identisch
+sein.
 
 Limitfälle decken Rohknoten, Tiefe, Ganzzahlziffern, Exponenten,
 rationalisierte Vorkommen, Zwischenausdrücke, Übersetzungsschritte, Grade,
