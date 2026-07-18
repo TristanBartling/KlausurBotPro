@@ -15,6 +15,32 @@ Fachlogik, Application Services, Workspace und Reporting an klar begrenzten
 Schnittstellen. GUI und externe Dienste werden dabei durch kontrollierbare
 Adapter ersetzt, sofern nicht gerade deren Integration geprüft wird.
 
+## Parser- und Sicherheitstests
+
+Der Phase-1A.1-Parser wird unabhängig in vier Stufen geprüft:
+
+- tokenbasierte Normalisierung von Dezimalpunkt, Dezimalkomma und `^`
+- AST-Whitelist und standardmäßige Ablehnung unbekannter Knoten
+- manuelle, exakte Übersetzung erlaubter Knoten
+- öffentliche Ergebnisse mit stabilen Diagnosecodes
+
+Parametrische Tests decken gültige Ganzzahlen, Brüche, Dezimalzahlen, Symbole,
+Klammern, Vorzeichen und Potenzen ab. Priorität und Rechtsassoziativität werden
+explizit für `-s^2`, `(-s)^2` und `s^2^3` geprüft.
+
+Angriffstests umfassen unter anderem Aufrufe, Imports, Attribute, Subscripts,
+Container, Comprehensions, Generatoren, Lambda-Ausdrücke, Strings,
+boolesche Ausdrücke, Vergleiche, Walrus-Ausdrücke, komplexe Literale und
+Dunder-Namen. Ressourcenprüfungen erzwingen Grenzen für Eingabelänge,
+AST-Größe und -Tiefe, Symbolanzahl, Ganzzahlziffern, Exponenten und geschätzte
+Termanzahl. Kein Sicherheitstest darf echte Dateisystem-, Prozess- oder
+Netzwerkoperationen ausführen.
+
+Exaktheitstests stellen sicher, dass Dezimalpunkt und Dezimalkomma denselben
+rationalen Wert liefern und `ExactExpression` keine SymPy-Float-Atome enthält.
+Fehlertests prüfen deterministische Codes und stellen sicher, dass keine rohe
+Syntax- oder Drittanbieterexception die Parser-Fassade verlässt.
+
 ## Regressionstests mit offiziellen Aufgaben
 
 Verifizierte Aufgaben aus offiziellen Unterlagen werden später als
