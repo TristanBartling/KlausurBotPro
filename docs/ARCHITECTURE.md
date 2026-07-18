@@ -51,10 +51,56 @@ Prüfergebnisse getrennt speichern. Text und Formeln werden daraus gerendert,
 nicht als alleinige Wahrheit gespeichert. Das konkrete Modell wird in Phase 1
 an einem realen vertikalen Anwendungsfall entworfen.
 
+## Implementierter Ausdrucksparser (Phase 1A.1)
+
+Der sichere Ausdrucksparser ist in zwei nach innen gerichtete Pakete getrennt:
+
+- `domain` enthält unveränderliche Diagnosen und `ExactExpression`.
+- `parsing` enthält Konfiguration, Ressourcenlimits, Normalisierung und die
+  AST-Übersetzung. Es darf `domain` importieren; die umgekehrte Richtung ist
+  ausgeschlossen.
+
+Rohe Nutzereingaben werden tokenbasiert normalisiert und mit
+`ast.parse(..., mode="eval")` in eine kontrollierte Zwischendarstellung
+überführt. Die erlaubte Ausdruckssprache besteht ausschließlich aus Zahlen,
+freigegebenen Symbolen, Klammern, unären Vorzeichen und den Operatoren
+`+`, `-`, `*`, `/` und Potenzen. Python ergänzt Namen intern um den passiven
+AST-Kontext `Load`; er trägt keine ausführbare Semantik. Alle anderen
+Sprachkonstrukte werden durch eine explizite Whitelist abgelehnt.
+
+Die Normalisierung fügt unmittelbar benachbarte Ziffernfolgen um ein
+Dezimalkomma zuerst zu einem Zahlentoken zusammen. Jedes danach verbleibende
+Komma ist unabhängig von der Klammertiefe ungültig. Eine vollständige
+Token-Adjazenzprüfung erkennt implizite Multiplikation zwischen Zahlen,
+freigegebenen Symbolen und mathematischen Klammergruppen; Multiplikation muss
+immer mit `*` geschrieben werden. Unbekannte Funktionsnamen werden dadurch
+nicht freigegeben, und Funktionsaufrufe bleiben verboten.
+
+Erlaubte AST-Knoten werden manuell in SymPy-Objekte übersetzt. Weder `eval`
+noch `sympify` oder `parse_expr` erhalten Nutzereingaben. Dezimalzahlen werden
+direkt aus ihrem geprüften Token als rationale Werte konstruiert, sodass keine
+binären Float-Zwischenwerte entstehen.
+
+`ExactExpression` kapselt den SymPy-Ausdruck und stellt der späteren
+Anwendungsschicht nur Symbolnamen sowie kanonische Text- und
+LaTeX-Darstellungen bereit. Die interne Fachkern-Schnittstelle `_as_sympy()`
+ist ausschließlich für kontrollierte mathematische Domain-Module vorgesehen,
+nicht für rohe Eingaben oder GUI-Code.
+
+Vor symbolischer Verarbeitung gelten zentral konfigurierbare Grenzen für
+Eingabelänge, AST-Größe und -Tiefe, konfigurierte und verwendete Symbole,
+Ganzzahlziffern, Exponenten und geschätzte Termanzahl. Eine zu große
+`allowed_symbols`-Menge wird bereits bei der Konfiguration abgelehnt, bevor
+SymPy-Symbole entstehen. Erwartbare `MemoryError`, `RecursionError` und
+`OverflowError` aus Normalisierung, Parsing, Validierung und kontrollierter
+SymPy-Erzeugung werden als `PARSE_LIMIT_EXCEEDED` gekapselt. Diese Grenzen
+reduzieren Denial-of-Service-Risiken, ersetzen aber keinen harten
+Prozess-Timeout.
+
 ## Offene Architekturentscheidungen
 
 - genaue Grenzen und Repräsentationen der Domain-Modelle
-- sicherer Parser und erlaubte mathematische Syntax
+- Erweiterung der bewusst kleinen Parsergrammatik für spätere Datentypen
 - Strategie für unveränderliche Workspace-Versionen und Verzweigungen
 - Serialisierungsformat und Migrationskonzept
 - Plugin- oder Registry-Modell für Werkzeuge und Workflows
