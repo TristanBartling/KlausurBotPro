@@ -15,8 +15,16 @@ from klausurbotpro.domain.polynomial_contracts import (
     PolynomialLimits,
 )
 from klausurbotpro.domain.polynomial_factory import PolynomialFactory
+from klausurbotpro.domain.raw_algebraic_expression import RawAlgebraicExpression
+from klausurbotpro.domain.transfer_function_input import (
+    CommonTransferFunctionInput,
+    SeparatedTransferFunctionInput,
+    TransferFunctionInput,
+    TransferFunctionInputForm,
+)
 
 __all__ = [
+    "CommonTransferFunctionInput",
     "Diagnostic",
     "DiagnosticCode",
     "DiagnosticSeverity",
@@ -28,4 +36,8 @@ __all__ = [
     "PolynomialDegreeInfo",
     "PolynomialFactory",
     "PolynomialLimits",
+    "RawAlgebraicExpression",
+    "SeparatedTransferFunctionInput",
+    "TransferFunctionInput",
+    "TransferFunctionInputForm",
 ]

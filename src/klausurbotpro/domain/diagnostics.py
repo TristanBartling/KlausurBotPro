@@ -23,6 +23,12 @@ class DiagnosticCode(StrEnum):
     PARSE_IMPLICIT_MULTIPLICATION = "parse.implicit_multiplication"
     PARSE_LIMIT_EXCEEDED = "parse.limit_exceeded"
     PARSE_INVALID_EXPONENT = "parse.invalid_exponent"
+    RATIONAL_INPUT_EMPTY_NUMERATOR = "rational_input.empty_numerator"
+    RATIONAL_INPUT_EMPTY_DENOMINATOR = "rational_input.empty_denominator"
+    RATIONAL_INPUT_VARIABLE_NOT_ALLOWED = (
+        "rational_input.variable_not_allowed"
+    )
+    RATIONAL_INPUT_LIMIT_EXCEEDED = "rational_input.limit_exceeded"
     MATH_DIVISION_BY_ZERO = "math.division_by_zero"
     POLYNOMIAL_INVALID_VARIABLE = "polynomial.invalid_variable"
     POLYNOMIAL_VARIABLE_CONFLICT = "polynomial.variable_conflict"

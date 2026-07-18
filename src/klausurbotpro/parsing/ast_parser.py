@@ -2,7 +2,6 @@
 
 import ast
 import re
-from dataclasses import dataclass
 from typing import NoReturn
 
 import sympy as sp
@@ -15,32 +14,18 @@ from klausurbotpro.domain.diagnostics import (
 from klausurbotpro.domain.expression import ExactExpression
 from klausurbotpro.parsing.contracts import ParserConfig, ParseResult
 from klausurbotpro.parsing.normalization import normalize_expression
+from klausurbotpro.parsing.safe_ast import (
+    SafeAstFailure,
+    evaluate_integer_expression,
+    fail_limit,
+    validate_constant,
+    validate_safe_ast,
+)
 
 _INTEGER_PATTERN = re.compile(r"[0-9]+\Z")
 _DECIMAL_PATTERN = re.compile(r"[0-9]+\.[0-9]+\Z")
 _RESOURCE_ERRORS = (MemoryError, RecursionError, OverflowError)
-_ALLOWED_NODE_TYPES = (
-    ast.Expression,
-    ast.Constant,
-    ast.Name,
-    ast.BinOp,
-    ast.UnaryOp,
-    ast.Add,
-    ast.Sub,
-    ast.Mult,
-    ast.Div,
-    ast.Pow,
-    ast.UAdd,
-    ast.USub,
-    ast.Load,
-)
-
-
-@dataclass(frozen=True, slots=True)
-class _ParseFailure(Exception):
-    code: DiagnosticCode
-    message: str
-    details: tuple[tuple[str, str], ...] = ()
+_ParseFailure = SafeAstFailure
 
 
 class SafeExpressionParser:
@@ -107,77 +92,10 @@ class SafeExpressionParser:
         return ParseResult(value=exact)
 
     def _validate_tree(self, tree: ast.Expression) -> None:
-        limits = self._config.limits
-        nodes = list(ast.walk(tree))
-        if len(nodes) > limits.max_ast_nodes:
-            self._fail_limit("max_ast_nodes")
-        if _tree_depth(tree) > limits.max_ast_depth:
-            self._fail_limit("max_ast_depth")
-
-        used_symbols: set[str] = set()
-        for node in nodes:
-            if not isinstance(node, _ALLOWED_NODE_TYPES):
-                raise _ParseFailure(
-                    DiagnosticCode.PARSE_FORBIDDEN_NODE,
-                    "Der Ausdruck enthält eine nicht erlaubte Sprachstruktur.",
-                    (("node", type(node).__name__),),
-                )
-
-            if isinstance(node, ast.Name):
-                if node.id.startswith("__") or node.id.endswith("__"):
-                    raise _ParseFailure(
-                        DiagnosticCode.PARSE_FORBIDDEN_NODE,
-                        "Dunder-Namen sind in mathematischen Ausdrücken verboten.",
-                        (("symbol", node.id),),
-                    )
-                if node.id not in self._config.allowed_symbols:
-                    raise _ParseFailure(
-                        DiagnosticCode.PARSE_UNKNOWN_SYMBOL,
-                        f"Das Symbol '{node.id}' ist nicht freigegeben.",
-                        (("symbol", node.id),),
-                    )
-                used_symbols.add(node.id)
-
-            if isinstance(node, ast.Constant):
-                self._validate_constant(node)
-
-            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
-                exponent = _evaluate_integer_expression(
-                    node.right,
-                    limits.max_exponent_abs,
-                )
-                if exponent is None:
-                    raise _ParseFailure(
-                        DiagnosticCode.PARSE_INVALID_EXPONENT,
-                        "Exponenten müssen exakte ganze Zahlen sein.",
-                    )
-                if abs(exponent) > limits.max_exponent_abs:
-                    self._fail_limit("max_exponent_abs")
-
-        if len(used_symbols) > limits.max_symbols:
-            self._fail_limit("max_symbols")
-
-        estimated_terms = _estimate_terms(
-            tree.body,
-            limits.max_estimated_terms,
-            limits.max_exponent_abs,
-        )
-        if estimated_terms > limits.max_estimated_terms:
-            self._fail_limit("max_estimated_terms")
+        validate_safe_ast(tree, self._config)
 
     def _validate_constant(self, node: ast.Constant) -> None:
-        if isinstance(node.value, bool) or node.value is None:
-            raise _ParseFailure(
-                DiagnosticCode.PARSE_FORBIDDEN_NODE,
-                "Nur ganze und exakte Dezimalzahlen sind als Literale erlaubt.",
-                (("literal", repr(node.value)),),
-            )
-        if not isinstance(node.value, (int, float)):
-            raise _ParseFailure(
-                DiagnosticCode.PARSE_FORBIDDEN_NODE,
-                "Nur ganze und exakte Dezimalzahlen sind als Literale erlaubt.",
-                (("literal_type", type(node.value).__name__),),
-            )
+        validate_constant(node)
 
     def _translate(self, node: ast.AST, source: str) -> sp.Expr:
         if isinstance(node, ast.Constant):
@@ -230,7 +148,7 @@ class SafeExpressionParser:
                     )
                 return left / right
             if isinstance(node.op, ast.Pow):
-                exponent = _evaluate_integer_expression(
+                exponent = evaluate_integer_expression(
                     node.right,
                     self._config.limits.max_exponent_abs,
                 )
@@ -250,11 +168,7 @@ class SafeExpressionParser:
         self._fail_forbidden(node)
 
     def _fail_limit(self, limit_name: str) -> NoReturn:
-        raise _ParseFailure(
-            DiagnosticCode.PARSE_LIMIT_EXCEEDED,
-            "Der Ausdruck überschreitet eine konfigurierte Sicherheitsgrenze.",
-            (("limit", limit_name),),
-        )
+        fail_limit(limit_name)
 
     def _fail_forbidden(self, node: ast.AST) -> NoReturn:
         raise _ParseFailure(
@@ -294,111 +208,3 @@ class SafeExpressionParser:
                 ),
             ),
         )
-
-
-def _tree_depth(node: ast.AST) -> int:
-    maximum = 0
-    pending = [(node, 1)]
-    while pending:
-        current, depth = pending.pop()
-        maximum = max(maximum, depth)
-        pending.extend(
-            (child, depth + 1) for child in ast.iter_child_nodes(current)
-        )
-    return maximum
-
-
-def _evaluate_integer_expression(node: ast.AST, cap: int) -> int | None:
-    if isinstance(node, ast.Constant):
-        if isinstance(node.value, bool) or not isinstance(node.value, int):
-            return None
-        return node.value if abs(node.value) <= cap else _overflow_value(cap)
-
-    if isinstance(node, ast.UnaryOp):
-        value = _evaluate_integer_expression(node.operand, cap)
-        if value is None:
-            return None
-        if abs(value) > cap:
-            return value
-        if isinstance(node.op, ast.UAdd):
-            return value
-        if isinstance(node.op, ast.USub):
-            return -value
-        return None
-
-    if not isinstance(node, ast.BinOp):
-        return None
-
-    left = _evaluate_integer_expression(node.left, cap)
-    right = _evaluate_integer_expression(node.right, cap)
-    if left is None or right is None:
-        return None
-    if abs(left) > cap or abs(right) > cap:
-        return _overflow_value(cap)
-
-    if isinstance(node.op, ast.Add):
-        result = left + right
-    elif isinstance(node.op, ast.Sub):
-        result = left - right
-    elif isinstance(node.op, ast.Mult):
-        result = left * right
-    elif isinstance(node.op, ast.Div):
-        if right == 0 or left % right != 0:
-            return None
-        result = left // right
-    elif isinstance(node.op, ast.Pow):
-        if right < 0:
-            return None
-        if abs(left) > 1 and right > cap:
-            return _overflow_value(cap)
-        result = pow(left, right)
-    else:
-        return None
-
-    return result if abs(result) <= cap else _overflow_value(cap)
-
-
-def _overflow_value(cap: int) -> int:
-    return cap + 1
-
-
-def _estimate_terms(node: ast.AST, cap: int, exponent_cap: int) -> int:
-    if isinstance(node, (ast.Constant, ast.Name)):
-        return 1
-    if isinstance(node, ast.UnaryOp):
-        return _estimate_terms(node.operand, cap, exponent_cap)
-    if not isinstance(node, ast.BinOp):
-        return cap + 1
-
-    left = _estimate_terms(node.left, cap, exponent_cap)
-    right = _estimate_terms(node.right, cap, exponent_cap)
-    if isinstance(node.op, (ast.Add, ast.Sub)):
-        return _capped_add(left, right, cap)
-    if isinstance(node.op, (ast.Mult, ast.Div)):
-        return _capped_multiply(left, right, cap)
-    if isinstance(node.op, ast.Pow):
-        exponent = _evaluate_integer_expression(node.right, exponent_cap)
-        if exponent is None or abs(exponent) > exponent_cap:
-            return cap + 1
-        return _capped_power(left, abs(exponent), cap)
-    return cap + 1
-
-
-def _capped_add(left: int, right: int, cap: int) -> int:
-    result = left + right
-    return result if result <= cap else cap + 1
-
-
-def _capped_multiply(left: int, right: int, cap: int) -> int:
-    if left > cap or right > cap or (left and right > cap // left):
-        return cap + 1
-    return left * right
-
-
-def _capped_power(base: int, exponent: int, cap: int) -> int:
-    result = 1
-    for _ in range(exponent):
-        result = _capped_multiply(result, base, cap)
-        if result > cap:
-            return cap + 1
-    return result
