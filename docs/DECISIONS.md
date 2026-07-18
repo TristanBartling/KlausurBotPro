@@ -20,6 +20,10 @@ Produktionsabhängigkeiten müssen hier vor ihrer Aufnahme begründet werden.
 | Ausdrucksparser | Token-Normalisierung, Python-AST-Whitelist und manuelle SymPy-Übersetzung geprüft | Kein `eval`, keine rohe Übergabe an `sympify` oder `parse_expr`; Token-Adjazenz erkennt implizite Multiplikation, und nur unmittelbar zwischen Ziffernfolgen verbrauchte Dezimalkommas sind gültig. |
 | Exakte Ausdrücke | Unveränderliches `ExactExpression` kapselt SymPy | Rationale Dezimalwerte, wertbasierte Gleichheit, stabile Darstellung und interne Fachkern-Schnittstelle sind geprüft. |
 | Parsergrenzen | Zentraler `ParserLimits`-Vertrag | Standardgrenzen: 1.000 Zeichen, 256 AST-Knoten, Tiefe 32, 16 konfigurierte und verwendete Symbole, 128 Ganzzahlziffern, Exponentenbetrag 32 und 2.048 geschätzte Terme. Die Symbolmenge wird vor der SymPy-Tabelle begrenzt; erwartbare Ressourcenfehler werden als `PARSE_LIMIT_EXCEEDED` diagnostiziert. |
+| Polynomialmodell | Factory-only `Polynomial` auf Basis von `ExactExpression` geprüft | Der unveränderliche Wert enthält nur mathematisch verwendete Parameter; unbenutzte Deklarationen verändern weder Gleichheit noch Hash. Nullpolynom, dichte exakte Koeffizienten und kanonische Darstellung sind getestet. |
+| Polynomialgrad | Generischer und garantierter Grad werden getrennt | Unbekannte Nullheit eines symbolischen führenden Koeffizienten erzeugt eine explizite Nichtnullbedingung und niemals eine unbelegte Gradbehauptung. |
+| Polynomialkoeffizienten | `QQ` beziehungsweise deterministischer `QQ.frac_field` | Exakte rationale Zahlen, Parameterpolynome und rationale Parameterfunktionen sind erlaubt; `EX`, Float-Atome, Funktionen und algebraische Erweiterungen bleiben ausgeschlossen. |
+| Polynomialgrenzen | Separater `PolynomialLimits`-Vertrag | Standardgrenzen: Grad 32, 33 Koeffizienten, 33 strukturelle Terme, 16 Parameter, 128 Operationen je Koeffizient und 512 Ausdrucksknoten. Vor SymPy erfolgt eine strukturelle Gradprüfung ohne grobe exponentielle Termschätzung. |
 | Build-Trennung | Separater Klausur-Build ohne KI | Technischer Nachweis und konkrete Build-Profile sind noch offen. |
 
 ## Aktuelle Entwicklungsabhängigkeiten

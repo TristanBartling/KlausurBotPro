@@ -13,7 +13,7 @@ class DiagnosticSeverity(StrEnum):
 
 
 class DiagnosticCode(StrEnum):
-    """Stable, machine-readable codes for expected parser failures."""
+    """Stable, machine-readable codes for expected validation failures."""
 
     PARSE_EMPTY_INPUT = "parse.empty_input"
     PARSE_INVALID_SYNTAX = "parse.invalid_syntax"
@@ -24,6 +24,38 @@ class DiagnosticCode(StrEnum):
     PARSE_LIMIT_EXCEEDED = "parse.limit_exceeded"
     PARSE_INVALID_EXPONENT = "parse.invalid_exponent"
     MATH_DIVISION_BY_ZERO = "math.division_by_zero"
+    POLYNOMIAL_INVALID_VARIABLE = "polynomial.invalid_variable"
+    POLYNOMIAL_VARIABLE_CONFLICT = "polynomial.variable_conflict"
+    POLYNOMIAL_UNDECLARED_SYMBOL = "polynomial.undeclared_symbol"
+    POLYNOMIAL_NOT_POLYNOMIAL = "polynomial.not_polynomial"
+    POLYNOMIAL_NEGATIVE_EXPONENT = "polynomial.negative_exponent"
+    POLYNOMIAL_SYMBOLIC_EXPONENT = "polynomial.symbolic_exponent"
+    POLYNOMIAL_NONINTEGER_EXPONENT = "polynomial.noninteger_exponent"
+    POLYNOMIAL_VARIABLE_IN_DENOMINATOR = (
+        "polynomial.variable_in_denominator"
+    )
+    POLYNOMIAL_FLOAT_NOT_ALLOWED = "polynomial.float_not_allowed"
+    POLYNOMIAL_PARAMETER_LIMIT_EXCEEDED = (
+        "polynomial.parameter_limit_exceeded"
+    )
+    POLYNOMIAL_DEGREE_LIMIT_EXCEEDED = "polynomial.degree_limit_exceeded"
+    POLYNOMIAL_TERM_LIMIT_EXCEEDED = "polynomial.term_limit_exceeded"
+    POLYNOMIAL_COEFFICIENT_LIMIT_EXCEEDED = (
+        "polynomial.coefficient_limit_exceeded"
+    )
+    POLYNOMIAL_COMPLEXITY_LIMIT_EXCEEDED = (
+        "polynomial.complexity_limit_exceeded"
+    )
+    POLYNOMIAL_RESOURCE_LIMIT_EXCEEDED = (
+        "polynomial.resource_limit_exceeded"
+    )
+    POLYNOMIAL_CONDITIONAL_DEGREE = "polynomial.conditional_degree"
+    POLYNOMIAL_PARAMETER_DENOMINATOR_NONZERO = (
+        "polynomial.parameter_denominator_nonzero"
+    )
+    POLYNOMIAL_SYMBOL_ASSUMPTION_NOT_ALLOWED = (
+        "polynomial.symbol_assumption_not_allowed"
+    )
 
 
 @dataclass(frozen=True, slots=True)
