@@ -13,11 +13,11 @@ die vorläufige Architektur in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Python 3.12 oder neuer
 - Windows PowerShell
 
-Die Bootstrap-Anwendung benötigt keine Produktionsabhängigkeiten. PySide6 ist
-als optionale GUI-Abhängigkeit vorgesehen, aber in der aktuell geprüften
-Python-3.14-Umgebung nicht installiert. Bis die GUI-Entscheidung validiert ist,
-startet die Anwendung bewusst als minimale Konsolenausgabe. Es wird kein
-Ersatz-Webstack verwendet.
+Die Phase-0.5-Anwendung verwendet PySide6 für ein minimales Hauptfenster.
+SymPy, NumPy, SciPy, Matplotlib und python-control sind als geprüfte
+Produktionsabhängigkeiten aufgenommen, ohne bereits Fachmodule zu
+implementieren. Ergebnisse des Technologiechecks stehen in
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ## Installation unter Windows PowerShell
 
@@ -29,21 +29,15 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-PySide6 wird erst aufgenommen, wenn die vorläufige GUI-Entscheidung validiert
-ist und eine tatsächlich verwendete Desktop-Oberfläche implementiert wird.
-
 ## Start
 
 ```powershell
 python -m klausurbotpro
 ```
 
-Erwartete Ausgabe:
-
-```text
-KlausurBotPro
-Projektfundament – noch keine Fachmodule
-```
+Es öffnet sich ein Fenster mit dem Titel `KlausurBotPro` und dem Hinweis
+`Projektfundament – noch keine Fachmodule`. Das Schließen des Fensters beendet
+die Anwendung sauber.
 
 ## Qualitätssicherung
 
@@ -51,6 +45,7 @@ Projektfundament – noch keine Fachmodule
 python -m pytest
 python -m ruff check .
 python -m mypy src tests
+python -m pip check
 python -c "import klausurbotpro; print(klausurbotpro.__version__)"
 ```
 

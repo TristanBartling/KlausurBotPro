@@ -10,7 +10,14 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
 authors = [{ name = "KlausurBotPro contributors" }]
-dependencies = []
+dependencies = [
+    "control>=0.10.2",
+    "matplotlib>=3.11.1",
+    "numpy>=2.5.1",
+    "PySide6>=6.11.1",
+    "scipy>=1.18.0",
+    "sympy>=1.14.0",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -41,3 +48,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["control", "control.*", "scipy", "scipy.*", "sympy", "sympy.*"]
+ignore_missing_imports = true

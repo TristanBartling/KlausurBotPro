@@ -38,6 +38,7 @@ secrets.*
 *.sqlite3
 
 # Lokale Originalquellen und reproduzierbare Extrakte
-resources/pdf/*.pdf
+resources/pdf/*
+!resources/pdf/README.md
 resources/extracted/*
 !resources/extracted/.gitkeep
