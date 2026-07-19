@@ -352,19 +352,28 @@ Qt-unabhängige RequestFactory deckt unbelegte, ganzzahlige und rationale
 Parameter, kanonische Kürzung, ungültige Zeilen, doppelte und unsichere Namen,
 Variablenkonflikte sowie Parameter- und Ziffernlimits ab. Insbesondere werden
 Float-, Dezimal- und Exponentialnotation vor jeder `int`-Konvertierung
-abgelehnt und kein Teilrequest erzeugt.
+abgelehnt und kein Teilrequest erzeugt. Regressionstests gleichen Dunder-,
+Schlüsselwort-, Leerzeichen- und sichere Unicode-Identifier mit der
+Workflowvalidierung ab. Benutzerdefiniert unterschiedliche Parser-, Raw-,
+Wurzel- und Stabilitätsgrenzen sowie große leere Zeilentupel prüfen die
+konservative Begrenzung vor Iteration und Konvertierung. String-Unterklassen,
+nicht-tupelförmige Zeilen und `bool`-Werte werden defensiv abgelehnt.
 
 Presenter-Tests verwenden einen synchron angeschlossenen Fake-Empfänger. Sie
 prüfen unveränderliche View-States, RUNNING-Sperre, strukturierte
 Fokuszuordnung, Erhalt vorheriger Resultate bei neuer ungültiger Eingabe,
 Berichtsumschaltung, exakten Clipboardinhalt und Reset. Erwartbare
 Workflowfehler bleiben strukturierte Ergebnisse; unerwartete Workerfehler
-erscheinen ohne Traceback im normalen Ergebnisbereich.
+erscheinen ohne Traceback im normalen Ergebnisbereich und entfernen State,
+Berichte und kopierbaren Inhalt eines früheren erfolgreichen Laufs.
 
 Workspace-Tests laufen mit dem vorhandenen `QApplication` im Offscreen-Modus.
 Sie prüfen COMMON/SEPARATED ohne Textverlust, Parameterzeilen, Buttons,
 Feldfokus, fünf textuelle Stufenstatus, Severity ohne reine Farbcodierung,
-Teilresultate, Plaintext-/LaTeX-Tabs, Clipboard und Reset. Importtests
+die zur höchsten Severity gehörende erste Meldung, Teilresultate,
+Plaintext-/LaTeX-Tabs, Clipboard und Reset. Ein Fehler-Smoke prüft, dass nach
+einem unerwarteten Workerfehler Zusammenfassungen, Stufen, beide Berichte und
+die Copy-Aktion zurückgesetzt sind. Importtests
 verbieten Domain-Analyzer, Parsing und SymPy in allen UI-Modulen.
 
 Wenige echte `QThread`-Integrationstests verwenden `QSignalSpy` zusammen mit

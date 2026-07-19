@@ -123,11 +123,9 @@ class TransferFunctionPresenter(QObject):
         if type(value) is not WorkflowWorkerFailure:
             raise TypeError("value must be a WorkflowWorkerFailure.")
         self._set_state(
-            replace(
-                self._state,
+            TransferFunctionViewState(
                 run_status=TransferFunctionUiRunStatus.FAILED,
-                request_errors=(),
-                focused_field=None,
+                active_report_view=self._state.active_report_view,
                 general_message=value.message,
             )
         )

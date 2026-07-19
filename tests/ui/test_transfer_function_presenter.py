@@ -113,12 +113,31 @@ def test_result_views_clipboard_text_and_reset_are_exact() -> None:
     assert presenter.state == TransferFunctionViewState()
 
 
-def test_unexpected_worker_failure_is_safe_and_keeps_gui_state() -> None:
+def test_unexpected_worker_failure_clears_previous_result_and_is_safe() -> None:
     presenter = TransferFunctionPresenter(TransferFunctionRequestFactory())
+    requests: list[object] = []
+    presenter.execution_requested.connect(requests.append)
     presenter.submit(_draft())
+    first_request = requests[0]
+    assert type(first_request) is TransferFunctionWorkflowRequest
+    presenter.accept_result(_execution(first_request))
+    presenter.select_report_view(TransferFunctionReportView.LATEX)
+
+    assert presenter.submit(_draft("1/(s+2)"))
 
     presenter.accept_failure(WorkflowWorkerFailure("Sicherer Fehlerhinweis."))
 
     assert presenter.state.run_status is TransferFunctionUiRunStatus.FAILED
+    assert presenter.state.workflow_state is None
+    assert presenter.state.solution_report is None
+    assert presenter.state.plaintext_report == ""
+    assert presenter.state.latex_report == ""
+    assert presenter.state.request_errors == ()
+    assert presenter.state.focused_field is None
+    assert (
+        presenter.state.active_report_view
+        is TransferFunctionReportView.LATEX
+    )
+    assert presenter.active_report_text() == ""
     assert presenter.state.general_message == "Sicherer Fehlerhinweis."
     assert "Traceback" not in presenter.state.general_message

@@ -409,22 +409,31 @@ class TransferFunctionWorkspace(QWidget):
                 item.setText(3, "")
                 continue
             record = workflow.stage_records[index]
-            severities = tuple(
-                diagnostic.severity.value for diagnostic in record.diagnostics
-            )
-            severity = (
-                max(severities, key=_SEVERITY_RANK.__getitem__)
-                if severities
-                else None
+            primary_diagnostic = max(
+                record.diagnostics,
+                key=lambda diagnostic: _SEVERITY_RANK[
+                    diagnostic.severity.value
+                ],
+                default=None,
             )
             item.setText(1, _STATUS_LABELS[record.status.value])
             item.setText(
                 2,
-                "—" if severity is None else _SEVERITY_LABELS[severity],
+                (
+                    "—"
+                    if primary_diagnostic is None
+                    else _SEVERITY_LABELS[
+                        primary_diagnostic.severity.value
+                    ]
+                ),
             )
             item.setText(
                 3,
-                record.diagnostics[0].message if record.diagnostics else "",
+                (
+                    ""
+                    if primary_diagnostic is None
+                    else primary_diagnostic.message
+                ),
             )
 
     def _render_summary(self, state: TransferFunctionViewState) -> None:

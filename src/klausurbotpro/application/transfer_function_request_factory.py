@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from keyword import iskeyword
 from math import gcd
 
+from klausurbotpro.application._workflow_validation import (
+    _is_safe_workflow_identifier,
+)
 from klausurbotpro.application.transfer_function_workflow_contracts import (
     TransferFunctionWorkflowLimits,
     TransferFunctionWorkflowRequest,
@@ -113,6 +115,19 @@ class TransferFunctionRequestFactory:
         if type(limits) is not TransferFunctionWorkflowLimits:
             raise TypeError("limits must be TransferFunctionWorkflowLimits.")
         self._limits = limits
+        self._max_parameters = min(
+            limits.parser.max_symbols - 1,
+            limits.raw.max_parameters,
+            limits.reduction.max_parameters,
+            limits.root_analysis.max_parameters,
+        )
+        self._max_parameter_rows = self._max_parameters
+        self._max_integer_digits = min(
+            limits.parser.max_integer_digits,
+            limits.raw.max_integer_digits,
+            limits.root_analysis.max_substitution_integer_digits,
+            limits.stability_analysis.max_substitution_integer_digits,
+        )
 
     def create(
         self,
@@ -176,7 +191,23 @@ class TransferFunctionRequestFactory:
                 errors.append(
                     _error(name, "invalid_type", "Das Feld muss Text enthalten.")
                 )
-        if type(draft.parameter_rows) is not tuple or any(
+        if type(draft.parameter_rows) is not tuple:
+            errors.append(
+                _error(
+                    "parameter_rows",
+                    "invalid_rows",
+                    "Die Parameterzeilen besitzen ein ungültiges Format.",
+                )
+            )
+        elif len(draft.parameter_rows) > self._max_parameter_rows:
+            errors.append(
+                _error(
+                    "parameter_rows",
+                    "parameter_limit_exceeded",
+                    "Es wurden zu viele Parameterzeilen angegeben.",
+                )
+            )
+        elif any(
             type(row) is not ParameterInputDraft
             for row in draft.parameter_rows
         ):
@@ -193,7 +224,7 @@ class TransferFunctionRequestFactory:
             )
         if errors:
             return
-        if not _safe_identifier(draft.variable_name):
+        if not _is_safe_workflow_identifier(draft.variable_name):
             errors.append(
                 _error(
                     "variable_name",
@@ -235,7 +266,10 @@ class TransferFunctionRequestFactory:
         draft: TransferFunctionInputDraft,
         errors: list[TransferFunctionRequestFieldError],
     ) -> tuple[set[str], list[ParameterAssignment]]:
-        if type(draft.parameter_rows) is not tuple:
+        if (
+            type(draft.parameter_rows) is not tuple
+            or len(draft.parameter_rows) > self._max_parameter_rows
+        ):
             return set(), []
         parameters: set[str] = set()
         assignments: list[ParameterAssignment] = []
@@ -254,7 +288,8 @@ class TransferFunctionRequestFactory:
                     _row_error(index, "invalid_type", "Parameterwerte müssen Text sein.")
                 )
                 continue
-            name = row.parameter_name.strip()
+            raw_name = row.parameter_name
+            name = raw_name.strip()
             numerator = row.numerator_text.strip()
             denominator = row.denominator_text.strip()
             if not name:
@@ -267,7 +302,7 @@ class TransferFunctionRequestFactory:
                         )
                     )
                 continue
-            if not _safe_identifier(name):
+            if raw_name != name or not _is_safe_workflow_identifier(name):
                 errors.append(
                     _row_error(
                         index,
@@ -337,7 +372,7 @@ class TransferFunctionRequestFactory:
                     ),
                 )
             )
-        if len(parameters) > self._limits.parser.max_symbols - 1:
+        if len(parameters) > self._max_parameters:
             errors.append(
                 _error(
                     "parameter_rows",
@@ -362,7 +397,7 @@ class TransferFunctionRequestFactory:
             not digits
             or not digits.isascii()
             or not digits.isdigit()
-            or len(digits) > self._limits.parser.max_integer_digits
+            or len(digits) > self._max_integer_digits
         ):
             errors.append(_row_error(row_index, code, message))
             return None
@@ -371,10 +406,6 @@ class TransferFunctionRequestFactory:
             errors.append(_row_error(row_index, code, message))
             return None
         return value
-
-
-def _safe_identifier(value: str) -> bool:
-    return bool(value) and value.isidentifier() and not iskeyword(value)
 
 
 def _error(

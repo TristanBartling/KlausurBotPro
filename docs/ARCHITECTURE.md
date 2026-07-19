@@ -520,6 +520,14 @@ Parameterwerte werden vor jeder `int`-Konvertierung begrenzt, ohne Float- oder
 Ausdrucksparsing erstellt und bei Fehlern vollständig verworfen.
 `TransferFunctionRequestFieldError` erhält eine stabile Feld- und
 Zeilenzuordnung für den UI-Fokus.
+RequestFactory und autoritative Workflowvalidierung verwenden dieselbe
+private Application-Prüfung für sichere Identifier: exakter `str`-Typ,
+`isidentifier()`, kein Python-Schlüsselwort und weder beginnendes noch
+endendes `__`. Die effektive Parametergrenze ist die kleinste direkt
+einschlägige Parser-, Raw-, Reduktions- und Wurzelanalysegrenze. Auch die
+Tabellenzeilenzahl wird vor ihrer Verarbeitung durch diese endliche Grenze
+beschränkt. Für rationale Substitutionen gilt konservativ die kleinste
+Ganzzahlzifferngrenze aus Parser, Raw-, Wurzel- und Stabilitätsanalyse.
 
 Ein Presenter besitzt den unveränderlichen, widgetfreien
 `TransferFunctionViewState`. Er koordiniert RequestFactory, RUNNING-Sperre,
@@ -543,9 +551,14 @@ behaupten weder einen harten Timeout noch sichere Unterbrechbarkeit laufender
 SymPy-Arbeit.
 
 Die GUI zeigt die fünf Workflowstufen mit Textstatus und unveränderter
-DiagnosticSeverity, strukturierte Kernergebnisse sowie die exakten Plaintext-
-und LaTeX-Renderergebnisse. Phase 2D.1 enthält weiterhin keine Overrides,
-Historie, Persistenz, Dateien, PDFs, Quellenbrowser oder Diagramme.
+DiagnosticSeverity. Severitysymbol, Severitytext und Meldung stammen
+deterministisch aus der ersten Diagnose der höchsten vorhandenen Severity.
+Strukturierte Kernergebnisse sowie die exakten Plaintext- und
+LaTeX-Renderergebnisse bleiben unverändert. Ein unerwarteter Workerfehler
+verwirft State, Zusammenfassungen und Berichte des vorherigen Laufs, während
+ein Requestfehler vor Workerstart das klar gekennzeichnete vorherige Ergebnis
+weiter anzeigen darf. Phase 2D.1 enthält weiterhin keine Overrides, Historie,
+Persistenz, Dateien, PDFs, Quellenbrowser oder Diagramme.
 
 ## Offene Architekturentscheidungen
 
