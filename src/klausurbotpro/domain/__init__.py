@@ -16,6 +16,18 @@ from klausurbotpro.domain.frequency_response_contracts import (
     TransferFunctionFrequencyResponseResult,
     TransferFunctionFrequencyResponseStatus,
 )
+from klausurbotpro.domain.log_frequency_grid_contracts import (
+    LogFrequencyGridLimits,
+    LogFrequencyGridPoint,
+    LogFrequencyGridRequest,
+    LogFrequencyGridResult,
+    LogFrequencyGridStatus,
+    LogFrequencyPointOrigin,
+    ScientificDecimal,
+)
+from klausurbotpro.domain.log_frequency_grid_generator import (
+    LogFrequencyGridGenerator,
+)
 from klausurbotpro.domain.parameter_substitutions import (
     ExactRationalValue,
     ParameterAssignment,
@@ -114,6 +126,13 @@ __all__ = [
     "FrequencyResponsePoint",
     "FrequencyResponsePointStatus",
     "FrequencySampleSet",
+    "LogFrequencyGridGenerator",
+    "LogFrequencyGridLimits",
+    "LogFrequencyGridPoint",
+    "LogFrequencyGridRequest",
+    "LogFrequencyGridResult",
+    "LogFrequencyGridStatus",
+    "LogFrequencyPointOrigin",
     "ConjugateStatus",
     "NumericalRootEstimate",
     "NumericalRootWarning",
@@ -143,6 +162,7 @@ __all__ = [
     "RootOccurrence",
     "RootOfValue",
     "RootSource",
+    "ScientificDecimal",
     "SeparatedTransferFunctionInput",
     "StabilityAnalysisLimits",
     "StabilityEvidenceKind",

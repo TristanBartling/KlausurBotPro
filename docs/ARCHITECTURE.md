@@ -479,6 +479,57 @@ späteren Ausbau. Phase 3A.1 enthält ausdrücklich noch keine automatischen
 Frequenzraster, Plotdaten, asymptotischen Bode-Geraden, Standardgliederkennung,
 Reserven, Nyquist-Umschlingungen oder Stabilitätsaussagen.
 
+## Implementiertes zertifiziertes logarithmisches Raster (Phase 3A.2a)
+
+`LogFrequencyGridGenerator` verarbeitet ausschließlich exakte positive
+`ExactRationalValue`-Grenzen, eine positive ganzzahlige Punktdichte und
+optionale streng aufsteigende exakte Zusatzfrequenzen. Er kennt weder eine
+`ReducedTransferFunction` noch den Frequenzganganalyzer. Phase 3A.2a erzeugt
+deshalb ausschließlich Frequenzkoordinaten und führt keine Betrags-, dB-,
+Phasen- oder sonstige Systemauswertung aus.
+
+Für das exakte Verhältnis `r = omega_max / omega_min` und die Punktdichte
+`m` ist die Intervallzahl der kleinste positive Integer `N` mit
+`r**m <= 10**N`. Die Suche verwendet nur begrenzte rationale Potenzen und
+Vergleiche; weder binäre Floats noch Decimal- oder andere numerische
+Logarithmen entscheiden über `N`. Die erzeugten Zielpunkte werden durch
+Grenzen, Index `k` und Intervallzahl `N` als
+`omega_min * r**(k/N)` beschrieben. Innere Ziele sind im Allgemeinen
+irrational und werden öffentlich nicht als exakte rationale Werte
+ausgegeben.
+
+Eine lokale, explizit gerundete Decimal-Rechnung liefert pro innerem Ziel
+einen `ScientificDecimal` mit konfigurierbarer signifikanter Präzision und
+Schutzziffern. Dieser kanonische Dezimalwert wird exakt als rationale
+`evaluation_frequency` interpretiert. Seine relative Fehlergrenze
+`epsilon = 5 * 10**(-grid_precision_digits)` gilt nicht allein aufgrund der
+Rundung: Beide Schranken werden nach Potenzieren mit `N` tatsächlich durch
+exakte rationale Vergleiche zertifiziert. Zusätzliche Versuche erhöhen nur
+begrenzt die internen Schutzziffern; sie verändern nicht die öffentliche
+Zielpräzision. Ohne Nachweis entsteht ein strukturiertes Fehlerresultat.
+
+Die beiden Grenzen bleiben als exakte Requestwerte erhalten und besitzen
+Fehlergrenze null. Explizite rationale Frequenzen werden ebenfalls exakt
+eingefügt. Mathematisch identische Grenz- oder innere Zielpunkte vereinigen
+ihre Herkunft deterministisch. Treffen dagegen verschiedene Ziele nach
+Rundung auf dieselbe Auswertungsfrequenz oder fällt ein nicht identischer
+expliziter Punkt auf einen Kandidaten, scheitert das gesamte Raster
+strukturiert; es gibt keine stille Deduplizierung.
+
+Request, Punkte und Ergebnis werden defensiv revalidiert. Erfolgreiche
+Ergebnisse besitzen einen vom Eingang disjunkten exakten Requestsnapshot,
+vollständige Zielindizes `0..N` und streng aufsteigende rationale
+Auswertungsfrequenzen. Fehlerresultate enthalten keine ungeprüften
+Requestwerte oder Teilpunkte. Grenzen beschränken Dekaden, Punktdichte,
+Gesamt- und Zusatzpunkte, rationale Ziffern, Decimal-Präzision,
+Zertifizierungsversuche und -schritte sowie Diagnosen. Ein harter
+In-Process-Timeout wird nicht behauptet.
+
+Phase 3A.2a enthält ausdrücklich noch keinen Aufruf der punktweisen
+Frequenzganganalyse, keine Bode-Plotdaten oder -serien, keine Segmentierung,
+keine Phasenentfaltung, keine Reserven, keine Nyquist-Auswertung und keine
+Application- oder GUI-Integration.
+
 ## Implementierter Transferfunktionsworkflow (Phase 2C.1)
 
 Die UI-unabhängige Application-Schicht orchestriert den vorhandenen sicheren
