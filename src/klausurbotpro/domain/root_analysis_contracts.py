@@ -148,18 +148,26 @@ class NumericalRootEstimate:
             or self.precision_digits < 2
         ):
             raise ValueError("Numerical precision must contain at least two digits.")
-        for value in (
-            self.real,
-            self.imaginary,
-            self.absolute_residual,
-            self.scaled_residual,
+        for field_name in (
+            "real",
+            "imaginary",
+            "absolute_residual",
+            "scaled_residual",
         ):
+            value = getattr(self, field_name)
+            if type(value) is not str:
+                raise TypeError("Numerical values must be decimal strings.")
             try:
                 decimal = Decimal(value)
             except (InvalidOperation, ValueError) as error:
                 raise ValueError("Numerical values must be canonical decimal strings.") from error
             if not decimal.is_finite():
                 raise ValueError("Numerical values must be finite.")
+            object.__setattr__(
+                self,
+                field_name,
+                _canonical_decimal_text(decimal),
+            )
         if type(self.conjugate_status) is not ConjugateStatus:
             raise TypeError("Invalid conjugate status.")
         normalized_warnings = tuple(dict.fromkeys(self.warnings))
@@ -284,10 +292,11 @@ class RootAnalysisLimits:
     max_exact_rootof_count: int = 32
     numeric_precision_digits: int = 40
     numeric_guard_digits: int = 12
-    max_numeric_iterations: int = 100
+    max_evalf_working_digits: int = 160
     max_results: int = 256
     max_factor_nodes: int = 1024
     max_substitution_nodes: int = 2048
+    max_substitution_integer_digits: int = 256
     max_domain_exclusions: int = 64
     max_cancelled_factors: int = 64
 
@@ -297,6 +306,14 @@ class RootAnalysisLimits:
             minimum = 2 if name == "numeric_precision_digits" else 1
             if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
                 raise ValueError(f"{name} must be an integer >= {minimum}.")
+        required_working_digits = (
+            self.numeric_precision_digits + self.numeric_guard_digits
+        )
+        if self.max_evalf_working_digits < required_working_digits:
+            raise ValueError(
+                "max_evalf_working_digits must be at least "
+                "numeric_precision_digits + numeric_guard_digits."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,3 +378,16 @@ class TransferFunctionRootAnalysisResult:
             self.reduced_transfer_function is not None
             and all(item.severity is not DiagnosticSeverity.ERROR for item in self.diagnostics)
         )
+
+
+def _canonical_decimal_text(value: Decimal) -> str:
+    if value.is_zero():
+        return "0"
+    sign, digits, exponent = value.as_tuple()
+    if not isinstance(exponent, int):
+        raise ValueError("Numerical values must be finite.")
+    normalized_digits = list(digits)
+    while len(normalized_digits) > 1 and normalized_digits[-1] == 0:
+        normalized_digits.pop()
+        exponent += 1
+    return str(Decimal((sign, tuple(normalized_digits), exponent)))

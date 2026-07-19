@@ -340,7 +340,11 @@ Kürzungsfaktoren erzeugen keine Orte der Hauptvariablen.
 
 Eigene Grenzen beschränken Grad, Parameter, Ausdrucks- und Faktorknoten,
 RootOf-Anzahl, Ergebniszahl, Substitutionen, Definitionsausschlüsse und
-Kürzungsfaktoren. Die Phase implementiert weder Stabilität, Properness,
+Kürzungsfaktoren. Exakt rationale Substitutionen werden vor jeder
+SymPy-Konstruktion einschließlich ihrer Ganzzahlziffern revalidiert.
+Numerische `evalf`-Prüfungen verwenden 40 Ergebnisziffern, 12 Schutzziffern
+und höchstens 160 temporäre Arbeitsziffern; diese Grenze ist ausdrücklich
+keine Iterationsgrenze. Die Phase implementiert weder Stabilität, Properness,
 Frequenz- oder Zeitbereichsanalyse noch allgemeine symbolische,
 Gleitkomma- oder komplexe Parametersubstitutionen.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import sympy as sp
 
 from klausurbotpro.domain import (
@@ -15,6 +16,7 @@ from klausurbotpro.domain import (
     PolynomialRootAnalysis,
     PolynomialRootStatus,
     ReducedTransferFunction,
+    RootAnalysisLimits,
     RootOfValue,
     TransferFunctionDomainExclusion,
     TransferFunctionPrerequisite,
@@ -257,6 +259,265 @@ def test_missing_and_extra_substitutions_are_errors() -> None:
     assert extra.diagnostics[0].code is DiagnosticCode.ROOT_ANALYSIS_INVALID_SUBSTITUTION
 
 
+def test_manipulated_substitution_container_and_assignment_are_structured() -> None:
+    s, K = sp.symbols("s K")
+    value = _reduced(K * s + 1, parameters=frozenset({"K"}))
+    analyzer = TransferFunctionRootAnalyzer()
+
+    wrong_container = ParameterSubstitutions()
+    object.__setattr__(wrong_container, "assignments", [])
+    wrong_item = ParameterSubstitutions()
+    object.__setattr__(wrong_item, "assignments", (object(),))
+    wrong_value_assignment = ParameterAssignment("K", ExactRationalValue(1))
+    wrong_value = ParameterSubstitutions((wrong_value_assignment,))
+    object.__setattr__(wrong_value_assignment, "value", object())
+
+    for substitutions in (wrong_container, wrong_item, wrong_value):
+        result = analyzer.analyze(value, substitutions)
+        assert result.diagnostics[0].code is (
+            DiagnosticCode.ROOT_ANALYSIS_INVALID_SUBSTITUTION
+        )
+
+
+@pytest.mark.parametrize(
+    ("numerator", "denominator"),
+    [
+        (True, 1),
+        (1, True),
+        (1, 0),
+        (1, -1),
+        (2, 4),
+    ],
+)
+def test_manipulated_rational_substitution_is_structured(
+    numerator: object,
+    denominator: object,
+) -> None:
+    s, K = sp.symbols("s K")
+    value = _reduced(K * s + 1, parameters=frozenset({"K"}))
+    rational = ExactRationalValue(1)
+    assignment = ParameterAssignment("K", rational)
+    substitutions = ParameterSubstitutions((assignment,))
+    object.__setattr__(rational, "numerator", numerator)
+    object.__setattr__(rational, "denominator", denominator)
+
+    result = TransferFunctionRootAnalyzer().analyze(value, substitutions)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.ROOT_ANALYSIS_INVALID_SUBSTITUTION
+    )
+
+
+@pytest.mark.parametrize("mode", ["duplicate", "unsorted"])
+def test_duplicate_or_unsorted_substitutions_are_structured(mode: str) -> None:
+    s, K, T = sp.symbols("s K T")
+    value = _reduced(K * s + T, parameters=frozenset({"K", "T"}))
+    first = ParameterAssignment("K", ExactRationalValue(1))
+    second = ParameterAssignment("T", ExactRationalValue(2))
+    substitutions = ParameterSubstitutions((first, second))
+    assignments = (
+        (first, first) if mode == "duplicate" else (second, first)
+    )
+    object.__setattr__(substitutions, "assignments", assignments)
+
+    result = TransferFunctionRootAnalyzer().analyze(value, substitutions)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.ROOT_ANALYSIS_INVALID_SUBSTITUTION
+    )
+
+
+def test_substitution_integer_limit_precedes_sympy_rational(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s, K = sp.symbols("s K")
+    value = _reduced(K * s + 1, parameters=frozenset({"K"}))
+    substitutions = ParameterSubstitutions(
+        (ParameterAssignment("K", ExactRationalValue(1000)),)
+    )
+    original_rational = sp.Rational
+
+    def guarded_rational(
+        numerator: object,
+        denominator: object = 1,
+    ) -> sp.Expr:
+        if numerator == 1000:
+            raise AssertionError("Oversized substitution reached SymPy.")
+        return original_rational(numerator, denominator)
+
+    monkeypatch.setattr(
+        "klausurbotpro.domain._root_analysis_validation.sp.Rational",
+        guarded_rational,
+    )
+    result = TransferFunctionRootAnalyzer(
+        RootAnalysisLimits(max_substitution_integer_digits=3)
+    ).analyze(value, substitutions)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.ROOT_ANALYSIS_LIMIT_EXCEEDED
+    )
+    assert result.diagnostics[0].technical_details == (
+        ("limit", "max_substitution_integer_digits"),
+    )
+
+
+def test_wrong_top_level_substitution_type_still_raises_type_error() -> None:
+    with pytest.raises(TypeError, match="ParameterSubstitutions"):
+        TransferFunctionRootAnalyzer().analyze(
+            _reduced(sp.Symbol("s") + 1),
+            object(),  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize("parameter_name", ["unsafe-name", "s"])
+def test_manipulated_unsafe_or_main_variable_substitution_is_structured(
+    parameter_name: str,
+) -> None:
+    s, K = sp.symbols("s K")
+    value = _reduced(K * s + 1, parameters=frozenset({"K"}))
+    assignment = ParameterAssignment("K", ExactRationalValue(1))
+    substitutions = ParameterSubstitutions((assignment,))
+    object.__setattr__(assignment, "parameter_name", parameter_name)
+
+    result = TransferFunctionRootAnalyzer().analyze(value, substitutions)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.ROOT_ANALYSIS_INVALID_SUBSTITUTION
+    )
+
+
+def test_manipulated_prerequisite_shapes_are_structured() -> None:
+    s, K, T = sp.symbols("s K T")
+    analyzer = TransferFunctionRootAnalyzer()
+
+    empty = TransferFunctionPrerequisite(
+        TransferFunctionPrerequisiteKind.EXPRESSION_NONZERO,
+        (ExactExpression._from_sympy(K),),
+        ("test",),
+    )
+    empty_value = _reduced(
+        s + 1,
+        parameters=frozenset({"K"}),
+        prerequisites=(empty,),
+    )
+    object.__setattr__(empty, "expressions", ())
+
+    wrong_arity = TransferFunctionPrerequisite(
+        TransferFunctionPrerequisiteKind.EXPRESSION_NONZERO,
+        (ExactExpression._from_sympy(K),),
+        ("test",),
+    )
+    wrong_arity_value = _reduced(
+        s + 1,
+        parameters=frozenset({"K", "T"}),
+        prerequisites=(wrong_arity,),
+    )
+    object.__setattr__(
+        wrong_arity,
+        "expressions",
+        (
+            ExactExpression._from_sympy(K),
+            ExactExpression._from_sympy(T),
+        ),
+    )
+
+    one_argument = TransferFunctionPrerequisite(
+        TransferFunctionPrerequisiteKind.NOT_ALL_ZERO,
+        (ExactExpression._from_sympy(K),),
+        ("test",),
+    )
+    one_argument_value = _reduced(
+        s + 1,
+        parameters=frozenset({"K"}),
+        prerequisites=(one_argument,),
+    )
+
+    for value in (empty_value, wrong_arity_value, one_argument_value):
+        result = analyzer.analyze(value)
+        assert result.diagnostics[0].code is (
+            DiagnosticCode.ROOT_ANALYSIS_INVALID_TRANSFER_FUNCTION
+        )
+
+
+def test_manipulated_prerequisite_origins_and_order_are_structured() -> None:
+    s, K, T = sp.symbols("s K T")
+    bad_origins = TransferFunctionPrerequisite(
+        TransferFunctionPrerequisiteKind.EXPRESSION_NONZERO,
+        (ExactExpression._from_sympy(K),),
+        ("bad",),
+    )
+    first = TransferFunctionPrerequisite(
+        TransferFunctionPrerequisiteKind.EXPRESSION_NONZERO,
+        (ExactExpression._from_sympy(K),),
+        ("first",),
+    )
+    second = TransferFunctionPrerequisite(
+        TransferFunctionPrerequisiteKind.EXPRESSION_NONZERO,
+        (ExactExpression._from_sympy(T),),
+        ("second",),
+    )
+    bad_origins_value = _reduced(
+        s + 1,
+        parameters=frozenset({"K"}),
+        prerequisites=(bad_origins,),
+    )
+    object.__setattr__(bad_origins, "origins", ["bad"])
+    duplicate_value = _reduced(
+        s + 1,
+        parameters=frozenset({"K"}),
+        prerequisites=(first, first),
+    )
+    unsorted_value = _reduced(
+        s + 1,
+        parameters=frozenset({"K", "T"}),
+        prerequisites=(second, first),
+    )
+
+    for value in (bad_origins_value, duplicate_value, unsorted_value):
+        result = TransferFunctionRootAnalyzer().analyze(value)
+        assert result.diagnostics[0].code is (
+            DiagnosticCode.ROOT_ANALYSIS_INVALID_TRANSFER_FUNCTION
+        )
+
+
+def test_invalid_domain_exclusion_shapes_are_structured() -> None:
+    s, K = sp.symbols("s K")
+    parameter_only = _reduced(
+        sp.Integer(1),
+        parameters=frozenset({"K"}),
+        exclusions=((K, ("parameter only",)),),
+    )
+    bad_origins = _reduced(
+        sp.Integer(1),
+        exclusions=((s + 1, ("origin",)),),
+    )
+    object.__setattr__(
+        bad_origins.domain_exclusions[0],
+        "origins",
+        ["origin"],
+    )
+    duplicate = _reduced(
+        sp.Integer(1),
+        exclusions=(
+            (s + 1, ("first",)),
+            (s + 1, ("second",)),
+        ),
+    )
+    unsorted = _reduced(
+        sp.Integer(1),
+        exclusions=(
+            (s + 2, ("second",)),
+            (s + 1, ("first",)),
+        ),
+    )
+
+    for value in (parameter_only, bad_origins, duplicate, unsorted):
+        result = TransferFunctionRootAnalyzer().analyze(value)
+        assert result.diagnostics[0].code is (
+            DiagnosticCode.ROOT_ANALYSIS_INVALID_TRANSFER_FUNCTION
+        )
+
+
 def test_retained_domain_exclusions_are_analyzed_separately() -> None:
     s, K = sp.symbols("s K")
     analyzer = TransferFunctionRootAnalyzer()
@@ -305,8 +566,8 @@ def test_equal_exclusion_locations_are_deduplicated_with_all_origins() -> None:
         _reduced(
             sp.Integer(1),
             exclusions=(
-                (s + 1, ("first",)),
                 (2 * s + 2, ("second",)),
+                (s + 1, ("first",)),
             ),
         )
     )

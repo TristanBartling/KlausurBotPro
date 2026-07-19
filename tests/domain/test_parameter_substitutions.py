@@ -17,6 +17,12 @@ def test_exact_rational_values_require_canonical_integer_form() -> None:
         ExactRationalValue(1, -2)
     with pytest.raises(TypeError, match="integers"):
         ExactRationalValue(True)
+    with pytest.raises(TypeError, match="integers"):
+        ExactRationalValue(1, True)
+    with pytest.raises(ValueError, match="positive"):
+        ExactRationalValue(1, 0)
+    with pytest.raises(ValueError, match="fully reduced"):
+        ExactRationalValue(2, 4)
 
 
 def test_substitutions_are_unique_sorted_and_hashable() -> None:

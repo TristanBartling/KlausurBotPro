@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from keyword import iskeyword
+from math import gcd
+from typing import NoReturn
 
 import sympy as sp
 
 from klausurbotpro.domain.diagnostics import DiagnosticCode
 from klausurbotpro.domain.expression import ExactExpression
 from klausurbotpro.domain.parameter_substitutions import (
+    ExactRationalValue,
+    ParameterAssignment,
     ParameterSubstitutions,
 )
 from klausurbotpro.domain.polynomial import Polynomial
@@ -34,6 +39,9 @@ class RootAnalysisFailure(Exception):
     details: tuple[tuple[str, str], ...] = ()
 
 
+_MISSING = object()
+
+
 def validate_reduced_transfer_function(
     reduced: ReducedTransferFunction,
     limits: RootAnalysisLimits,
@@ -42,6 +50,23 @@ def validate_reduced_transfer_function(
 
     if type(reduced) is not ReducedTransferFunction:
         raise TypeError("Root analysis requires a ReducedTransferFunction.")
+    if (
+        type(reduced.variable_name) is not str
+        or not reduced.variable_name.isidentifier()
+        or iskeyword(reduced.variable_name)
+        or type(reduced.used_parameter_names) is not frozenset
+        or any(
+            type(name) is not str
+            or not name.isidentifier()
+            or iskeyword(name)
+            or name == reduced.variable_name
+            for name in reduced.used_parameter_names
+        )
+        or type(reduced.prerequisites) is not tuple
+        or type(reduced.domain_exclusions) is not tuple
+        or type(reduced.is_zero) is not bool
+    ):
+        _invalid("Das reduzierte Übertragungsfunktionsobjekt ist inkonsistent.")
     if (
         type(reduced.numerator) is not Polynomial
         or type(reduced.denominator) is not Polynomial
@@ -55,78 +80,182 @@ def validate_reduced_transfer_function(
         _limit("max_parameters")
     if len(reduced.domain_exclusions) > limits.max_domain_exclusions:
         _limit("max_domain_exclusions")
-    if any(type(item) is not TransferFunctionPrerequisite for item in reduced.prerequisites):
-        _invalid("Die Voraussetzungen sind nicht strukturell gültig.")
-    if any(type(item) is not TransferFunctionDomainExclusion for item in reduced.domain_exclusions):
-        _invalid("Die Definitionsausschlüsse sind nicht strukturell gültig.")
 
-    polynomials = [
-        reduced.numerator,
-        reduced.denominator,
-        *(item.polynomial for item in reduced.domain_exclusions),
-    ]
-    for polynomial in polynomials:
-        if type(polynomial) is not Polynomial or polynomial.variable_name != reduced.variable_name:
-            _invalid("Ein enthaltenes Polynom verwendet eine falsche Variable.")
-        generic_degree = polynomial.degree_info.generic_degree
-        if (
-            generic_degree is not None
-            and generic_degree > limits.max_polynomial_degree
-        ):
-            _limit("max_polynomial_degree")
-        rebuilt = PolynomialFactory(
-            PolynomialLimits(
-                max_degree=limits.max_polynomial_degree,
-                max_coefficients=limits.max_polynomial_degree + 1,
-                max_structural_terms=limits.max_polynomial_degree + 1,
-                max_parameters=limits.max_parameters,
-                max_expression_nodes=limits.max_expression_nodes,
-            )
-        ).create(
-            polynomial.expression,
-            variable_name=reduced.variable_name,
-            declared_parameter_names=polynomial.used_parameter_names,
-        )
-        if rebuilt.value != polynomial:
-            _invalid("Ein enthaltenes Polynom besteht die Revalidierung nicht.")
+    _revalidate_polynomial(reduced.numerator, reduced.variable_name, limits)
+    _revalidate_polynomial(reduced.denominator, reduced.variable_name, limits)
 
     derived_names = set(reduced.numerator.used_parameter_names)
     derived_names.update(reduced.denominator.used_parameter_names)
-    for prerequisite in reduced.prerequisites:
-        if type(prerequisite.kind) is not TransferFunctionPrerequisiteKind:
-            _invalid("Eine Voraussetzung hat eine ungültige Art.")
-        for expression in prerequisite.expressions:
-            if type(expression) is not ExactExpression:
-                _invalid("Eine Voraussetzung enthält keinen exakten Ausdruck.")
-            if reduced.variable_name in expression.symbol_names:
-                _invalid("Eine Voraussetzung darf die Hauptvariable nicht enthalten.")
-            prerequisite_result = PolynomialFactory(
-                PolynomialLimits(
-                    max_degree=limits.max_polynomial_degree,
-                    max_coefficients=limits.max_polynomial_degree + 1,
-                    max_structural_terms=limits.max_polynomial_degree + 1,
-                    max_parameters=limits.max_parameters,
-                    max_expression_nodes=limits.max_expression_nodes,
-                )
-            ).create(
-                expression,
-                variable_name=reduced.variable_name,
-                declared_parameter_names=expression.symbol_names,
-            )
-            if prerequisite_result.value is None:
-                _invalid("Eine Voraussetzung besteht die Revalidierung nicht.")
-            derived_names.update(expression.symbol_names)
-            _check_node_limit(expression._as_sympy(), limits.max_expression_nodes)
-    for exclusion in reduced.domain_exclusions:
-        derived_names.update(exclusion.polynomial.used_parameter_names)
+    derived_names.update(_validate_prerequisites(reduced, limits))
+    derived_names.update(_validate_domain_exclusions(reduced, limits))
     derived_names.discard(reduced.variable_name)
     if frozenset(derived_names) != reduced.used_parameter_names:
         _invalid("Die abgeleitete Parametermenge ist inkonsistent.")
 
 
+def _validate_prerequisites(
+    reduced: ReducedTransferFunction,
+    limits: RootAnalysisLimits,
+) -> set[str]:
+    used_names: set[str] = set()
+    keys: list[tuple[str, tuple[str, ...]]] = []
+    for prerequisite in reduced.prerequisites:
+        if type(prerequisite) is not TransferFunctionPrerequisite:
+            _invalid("Eine Voraussetzung hat einen ungültigen Typ.")
+        kind = getattr(prerequisite, "kind", _MISSING)
+        expressions = getattr(prerequisite, "expressions", _MISSING)
+        origins = getattr(prerequisite, "origins", _MISSING)
+        if type(kind) is not TransferFunctionPrerequisiteKind:
+            _invalid("Eine Voraussetzung hat eine ungültige Art.")
+        if type(expressions) is not tuple or not expressions:
+            _invalid("Eine Voraussetzung benötigt strukturierte Ausdrücke.")
+        if (
+            kind is TransferFunctionPrerequisiteKind.EXPRESSION_NONZERO
+            and len(expressions) != 1
+        ):
+            _invalid("EXPRESSION_NONZERO benötigt genau einen Ausdruck.")
+        if (
+            kind is TransferFunctionPrerequisiteKind.NOT_ALL_ZERO
+            and len(expressions) < 2
+        ):
+            _invalid("NOT_ALL_ZERO benötigt mindestens zwei Ausdrücke.")
+        _validate_origins(origins, "Voraussetzung")
+
+        expression_keys: list[str] = []
+        for expression in expressions:
+            if type(expression) is not ExactExpression:
+                _invalid("Eine Voraussetzung enthält keinen exakten Ausdruck.")
+            if reduced.variable_name in expression.symbol_names:
+                _invalid("Eine Voraussetzung darf die Hauptvariable nicht enthalten.")
+            result = _polynomial_factory(limits).create(
+                expression,
+                variable_name=reduced.variable_name,
+                declared_parameter_names=expression.symbol_names,
+            )
+            if result.value is None:
+                _invalid("Eine Voraussetzung besteht die Revalidierung nicht.")
+            _check_node_limit(expression._as_sympy(), limits.max_expression_nodes)
+            expression_keys.append(expression.canonical_text)
+            used_names.update(expression.symbol_names)
+        if (
+            kind is TransferFunctionPrerequisiteKind.NOT_ALL_ZERO
+            and (
+                tuple(expression_keys) != tuple(sorted(expression_keys))
+                or len(expression_keys) != len(set(expression_keys))
+            )
+        ):
+            _invalid("NOT_ALL_ZERO-Ausdrücke sind nicht kanonisch geordnet.")
+        keys.append((kind.value, tuple(expression_keys)))
+
+    if keys != sorted(keys) or len(keys) != len(set(keys)):
+        _invalid("Voraussetzungen sind nicht deterministisch dedupliziert.")
+    return used_names
+
+
+def _validate_domain_exclusions(
+    reduced: ReducedTransferFunction,
+    limits: RootAnalysisLimits,
+) -> set[str]:
+    used_names: set[str] = set()
+    keys: list[str] = []
+    polynomials: list[Polynomial] = []
+    for exclusion in reduced.domain_exclusions:
+        if type(exclusion) is not TransferFunctionDomainExclusion:
+            _invalid("Ein Definitionsausschluss hat einen ungültigen Typ.")
+        polynomial = getattr(exclusion, "polynomial", _MISSING)
+        origins = getattr(exclusion, "origins", _MISSING)
+        if type(polynomial) is not Polynomial:
+            _invalid("Ein Definitionsausschluss benötigt ein exaktes Polynom.")
+        _validate_origins(origins, "Definitionsausschluss")
+        _revalidate_polynomial(polynomial, reduced.variable_name, limits)
+        if reduced.variable_name not in polynomial.expression.symbol_names:
+            _invalid(
+                "Ein Definitionsausschluss muss die Hauptvariable enthalten."
+            )
+        keys.append(polynomial.expression.canonical_text)
+        polynomials.append(polynomial)
+        used_names.update(polynomial.used_parameter_names)
+    if keys != sorted(keys) or len(polynomials) != len(set(polynomials)):
+        _invalid(
+            "Definitionsausschlüsse sind nicht deterministisch dedupliziert."
+        )
+    return used_names
+
+
+def _validate_origins(origins: object, subject: str) -> None:
+    if (
+        type(origins) is not tuple
+        or not origins
+        or any(type(origin) is not str or not origin for origin in origins)
+        or origins != tuple(sorted(set(origins)))
+    ):
+        _invalid(f"{subject}-Herkünfte sind nicht kanonisch.")
+
+
+def _revalidate_polynomial(
+    polynomial: Polynomial,
+    variable_name: str,
+    limits: RootAnalysisLimits,
+) -> None:
+    if type(polynomial) is not Polynomial:
+        _invalid("Ein enthaltenes Polynom hat einen ungültigen Typ.")
+    polynomial_variable = getattr(polynomial, "variable_name", _MISSING)
+    expression = getattr(polynomial, "expression", _MISSING)
+    used_parameter_names = getattr(
+        polynomial, "used_parameter_names", _MISSING
+    )
+    degree_info = getattr(polynomial, "degree_info", _MISSING)
+    generic_degree = getattr(degree_info, "generic_degree", _MISSING)
+    if (
+        type(polynomial_variable) is not str
+        or polynomial_variable != variable_name
+        or type(expression) is not ExactExpression
+        or type(used_parameter_names) is not frozenset
+        or any(type(name) is not str for name in used_parameter_names)
+        or (
+            generic_degree is not None
+            and (
+                isinstance(generic_degree, bool)
+                or type(generic_degree) is not int
+                or generic_degree < 0
+            )
+        )
+    ):
+        _invalid("Ein enthaltenes Polynom verwendet eine falsche Variable.")
+    if (
+        generic_degree is not None
+        and generic_degree > limits.max_polynomial_degree
+    ):
+        _limit("max_polynomial_degree")
+    rebuilt = _polynomial_factory(limits).create(
+        expression,
+        variable_name=variable_name,
+        declared_parameter_names=used_parameter_names,
+    )
+    try:
+        matches = rebuilt.value == polynomial
+    except (AttributeError, TypeError):
+        matches = False
+    if not matches:
+        _invalid("Ein enthaltenes Polynom besteht die Revalidierung nicht.")
+
+
+def _polynomial_factory(limits: RootAnalysisLimits) -> PolynomialFactory:
+    return PolynomialFactory(
+        PolynomialLimits(
+            max_degree=limits.max_polynomial_degree,
+            max_coefficients=limits.max_polynomial_degree + 1,
+            max_structural_terms=limits.max_polynomial_degree + 1,
+            max_parameters=limits.max_parameters,
+            max_expression_nodes=limits.max_expression_nodes,
+        )
+    )
+
+
 def validate_substitutions(
     reduced: ReducedTransferFunction,
     substitutions: ParameterSubstitutions | None,
+    limits: RootAnalysisLimits,
 ) -> tuple[ParameterSubstitutions | None, dict[sp.Symbol, sp.Rational] | None]:
     """Validate completeness and return an internal exact SymPy mapping."""
 
@@ -137,7 +266,53 @@ def validate_substitutions(
         if expected:
             return None, None
         substitutions = ParameterSubstitutions()
-    provided = substitutions.parameter_names
+    assignments = getattr(substitutions, "assignments", _MISSING)
+    if type(assignments) is not tuple:
+        _invalid_substitution("Die Substitutionsliste ist nicht kanonisch.")
+    names: list[str] = []
+    rational_values: list[tuple[str, int, int]] = []
+    for assignment in assignments:
+        if type(assignment) is not ParameterAssignment:
+            _invalid_substitution("Eine Parameterzuweisung hat einen ungültigen Typ.")
+        parameter_name = getattr(assignment, "parameter_name", _MISSING)
+        value = getattr(assignment, "value", _MISSING)
+        if (
+            type(parameter_name) is not str
+            or not parameter_name.isidentifier()
+            or iskeyword(parameter_name)
+        ):
+            _invalid_substitution("Ein Parametername ist nicht sicher.")
+        if type(value) is not ExactRationalValue:
+            _invalid_substitution("Ein Parameterwert ist nicht exakt rational.")
+        numerator = getattr(value, "numerator", _MISSING)
+        denominator = getattr(value, "denominator", _MISSING)
+        if (
+            isinstance(numerator, bool)
+            or type(numerator) is not int
+            or isinstance(denominator, bool)
+            or type(denominator) is not int
+            or denominator <= 0
+            or gcd(abs(numerator), denominator) != 1
+        ):
+            _invalid_substitution("Ein rationaler Parameterwert ist nicht kanonisch.")
+        if (
+            _integer_exceeds_digits(
+                numerator, limits.max_substitution_integer_digits
+            )
+            or _integer_exceeds_digits(
+                denominator, limits.max_substitution_integer_digits
+            )
+        ):
+            _limit("max_substitution_integer_digits")
+        names.append(parameter_name)
+        rational_values.append((parameter_name, numerator, denominator))
+    if len(names) != len(set(names)):
+        _invalid_substitution("Ein Parameter wurde mehrfach belegt.")
+    if tuple(names) != tuple(sorted(names)):
+        _invalid_substitution("Parameterbelegungen sind nicht deterministisch sortiert.")
+    provided = frozenset(names)
+    if reduced.variable_name in provided:
+        _invalid_substitution("Die Hauptvariable darf nicht substituiert werden.")
     extra = provided - expected
     if extra:
         raise RootAnalysisFailure(
@@ -153,10 +328,8 @@ def validate_substitutions(
             (("parameters", ",".join(sorted(missing))),),
         )
     mapping = {
-        sp.Symbol(item.parameter_name): sp.Rational(
-            item.value.numerator, item.value.denominator
-        )
-        for item in substitutions.assignments
+        sp.Symbol(parameter_name): sp.Rational(numerator, denominator)
+        for parameter_name, numerator, denominator in rational_values
     }
     return substitutions, mapping
 
@@ -277,14 +450,29 @@ def _check_node_limit(
             _limit(limit_name)
 
 
-def _invalid(message: str) -> None:
+def _integer_exceeds_digits(value: int, maximum_digits: int) -> bool:
+    magnitude = value if value >= 0 else -value
+    if magnitude == 0 or magnitude.bit_length() <= maximum_digits:
+        return False
+    threshold: int = pow(10, maximum_digits)
+    return bool(magnitude >= threshold)
+
+
+def _invalid_substitution(message: str) -> NoReturn:
+    raise RootAnalysisFailure(
+        DiagnosticCode.ROOT_ANALYSIS_INVALID_SUBSTITUTION,
+        message,
+    )
+
+
+def _invalid(message: str) -> NoReturn:
     raise RootAnalysisFailure(
         DiagnosticCode.ROOT_ANALYSIS_INVALID_TRANSFER_FUNCTION,
         message,
     )
 
 
-def _limit(name: str) -> None:
+def _limit(name: str) -> NoReturn:
     raise RootAnalysisFailure(
         DiagnosticCode.ROOT_ANALYSIS_LIMIT_EXCEEDED,
         "Eine konfigurierte Grenze der Wurzelanalyse wurde überschritten.",

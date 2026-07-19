@@ -199,7 +199,10 @@ Substitutionstests decken vollständige rationale Belegungen, fehlende und
 zusätzliche Parameter, Gradabfall sowie verletzte `EXPRESSION_NONZERO`- und
 `NOT_ALL_ZERO`-Voraussetzungen ab. Ohne Belegung bleibt ein parametrischer Fall
 erfolgreich und strukturiert unbestimmt. Gleitkomma-, komplexe und partielle
-Belegungen werden nicht durch schwächere Erwartungen simuliert.
+Belegungen werden nicht durch schwächere Erwartungen simuliert. Manipulierte
+Zuweisungen, Bool-Werte, nicht gekürzte Brüche, unsortierte oder doppelte
+Parameter und zu große Ganzzahlen werden vor der SymPy-Konstruktion defensiv
+abgelehnt.
 
 Definitions- und Integrationstests halten reduzierte Pole/Nullstellen,
 erhaltene Ausschlussorte und gekürzte Orte auseinander. Sie prüfen
@@ -207,13 +210,18 @@ parameterabhängig konstante und identisch verschwindende Ausschlusspolynome,
 leeren Definitionsbereich, Herkunftserhalt sowie die Regel, dass nur
 nachgewiesene gemeinsame Polynomfaktor-Schritte Kürzungsorte erzeugen.
 Manipulierte reduzierte Werte und lückenhafte Berichte müssen defensiv
-scheitern.
+scheitern. Das schließt leere oder falschstellige Voraussetzungen,
+nichtkanonische Herkunftsangaben, Duplikate und parameterreine
+Definitionsausschlüsse ein.
 
 Numerische Tests setzen jede autoritative exakte Wurzel in ihr Polynom ein und
 prüfen absolutes und skaliertes Residuum. Weitere Fälle sichern
 Konjugiertenprüfung, strukturierte Warnungen für Mehrfachwurzeln und nahe
 Cluster sowie deterministische Reihenfolge. Numerische Ergebnisse werden
 nicht toleranzbasiert gleichgesetzt und bleiben absichtlich nicht hashbar.
+Dezimaltexte werden wertbasiert kanonisiert. Tests unterscheiden außerdem
+angeforderte Präzision, Schutzziffern und die maximale temporäre
+`evalf`-Arbeitspräzision; letztere ist keine Iterationsgrenze.
 Limit- und Ressourcentests prüfen strukturierte Diagnosen, ohne exakte
 Erwartungen oder bestehende Tests abzuschwächen.
 

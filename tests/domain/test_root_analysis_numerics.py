@@ -2,8 +2,11 @@
 
 from decimal import Decimal
 
+import pytest
 import sympy as sp
+from sympy.core.evalf import PrecisionExhausted
 
+import klausurbotpro.domain._numeric_root_verifier as numeric_module
 from klausurbotpro.domain import (
     ConjugateStatus,
     DiagnosticCode,
@@ -91,3 +94,43 @@ def test_root_and_estimate_order_is_deterministic() -> None:
 
     assert first.reduced_zeros == second.reduced_zeros
     assert first.diagnostics == second.diagnostics
+
+
+def test_precision_exhaustion_keeps_exact_roots_and_is_structured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ExhaustedExpression:
+        def evalf(
+            self,
+            digits: int,
+            *,
+            maxn: int,
+            strict: bool,
+        ) -> sp.Expr:
+            assert digits == 52
+            assert maxn == 160
+            assert strict is True
+            raise PrecisionExhausted
+
+    def exhausted_root(value: object) -> ExhaustedExpression:
+        return ExhaustedExpression()
+
+    monkeypatch.setattr(
+        numeric_module,
+        "exact_root_as_sympy",
+        exhausted_root,
+    )
+    result = TransferFunctionRootAnalyzer().analyze(
+        _value(sp.Symbol("s") + 1)
+    )
+
+    assert result.succeeded
+    assert result.reduced_zeros is not None
+    assert len(result.reduced_zeros.roots) == 1
+    assert result.reduced_zeros.numerical_estimates == ()
+    assert DiagnosticCode.ROOT_ANALYSIS_NUMERIC_SOLVER_FAILED in {
+        item.code for item in result.diagnostics
+    }
+    assert DiagnosticCode.ROOT_ANALYSIS_NUMERIC_CHECK_SKIPPED in {
+        item.code for item in result.diagnostics
+    }

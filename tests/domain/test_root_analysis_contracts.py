@@ -10,6 +10,7 @@ from klausurbotpro.domain import (
     NumericalRootEstimate,
     PolynomialRootAnalysis,
     PolynomialRootStatus,
+    RootAnalysisLimits,
     RootOccurrence,
     RootOfValue,
     RootSource,
@@ -49,6 +50,62 @@ def test_numerical_estimates_are_immutable_structural_and_unhashable() -> None:
     assert estimate == estimate
     with pytest.raises(TypeError, match="unhashable"):
         hash(estimate)
+
+
+def test_numerical_decimal_texts_are_value_canonical() -> None:
+    values = [
+        NumericalRootEstimate(
+            0,
+            text,
+            "-0.000",
+            40,
+            "000.0",
+            "1.2300E-4",
+            ConjugateStatus.REAL,
+        )
+        for text in ("1", "1.0", "01.000")
+    ]
+
+    assert {item.real for item in values} == {"1"}
+    assert {item.imaginary for item in values} == {"0"}
+    assert {item.absolute_residual for item in values} == {"0"}
+    assert {item.scaled_residual for item in values} == {"0.000123"}
+    assert values[0] == values[1] == values[2]
+    exponent_values = [
+        NumericalRootEstimate(
+            0,
+            text,
+            "0",
+            40,
+            "0",
+            "0",
+            ConjugateStatus.REAL,
+        )
+        for text in ("1000", "1000.0", "1E+3")
+    ]
+    assert {item.real for item in exponent_values} == {"1E+3"}
+    for nonfinite in ("NaN", "Infinity", "-Infinity"):
+        with pytest.raises(ValueError, match="finite"):
+            NumericalRootEstimate(
+                0,
+                nonfinite,
+                "0",
+                40,
+                "0",
+                "0",
+                ConjugateStatus.REAL,
+            )
+
+
+def test_evalf_working_precision_must_cover_result_and_guard_digits() -> None:
+    with pytest.raises(ValueError, match="max_evalf_working_digits"):
+        RootAnalysisLimits(
+            numeric_precision_digits=40,
+            numeric_guard_digits=12,
+            max_evalf_working_digits=51,
+        )
+    with pytest.raises(ValueError, match="integer"):
+        RootAnalysisLimits(max_substitution_integer_digits=False)
 
 
 def test_polynomial_root_analysis_rejects_invalid_multiplicity() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import sympy as sp
+from sympy.core.evalf import PrecisionExhausted
 from sympy.polys.polyerrors import BasePolynomialError
 
 from klausurbotpro.domain._exact_polynomial_root_solver import (
@@ -113,7 +114,7 @@ class TransferFunctionRootAnalyzer:
         try:
             validate_reduced_transfer_function(reduced, self._limits)
             normalized_substitutions, mapping = validate_substitutions(
-                reduced, substitutions
+                reduced, substitutions, self._limits
             )
             if mapping is None:
                 diagnostics.append(
@@ -277,7 +278,7 @@ class TransferFunctionRootAnalyzer:
             )
             local_diagnostics.extend(numeric_diagnostics)
             return verified, tuple(local_diagnostics)
-        except (ArithmeticError, ValueError) as error:
+        except (ArithmeticError, PrecisionExhausted, ValueError) as error:
             local_diagnostics.append(
                 Diagnostic(
                     DiagnosticSeverity.WARNING,

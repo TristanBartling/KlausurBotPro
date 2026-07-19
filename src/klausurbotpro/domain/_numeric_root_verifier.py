@@ -35,10 +35,7 @@ def verify_numerical_roots(
     working_digits = limits.numeric_precision_digits + limits.numeric_guard_digits
     exact_values = [exact_root_as_sympy(item.value) for item in analysis.roots]
     approximations = [
-        value.evalf(
-            working_digits,
-            maxn=limits.max_numeric_iterations,
-        )
+        _evalf(value, working_digits, limits)
         for value in exact_values
     ]
     threshold = sp.Rational(1, 10) ** max(4, limits.numeric_precision_digits // 2)
@@ -64,7 +61,10 @@ def verify_numerical_roots(
             )
         if any(
             other_index != occurrence.index
-            and sp.N(abs(approximation - other), working_digits) < cluster_threshold
+            and _evalf(
+                abs(approximation - other), working_digits, limits
+            )
+            < cluster_threshold
             for other_index, other in enumerate(approximations)
         ):
             warnings.append(NumericalRootWarning.CLOSE_CLUSTER)
@@ -80,34 +80,31 @@ def verify_numerical_roots(
         evaluated = polynomial.as_expr().subs(
             polynomial.gens[0], approximation
         )
-        absolute_residual = sp.N(
+        absolute_residual = _evalf(
             sp.re(
-                sp.Abs(evaluated).evalf(
-                    working_digits,
-                    maxn=limits.max_numeric_iterations,
-                )
+                _evalf(sp.Abs(evaluated), working_digits, limits)
             ),
             working_digits,
+            limits,
         )
-        magnitude = sp.N(
+        magnitude = _evalf(
             sp.re(
-                sp.Abs(approximation).evalf(
-                    working_digits,
-                    maxn=limits.max_numeric_iterations,
-                )
+                _evalf(sp.Abs(approximation), working_digits, limits)
             ),
             working_digits,
+            limits,
         )
         scale = sp.Integer(0)
         degree = int(polynomial.degree())
         for position, coefficient in enumerate(polynomial.all_coeffs()):
             power = degree - position
-            scale += sp.Abs(sp.N(coefficient, working_digits)) * max(
+            scale += sp.Abs(_evalf(coefficient, working_digits, limits)) * max(
                 sp.Integer(1), magnitude
             ) ** power
-        scaled_residual = sp.N(
+        scaled_residual = _evalf(
             absolute_residual / max(sp.Integer(1), scale),
             working_digits,
+            limits,
         )
         if scaled_residual > threshold:
             warnings.append(NumericalRootWarning.RESIDUAL_TOO_LARGE)
@@ -120,8 +117,16 @@ def verify_numerical_roots(
                 )
             )
 
-        real = sp.N(sp.re(approximation), limits.numeric_precision_digits)
-        imaginary = sp.N(sp.im(approximation), limits.numeric_precision_digits)
+        real = _evalf(
+            sp.re(approximation),
+            limits.numeric_precision_digits,
+            limits,
+        )
+        imaginary = _evalf(
+            sp.im(approximation),
+            limits.numeric_precision_digits,
+            limits,
+        )
         exact_is_real = exact_values[occurrence.index].is_real
         if exact_is_real is True:
             conjugate_status = ConjugateStatus.REAL
@@ -131,7 +136,10 @@ def verify_numerical_roots(
                 other_index != occurrence.index
                 and analysis.roots[other_index].multiplicity
                 == occurrence.multiplicity
-                and sp.N(abs(other - conjugate), working_digits) <= threshold
+                and _evalf(
+                    abs(other - conjugate), working_digits, limits
+                )
+                <= threshold
                 for other_index, other in enumerate(approximations)
             )
             conjugate_status = (
@@ -152,14 +160,22 @@ def verify_numerical_roots(
         estimates.append(
             NumericalRootEstimate(
                 occurrence.index,
-                _decimal_text(real),
-                _decimal_text(imaginary),
+                str(real),
+                str(imaginary),
                 limits.numeric_precision_digits,
-                _decimal_text(
-                    sp.N(absolute_residual, limits.numeric_precision_digits)
+                str(
+                    _evalf(
+                        absolute_residual,
+                        limits.numeric_precision_digits,
+                        limits,
+                    )
                 ),
-                _decimal_text(
-                    sp.N(scaled_residual, limits.numeric_precision_digits)
+                str(
+                    _evalf(
+                        scaled_residual,
+                        limits.numeric_precision_digits,
+                        limits,
+                    )
                 ),
                 conjugate_status,
                 tuple(warnings),
@@ -181,11 +197,16 @@ def verify_numerical_roots(
     )
 
 
-def _decimal_text(value: sp.Expr) -> str:
-    text = str(value)
-    if text in {"0.e-1", "0.e+1"} or value == 0:
-        return "0"
-    return text
+def _evalf(
+    value: sp.Expr,
+    digits: int,
+    limits: RootAnalysisLimits,
+) -> sp.Expr:
+    return value.evalf(
+        digits,
+        maxn=limits.max_evalf_working_digits,
+        strict=True,
+    )
 
 
 def _warning(
