@@ -266,6 +266,45 @@ Quellenreferenzen und alle öffentlichen Exporte des Domain-Facades ab. Der neue
 Fachkern enthält keine Parsing-, UI-, Properness-, Hurwitz-, Routh- oder
 Nyquistfunktion und verändert keine globale SymPy-Konfiguration.
 
+## Tests des Transferfunktionsworkflows
+
+Phase 2C.1 wird als UI-unabhängige Integration der bestehenden Parser- und
+Domainverträge geprüft. COMMON und SEPARATED müssen für denselben
+mathematischen Inhalt denselben reduzierten Wert sowie dieselben reduzierten
+Pole und Nullstellen liefern. Parametrisierte Fälle prüfen sowohl erfolgreiches
+`SYMBOLIC_UNDETERMINED` ohne Belegung als auch exakte rationale
+Substitutionen.
+
+Fehlertests erzwingen Parser-, Raw-, Reduktions-, Root- und
+Stabilitätsfehler. Jede spätere Stufe muss `BLOCKED` sein, während sämtliche
+vorherigen Teilresultate erhalten bleiben. Diagnoseprüfungen vergleichen die
+unveränderten Domainobjekte und ihre feste Aggregationsreihenfolge. Eigene
+Tests decken Request-, Diagnose-, Provenienz-, Begründungs- und
+Operationssequenzlimits ab.
+
+Override-Tests revalidieren Raw-, Reduced- und Root-Werte unabhängig, lehnen
+abweichenden Variablen-, Parameter-, Reduced- oder Substitutionskontext
+strukturiert ab und prüfen jede Invalidierungsregel. Ungültige Overrides
+dürfen den aktiven mathematischen Zustand nicht verändern. Determinismustests
+vergleichen gleiche Runs und Operationsfolgen ohne Zeit-, Zufalls- oder
+Objektadressabhängigkeit. Importtests erlauben `application → domain/parsing`,
+verbieten `domain → application` und schließen PySide6 sowie rohe SymPy-
+Parsingpfade aus.
+
+Manipulationstests verändern Requests und Workflowstates gezielt mit
+`object.__setattr__`. Sie prüfen falsche Top-Level-Typen, String-Unterklassen,
+Stage-Reihenfolge, Diagnoseaggregation, Operationssequenz, fremde Raw-,
+Reduced-, Root- und Stability-Ergebnisse sowie widersprüchliche
+Status-/Ergebniskombinationen. Vor einer Folgeoperation muss jeder solche
+State strukturiert abgelehnt werden, ohne einen unvalidierten mathematischen
+Wert weiterzuverwenden.
+
+Diagnoselimitregressionen erzwingen Überläufe in Parse-, Root- und
+Stability-Stufe sowie bei einem abgelehnten Override. Die betroffene Stufe
+erhält genau den strukturierten Limitfehler, frühere Teilresultate bleiben
+erhalten, spätere Stufen sind blockiert und die aggregierte Anzahl bleibt
+innerhalb des konfigurierten Limits.
+
 ## Regressionstests mit offiziellen Aufgaben
 
 Verifizierte Aufgaben aus offiziellen Unterlagen werden später als
