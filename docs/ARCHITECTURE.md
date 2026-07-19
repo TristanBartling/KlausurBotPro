@@ -639,14 +639,70 @@ Die Projektion kann reale Phasenänderungen von mehr als 180° zwischen zwei
 Abtastpunkten nicht eindeutig erkennen. Sie enthält keine Reserven,
 Durchtrittsfrequenzen, Nyquist-Auswertung, GUI, Plot- oder Berichtserzeugung.
 
+## Implementierte gemeinsame Transferfunktionsvorbereitung (Phase 3E.1a)
+
+`TransferFunctionPreparationService` bildet die gemeinsame
+Application-Pipeline für Requestvalidierung, sicheres Parsing,
+`RawTransferFunction`-Erzeugung und exakte Reduktion. Die Pipeline besitzt
+eine einzige autoritative Implementierung und führt je Serviceaufruf einen
+produktiven Durchlauf aus. Die interne Vertrauensgrenze reproduziert Parsing,
+Raw-Erzeugung und Reduktion anschließend defensiv; dies ist keine zweite
+konkurrierende Fachimplementierung. Der Service verwendet den
+bestehenden `TransferFunctionWorkflowRequest` einschließlich unverändert
+erhaltener Parametersubstitutionen, wendet diese während der Vorbereitung
+aber nicht an. COMMON und SEPARATED laufen weiterhin ausschließlich über den
+vorhandenen `SafeRationalExpressionParser`; es gibt keinen zweiten Parser-,
+Raw- oder Reduktionsweg.
+
+Das servicekontrollierte `TransferFunctionPreparationResult` besitzt genau
+drei feste Records in der Reihenfolge `PARSE`, `RAW_TRANSFER_FUNCTION`,
+`REDUCTION`. Parsefehler ergeben `FAILED`. Raw- und Reduktionsfehler ergeben
+`PARTIAL`, weil validierte vorgelagerte Ergebnisse erhalten bleiben. Jede
+fehlgeschlagene Stufe blockiert sämtliche Nachfolger. `raw_value` und
+`reduced_value` sind ausschließlich abgeleitete Zugriffe auf die vorhandenen
+Domainresultate und werden nicht doppelt gespeichert.
+
+Eine interne Vertrauensgrenze revalidiert Requestkontext, Stufenfolge,
+Statusmatrix, Teilresultate und Wertherkunft vollständig feldweise.
+Parsertexte, normalisierte Texte, erlaubte Symbole und Rohbäume werden nicht
+über die bewusst provenanceblinde Eingabegleichheit geprüft. Der erfolgreiche
+Raw-Wert referenziert seinen gespeicherten `input_snapshot` identisch als
+Preparation-`parsed_input`; Raw-Metadaten, Voraussetzungen und
+Definitionsausschlüsse schließen ihre Herkunft ein. Das ReductionResult
+referenziert den Raw-Wert identisch; reduzierter Wert und vollständiger
+geordneter Bericht einschließlich Faktoren und verwendeter Voraussetzungen
+werden streng reproduziert. Zusätzlich prüft die Grenze Diagnoseaggregation
+und die bestehenden `TransferFunctionWorkflowLimits`.
+Domain-Diagnosen bleiben unverändert in Stufenreihenfolge; genau eine
+Application-Diagnose ergänzt einen erwartbaren Stufenfehler. Speicher-,
+Rekursions- und Überlauffehler werden an der betroffenen Stufe strukturiert
+abgebildet. Interne Programmierfehler werden nicht pauschal maskiert.
+
+`TransferFunctionWorkflowService.run()` verwendet die Preparation genau
+einmal und setzt nur bei vollständiger Vorbereitung mit Wurzel- und
+Stabilitätsanalyse fort. Overrides und Substitutionsupdates behalten ihre
+bisherige Semantik. Ein späterer Frequenzbereichsworkflow kann dieselbe
+Vorbereitung verwenden, ohne für reine Bode-Aufgaben unnötig Wurzeln oder
+Stabilität zu analysieren.
+
+Phase 3E.1a enthält noch keine Frequenzgang-, Raster-, Bode- oder
+Phasenentfaltungsorchestrierung im Application-Layer und keinen Bericht,
+Diagramm-, GUI-, Overleaf-, Reserven- oder Nyquist-Ausbau.
+
+Die vollständige defensive Reproduktion verursacht zusätzliche Rechenkosten.
+Vor Abschluss der Frequenz-GUI werden diese mit realen Aufgaben und
+Laufzeitmessungen geprüft. Die Vertrauensgrenze wird nicht ohne gemessenen
+Grund reduziert; Unit-Tests enthalten keine zeitabhängigen Laufzeitgrenzen.
+
 ## Implementierter Transferfunktionsworkflow (Phase 2C.1)
 
 Die UI-unabhängige Application-Schicht orchestriert den vorhandenen sicheren
 Parser und die vier Domainstufen Raw-Erzeugung, Reduktion, Wurzelanalyse und
-Stabilitätsanalyse. COMMON- und SEPARATED-Eingaben verwenden ausschließlich
-`SafeRationalExpressionParser`; es existiert kein zweiter Parser- oder
-String-zu-SymPy-Pfad. Parser-, Domain- und Application-Diagnosen bleiben als
-strukturierte Objekte erhalten.
+Stabilitätsanalyse. Die ersten drei Schritte werden durch die gemeinsame
+Preparation-Pipeline bereitgestellt. COMMON- und SEPARATED-Eingaben verwenden
+ausschließlich `SafeRationalExpressionParser`; es existiert kein zweiter
+Parser- oder String-zu-SymPy-Pfad. Parser-, Domain- und
+Application-Diagnosen bleiben als strukturierte Objekte erhalten.
 
 Jeder unveränderliche Workflowzustand enthält fünf Records in fester
 Stufenreihenfolge. Der Endstatus `NOT_EVALUATED`, `SUCCEEDED`, `FAILED` oder
