@@ -266,6 +266,45 @@ Quellenreferenzen und alle öffentlichen Exporte des Domain-Facades ab. Der neue
 Fachkern enthält keine Parsing-, UI-, Properness-, Hurwitz-, Routh- oder
 Nyquistfunktion und verändert keine globale SymPy-Konfiguration.
 
+## Tests der punktweisen Frequenzganganalyse
+
+Phase 3A.1 wird direkt mit validierten `ReducedTransferFunction`-Werten und
+ohne Application- oder UI-Abhängigkeit geprüft. Akzeptanztests vergleichen
+`G(i*omega)`, Real- und Imaginärteil sowie das Betragsquadrat exakt. Erst
+danach werden Betrag, `20*log10(abs(G))` und die quadrantenrichtige
+`atan2`-Hauptphase als deterministische Dezimalstrings geprüft. Tests für alle
+vier Quadranten und den negativen Realachsenwert sichern den Bereich
+`(-180°, 180°]`; eine Phasenentfaltung wird weder erwartet noch aufgerufen.
+
+Die Referenzmatrix aus
+`Regelungstechnik_Tutorium_komplett.pdf`, Tutorium 04 umfasst das PT1-Glied
+`1/(2*s+1)`, das I-Glied `1/(T*s)` und das D-Glied `T*s`. Sie prüft
+`1/(1+(T*omega)**2)` als PT1-Betragsquadrat sowie Betrag und Phase von I- und
+D-Glied. Diese Formeln sind Testorakel und keine Sonderpfade im Analyzer.
+
+Status- und Grenztests unterscheiden definierte Punkte, Nullantworten,
+Singularitäten, symbolisch und numerisch unbestimmte Punkte sowie vollständige,
+partielle, symbolisch unbestimmte und fehlgeschlagene Gesamtergebnisse.
+Nullantworten müssen Betrag null, strukturiertes minus unendlich in dB und
+keine Phase besitzen. Singularitäten aus Nennernullstellen oder erhaltenen
+Definitionsausschlüssen dürfen keine endlichen Werte oder ungefilterte
+Division-durch-null-Ausnahme erzeugen.
+
+Parameter- und Manipulationstests decken vollständige und unvollständige
+exakte rationale Belegungen, unbekannte Namen, nichtkanonische Rationalwerte,
+verletzte `EXPRESSION_NONZERO`- und `NOT_ALL_ZERO`-Voraussetzungen sowie
+gefälschte reduzierte Werte ab. Frequenztests lehnen leere, negative,
+doppelte, nicht streng aufsteigende, zu große oder zu zahlreiche Werte vor
+jeder Punktrechnung ab. Jede `FrequencyResponseLimits`-Grenze,
+deterministische Präzision sowie erwartbare Speicher-, Rekursions- und
+Überlauffehler besitzen strukturierte Testpfade.
+
+Öffentliche Ergebnisse werden auf Unveränderlichkeit, kontrollierte
+Konstruktion, Reihenfolge, fehlende rohe SymPy-Werte und fehlende
+Application-, UI-, Parsing- oder Stringauswertungspfade geprüft. Phase 3A.1
+testet keine automatischen Raster, Diagramme, Reserven, Nyquist-Auswertung
+oder Stabilitätsentscheidung.
+
 ## Tests des Transferfunktionsworkflows
 
 Phase 2C.1 wird als UI-unabhängige Integration der bestehenden Parser- und

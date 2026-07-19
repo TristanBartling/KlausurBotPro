@@ -163,6 +163,30 @@ class DiagnosticCode(StrEnum):
         "stability_analysis.cancelled_locations_not_evaluated"
     )
     STABILITY_ANALYSIS_NO_POLES = "stability_analysis.no_poles"
+    FREQUENCY_RESPONSE_INVALID_INPUT = "frequency_response.invalid_input"
+    FREQUENCY_RESPONSE_CONTEXT_MISMATCH = (
+        "frequency_response.context_mismatch"
+    )
+    FREQUENCY_RESPONSE_INVALID_FREQUENCIES = (
+        "frequency_response.invalid_frequencies"
+    )
+    FREQUENCY_RESPONSE_INVALID_SUBSTITUTIONS = (
+        "frequency_response.invalid_substitutions"
+    )
+    FREQUENCY_RESPONSE_SYMBOLIC_UNDETERMINED = (
+        "frequency_response.symbolic_undetermined"
+    )
+    FREQUENCY_RESPONSE_SINGULAR = "frequency_response.singular"
+    FREQUENCY_RESPONSE_ZERO_RESPONSE = "frequency_response.zero_response"
+    FREQUENCY_RESPONSE_NUMERIC_UNDETERMINED = (
+        "frequency_response.numeric_undetermined"
+    )
+    FREQUENCY_RESPONSE_LIMIT_EXCEEDED = (
+        "frequency_response.limit_exceeded"
+    )
+    FREQUENCY_RESPONSE_RESOURCE_LIMIT_EXCEEDED = (
+        "frequency_response.resource_limit_exceeded"
+    )
 
 
 @dataclass(frozen=True, slots=True)
