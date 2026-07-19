@@ -6,6 +6,11 @@ from klausurbotpro.domain.diagnostics import (
     DiagnosticSeverity,
 )
 from klausurbotpro.domain.expression import ExactExpression
+from klausurbotpro.domain.parameter_substitutions import (
+    ExactRationalValue,
+    ParameterAssignment,
+    ParameterSubstitutions,
+)
 from klausurbotpro.domain.polynomial import Polynomial
 from klausurbotpro.domain.polynomial_contracts import (
     PolynomialCondition,
@@ -30,6 +35,21 @@ from klausurbotpro.domain.raw_transfer_function_factory import (
 from klausurbotpro.domain.reduced_transfer_function import (
     ReducedTransferFunction,
 )
+from klausurbotpro.domain.root_analysis_contracts import (
+    ConjugateStatus,
+    ExactRootValue,
+    ExplicitExactRootValue,
+    NumericalRootEstimate,
+    NumericalRootWarning,
+    PolynomialRootAnalysis,
+    PolynomialRootStatus,
+    RootAnalysisGroup,
+    RootAnalysisLimits,
+    RootOccurrence,
+    RootOfValue,
+    RootSource,
+    TransferFunctionRootAnalysisResult,
+)
 from klausurbotpro.domain.transfer_function_input import (
     CommonTransferFunctionInput,
     SeparatedTransferFunctionInput,
@@ -46,6 +66,9 @@ from klausurbotpro.domain.transfer_function_reduction_contracts import (
     TransferFunctionReductionStep,
     TransferFunctionReductionStepKind,
 )
+from klausurbotpro.domain.transfer_function_root_analyzer import (
+    TransferFunctionRootAnalyzer,
+)
 
 __all__ = [
     "CommonTransferFunctionInput",
@@ -53,6 +76,14 @@ __all__ = [
     "DiagnosticCode",
     "DiagnosticSeverity",
     "ExactExpression",
+    "ExactRationalValue",
+    "ExactRootValue",
+    "ExplicitExactRootValue",
+    "ConjugateStatus",
+    "NumericalRootEstimate",
+    "NumericalRootWarning",
+    "ParameterAssignment",
+    "ParameterSubstitutions",
     "Polynomial",
     "PolynomialCondition",
     "PolynomialConditionKind",
@@ -60,12 +91,19 @@ __all__ = [
     "PolynomialDegreeInfo",
     "PolynomialFactory",
     "PolynomialLimits",
+    "PolynomialRootAnalysis",
+    "PolynomialRootStatus",
     "RawAlgebraicExpression",
     "RawTransferFunction",
     "RawTransferFunctionCreationResult",
     "RawTransferFunctionFactory",
     "RawTransferFunctionLimits",
     "ReducedTransferFunction",
+    "RootAnalysisGroup",
+    "RootAnalysisLimits",
+    "RootOccurrence",
+    "RootOfValue",
+    "RootSource",
     "SeparatedTransferFunctionInput",
     "TransferFunctionDomainExclusion",
     "TransferFunctionInput",
@@ -73,6 +111,8 @@ __all__ = [
     "TransferFunctionPrerequisite",
     "TransferFunctionPrerequisiteKind",
     "TransferFunctionReducer",
+    "TransferFunctionRootAnalysisResult",
+    "TransferFunctionRootAnalyzer",
     "TransferFunctionReductionLimits",
     "TransferFunctionReductionReport",
     "TransferFunctionReductionResult",
