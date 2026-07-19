@@ -505,6 +505,41 @@ schließen Root-, Stability-, UI-, Report- und Plotabhängigkeiten im neuen
 Preparation-Kern aus. Frequenzorchestrierung, GUI-Umbau und Berichte bleiben
 außerhalb dieser Phase.
 
+## Tests des Frequenzbereichs-Application-Workflows
+
+Phase 3E.1b prüft `SINGLE_POINT` und `BODE` als UI-unabhängige
+Applicationmodi. Einzelpunkttests umfassen PT1 bei null und positiver
+rationaler Frequenz, exakte Parameterbelegung, Singularität sowie symbolisch
+und künstlich numerisch unbestimmte Fachresultate. Diese Domainstatus bleiben
+bei vollständig ausgeführter Analyse auf Applicationebene `COMPLETE`.
+
+Bode-Tests verwenden PT1-, I-, D-, negative Verstärkungs- und komplexe
+Polfälle, explizite Zusatzfrequenzen, Nullantwort, Singularitätsunterbrechung
+und symbolisch unbestimmte Punkte. Spies belegen genau einen Raster- und
+Bode-Aufruf. Der einzige Phase-3A.1-Aufruf entsteht innerhalb des vorhandenen
+Bode-Analyzers; die Application führt keinen zweiten aus.
+`PRINCIPAL_ONLY` verbietet einen Unwrap-Aufruf,
+`PRINCIPAL_AND_UNWRAPPED` verlangt genau einen. `NO_PLOTTABLE_DATA` und
+`NO_PHASE_DATA` bleiben fachlich vollständige Applicationresultate.
+
+Fehler- und Ressourcentests decken Preparation-, Einzelpunkt-, Raster-, Bode-
+und Unwrap-Grenzen ab. `MemoryError`, `RecursionError` und `OverflowError`
+werden an jeder Applicationgrenze strukturiert; interne Programmierfehler
+bleiben sichtbar. Moduswidrige Felder ergeben ein wertfreies Ergebnis ohne
+Requestsnapshot. Diagnoseüberlauf ersetzt die erste nicht mehr vollständig
+übernehmbare Stufe durch einen strukturierten Limitfehler.
+
+Manipulationstests verändern Preparation, Einzelpunktfrequenz, Raster,
+Bode- und Unwrap-Quelle, Reduced-Identität, Stagefolge, Stufenstatus,
+Gesamtstatus und Diagnoseaggregation. Die Vertrauensgrenze verwendet alle
+expliziten Limits und lehnt wertgleiche, aber fremde Übergabeobjekte ab.
+Diagnosebesitztests prüfen, dass eingebettete Raster- und Bodepräfixe in der
+Applicationaggregation exakt einmal vorkommen.
+
+Architekturtests schließen Root-, Stability-, UI-, Report-, PySide6- und
+Plotabhängigkeiten aus. Bestehende Application- und alle betroffenen
+Phase-3A-Domainregressionen laufen zusätzlich unverändert.
+
 ## Tests des Transferfunktionsworkflows
 
 Phase 2C.1 wird als UI-unabhängige Integration der bestehenden Parser- und

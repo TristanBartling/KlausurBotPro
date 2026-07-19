@@ -694,6 +694,55 @@ Vor Abschluss der Frequenz-GUI werden diese mit realen Aufgaben und
 Laufzeitmessungen geprüft. Die Vertrauensgrenze wird nicht ohne gemessenen
 Grund reduziert; Unit-Tests enthalten keine zeitabhängigen Laufzeitgrenzen.
 
+## Implementierter Frequenzbereichs-Application-Workflow (Phase 3E.1b)
+
+`FrequencyDomainWorkflowService` orchestriert vorhandene Domainanalysen ohne
+UI-, Bericht- oder Plotabhängigkeit. Der verschachtelte
+`TransferFunctionWorkflowRequest` wird unverändert durch genau einen
+`TransferFunctionPreparationService` verarbeitet. Root- und
+Stabilitätsanalyse gehören nicht zu diesem Workflow.
+
+Der explizite Modus `SINGLE_POINT` wertet genau eine nichtnegative rationale
+Kreisfrequenz über genau einen
+`TransferFunctionFrequencyResponseAnalyzer`-Aufruf aus. Raster, Bode-Daten
+und Phasenentfaltung sind dabei `NOT_APPLICABLE`. Der Modus `BODE` erzeugt
+zuerst genau ein zertifiziertes logarithmisches Raster und übergibt es genau
+einmal an `TransferFunctionBodeDataAnalyzer`. Nur dieser vorhandene
+Phase-3A.2b-Analyzer orchestriert die Bode-Punktwerte über Phase 3A.1; der
+Application-Service führt keine zusätzliche Punktanalyse aus.
+
+Die Phasendarstellung ist kein boolesches Merkmal. `PRINCIPAL_ONLY` behält die
+vorhandene Hauptphase und markiert die Unwrap-Stufe als `NOT_APPLICABLE`.
+`PRINCIPAL_AND_UNWRAPPED` ruft nach erfolgreichen Bode-Daten genau einmal
+`BodePhaseUnwrapAnalyzer` auf. Die Entfaltung bleibt eine optionale
+Darstellungsprojektion und verändert die Hauptphase nicht.
+
+Jeder gültige Request besitzt fünf Records in der festen Reihenfolge
+`PREPARATION`, `SINGLE_POINT_RESPONSE`, `LOG_FREQUENCY_GRID`, `BODE_DATA`,
+`PHASE_UNWRAP`. Angeforderte Nachfolger eines Fehlers werden `BLOCKED`;
+modusfremde Stufen bleiben `NOT_APPLICABLE`. Applicationstatus und
+Domainstatus sind getrennt: singuläre, symbolisch oder numerisch unbestimmte
+Einzelpunkte sowie `NO_PLOTTABLE_DATA` und `NO_PHASE_DATA` sind vollständig
+ausgeführte Domainresultate und deshalb kein Applicationfehler.
+
+Die interne Vertrauensgrenze revalidiert Requestkombination, Preparation,
+Stage-Matrix, explizite Limits und jede Domainübergabe. Reduced-Wert,
+Raster-, Bode- und Unwrap-Quellen werden an den erforderlichen Stellen durch
+Objektidentität gebunden. Ein ungültiger Frequenzrequest liefert keinen
+Requestsnapshot und keine Domainwerte.
+
+Diagnosen gehören jeweils der ersten Application-Stufe, die sie sichtbar
+macht. Preparation- und Einzelpunktdiagnosen werden direkt übernommen.
+Rasterdiagnosen gehören der Rasterstufe. Da das Bode-Ergebnis Raster- und
+Punktdiagnosen bereits einbettet, entfernt die Applicationaggregation genau
+den verifizierten Rasterpräfix. Entsprechend besitzt die Unwrap-Stufe nur den
+verifizierten Zusatz gegenüber den Bode-Diagnosen. Dadurch bleibt die
+Gesamtreihenfolge deterministisch, ohne eingebettete Meldungen doppelt zu
+zählen.
+
+Phase 3E.1b implementiert keine Berichte, Renderer, Exporte, Diagramme, GUI,
+Overleaf-Struktur, Reserven, Durchtrittsfrequenzen oder Nyquist-Auswertung.
+
 ## Implementierter Transferfunktionsworkflow (Phase 2C.1)
 
 Die UI-unabhängige Application-Schicht orchestriert den vorhandenen sicheren
