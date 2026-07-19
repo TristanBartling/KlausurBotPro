@@ -9,6 +9,7 @@ from klausurbotpro.application.transfer_function_workflow_contracts import (
     WorkflowOverrideOriginKind,
     WorkflowStage,
 )
+from klausurbotpro.domain import DiagnosticSeverity
 
 
 class SolutionReportStatus(StrEnum):
@@ -200,11 +201,14 @@ class WarningLine:
     """A classified workflow or report notice."""
 
     code: str
+    severity: DiagnosticSeverity
     affected_stage: WorkflowStage | None
     statement: str
 
     def __post_init__(self) -> None:
         _require_text(self.code, "code")
+        if type(self.severity) is not DiagnosticSeverity:
+            raise TypeError("severity must be a DiagnosticSeverity.")
         if self.affected_stage is not None and (
             type(self.affected_stage) is not WorkflowStage
         ):
@@ -292,6 +296,7 @@ class ReportDiagnostic:
     """A report construction diagnostic separate from workflow diagnostics."""
 
     code: ReportDiagnosticCode
+    severity: DiagnosticSeverity
     message: str
     affected_section: SolutionSectionKind | None = None
     details: tuple[tuple[str, str], ...] = ()
@@ -299,6 +304,8 @@ class ReportDiagnostic:
     def __post_init__(self) -> None:
         if type(self.code) is not ReportDiagnosticCode:
             raise TypeError("code must be a ReportDiagnosticCode.")
+        if type(self.severity) is not DiagnosticSeverity:
+            raise TypeError("severity must be a DiagnosticSeverity.")
         _require_text(self.message, "message")
         if self.affected_section is not None and (
             type(self.affected_section) is not SolutionSectionKind

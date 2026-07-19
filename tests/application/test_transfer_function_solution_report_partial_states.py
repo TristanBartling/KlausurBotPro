@@ -19,8 +19,10 @@ from klausurbotpro.application import (
     WorkflowInputForm,
 )
 from klausurbotpro.domain import (
+    DiagnosticSeverity,
     ParameterSubstitutions,
     StabilityAnalysisLimits,
+    StabilityStatus,
     TransferFunctionReductionLimits,
 )
 
@@ -41,19 +43,28 @@ def test_parser_failure_produces_failed_report_without_mathematics() -> None:
     assert transfer is not None
     assert transfer.status is SolutionSectionStatus.BLOCKED
     assert not transfer.lines
+    assert report.section(SolutionSectionKind.PREREQUISITES).status is (  # type: ignore[union-attr]
+        SolutionSectionStatus.BLOCKED
+    )
+    assert report.section(SolutionSectionKind.DOMAIN_EXCLUSIONS).status is (  # type: ignore[union-attr]
+        SolutionSectionStatus.BLOCKED
+    )
     notices = report.section(SolutionSectionKind.WORKFLOW_NOTICES)
     assert notices is not None
     assert notices.lines
 
 
 def test_reduction_failure_retains_raw_report_part() -> None:
-    state = TransferFunctionWorkflowService(
-        TransferFunctionWorkflowLimits(
-            reduction=TransferFunctionReductionLimits(max_input_terms=1)
-        )
-    ).run(_request("(s+1)/(s+2)"))
+    workflow_limits = TransferFunctionWorkflowLimits(
+        reduction=TransferFunctionReductionLimits(max_input_terms=1)
+    )
+    state = TransferFunctionWorkflowService(workflow_limits).run(
+        _request("(s+1)/(s+2)")
+    )
 
-    report = TransferFunctionSolutionReportBuilder().build(state)
+    report = TransferFunctionSolutionReportBuilder(
+        workflow_limits=workflow_limits
+    ).build(state)
 
     assert report.status is SolutionReportStatus.PARTIAL
     raw = report.section(SolutionSectionKind.NUMERATOR_DENOMINATOR)
@@ -80,21 +91,33 @@ def test_root_failure_retains_reduced_report_part() -> None:
     assert report.section(SolutionSectionKind.ZEROS).status is (  # type: ignore[union-attr]
         SolutionSectionStatus.FAILED
     )
+    assert report.section(SolutionSectionKind.SOURCES).status is (  # type: ignore[union-attr]
+        SolutionSectionStatus.BLOCKED
+    )
 
 
 def test_stability_failure_retains_poles() -> None:
-    state = TransferFunctionWorkflowService(
-        TransferFunctionWorkflowLimits(
-            stability_analysis=StabilityAnalysisLimits(max_poles=1)
-        )
-    ).run(_request("1/(s^2+3*s+2)"))
-    report = TransferFunctionSolutionReportBuilder().build(state)
+    workflow_limits = TransferFunctionWorkflowLimits(
+        stability_analysis=StabilityAnalysisLimits(max_poles=1)
+    )
+    state = TransferFunctionWorkflowService(workflow_limits).run(
+        _request("1/(s^2+3*s+2)")
+    )
+    report = TransferFunctionSolutionReportBuilder(
+        workflow_limits=workflow_limits
+    ).build(state)
 
     assert report.status is SolutionReportStatus.PARTIAL
     assert report.section(SolutionSectionKind.POLES).lines  # type: ignore[union-attr]
     assert report.section(SolutionSectionKind.STABILITY).status is (  # type: ignore[union-attr]
         SolutionSectionStatus.FAILED
     )
+    sources = report.section(SolutionSectionKind.SOURCES)
+    assert sources is not None
+    assert sources.status is SolutionSectionStatus.FAILED
+    assert len(sources.lines) == 1
+    assert type(sources.lines[0]) is WarningLine
+    assert sources.lines[0].severity is DiagnosticSeverity.ERROR
 
 
 def test_wrong_top_level_state_types_raise_type_error() -> None:
@@ -158,6 +181,99 @@ def test_manipulated_state_fails_without_reusing_mathematics(
     )
     assert all(
         type(line) is WarningLine for line in report.sections[0].lines
+    )
+    assert all(
+        line.severity is DiagnosticSeverity.ERROR
+        for line in report.sections[0].lines
+        if type(line) is WarningLine
+    )
+
+
+def test_builder_uses_its_workflow_limits_exclusively() -> None:
+    state = TransferFunctionWorkflowService().run(_request("1/(s+1)"))
+    later = replace(state, operation_sequence=1_000_001)
+    permissive = TransferFunctionWorkflowLimits(
+        max_operation_sequence=1_000_001
+    )
+
+    accepted = TransferFunctionSolutionReportBuilder(
+        workflow_limits=permissive
+    ).build(later)
+    rejected = TransferFunctionSolutionReportBuilder().build(later)
+
+    assert accepted.status is SolutionReportStatus.COMPLETE
+    assert rejected.status is SolutionReportStatus.FAILED
+    assert rejected.diagnostics[0].code is (
+        ReportDiagnosticCode.REPORT_INVALID_WORKFLOW_STATE
+    )
+    assert all(
+        section.kind is SolutionSectionKind.WORKFLOW_NOTICES
+        for section in rejected.sections
+    )
+
+
+def test_workflow_limit_configuration_is_not_report_identity() -> None:
+    state = TransferFunctionWorkflowService().run(_request("1/(s+1)"))
+    first = TransferFunctionSolutionReportBuilder(
+        workflow_limits=TransferFunctionWorkflowLimits(
+            max_operation_sequence=10
+        )
+    ).build(state)
+    second = TransferFunctionSolutionReportBuilder(
+        workflow_limits=TransferFunctionWorkflowLimits(
+            max_operation_sequence=20
+        )
+    ).build(state)
+
+    assert first == second
+    assert hash(first) == hash(second)
+
+
+def test_manipulated_failed_root_result_is_rejected_without_mathematics() -> None:
+    state = TransferFunctionWorkflowService().run(
+        TransferFunctionWorkflowRequest(
+            WorkflowInputForm.COMMON,
+            common_expression_text="1/(T*s+1)",
+            allowed_parameter_names=("T",),
+            substitutions=ParameterSubstitutions(),
+        )
+    )
+    assert state.root_analysis_result is not None
+    object.__setattr__(
+        state.root_analysis_result,
+        "reduced_transfer_function",
+        state.reduced_value,
+    )
+
+    report = TransferFunctionSolutionReportBuilder().build(state)
+
+    assert report.status is SolutionReportStatus.FAILED
+    assert tuple(section.kind for section in report.sections) == (
+        SolutionSectionKind.WORKFLOW_NOTICES,
+    )
+
+
+def test_manipulated_failed_stability_result_is_rejected_without_math() -> None:
+    workflow_limits = TransferFunctionWorkflowLimits(
+        stability_analysis=StabilityAnalysisLimits(max_poles=1)
+    )
+    state = TransferFunctionWorkflowService(workflow_limits).run(
+        _request("1/(s^2+3*s+2)")
+    )
+    assert state.stability_analysis_result is not None
+    object.__setattr__(
+        state.stability_analysis_result,
+        "status",
+        StabilityStatus.STABLE,
+    )
+
+    report = TransferFunctionSolutionReportBuilder(
+        workflow_limits=workflow_limits
+    ).build(state)
+
+    assert report.status is SolutionReportStatus.FAILED
+    assert tuple(section.kind for section in report.sections) == (
+        SolutionSectionKind.WORKFLOW_NOTICES,
     )
 
 
@@ -245,6 +361,11 @@ def test_report_limits_are_structured_and_never_complete(
     assert any(
         diagnostic.code is ReportDiagnosticCode.REPORT_LIMIT_EXCEEDED
         for diagnostic in report.diagnostics
+    )
+    assert all(
+        diagnostic.severity is DiagnosticSeverity.ERROR
+        for diagnostic in report.diagnostics
+        if diagnostic.code is ReportDiagnosticCode.REPORT_LIMIT_EXCEEDED
     )
     assert any(
         type(line) is WarningLine

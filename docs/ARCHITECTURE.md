@@ -469,6 +469,12 @@ berechnet weder Reduktionen noch Wurzeln, Realteile oder Stabilität neu.
 Autoritativ sind ausschließlich die bereits vorhandenen Raw-, Reduced-,
 Root- und Stability-Verträge.
 
+Der Builder erhält seine `TransferFunctionWorkflowLimits` explizit als
+Konfiguration und revalidiert den State ausschließlich unter diesen Grenzen.
+Service und Builder können dadurch denselben Limitvertrag verwenden.
+Fehlgeschlagene Domainresultate werden mit denselben Grenzen unabhängig
+revalidiert; der Stage-Status unterdrückt keinen Validierungsfehler.
+
 Die feste Abschnittsfolge reicht von Eingabe und Übertragungsfunktion über
 Reduktionsschritte, Voraussetzungen, Definitionsausschlüsse, Substitutionen,
 Nullstellen und Pole bis zu Realteilen, Stabilitätsaussage, Quellen und
@@ -480,16 +486,22 @@ Definitionslücke bleibt dadurch sichtbar.
 
 Aktive Raw-, Reduced- und Root-Overrides erscheinen mit Ziel, Herkunftsart und
 sichtbarem Grund. Ein Reduced-Override ohne Reduktionsbericht wird ausdrücklich
-nicht als Herleitung aus dem Raw-Wert dargestellt. Fehlgeschlagene und
+nicht als Herleitung aus dem Raw-Wert dargestellt. Ein Root-Override steht in
+den Nullstellen- und Polabschnitten jeweils vor den übernommenen Ergebnissen.
+Fehlgeschlagene und
 blockierte Workflowstufen erzeugen einen Teilbericht bis zur letzten
 erfolgreichen Fachstufe. `SYMBOLIC_UNDETERMINED` bleibt dagegen ein
 vollständiges fachliches Ergebnis.
 
 Plaintext/Unicode und ein LaTeX-Fragment werden ausschließlich aus demselben
 strukturierten Bericht gerendert. Beide Renderer sind rein darstellend und
-verändern den Bericht nicht. Quellen werden nur aus vorhandenen
+verändern den Bericht nicht. Workflowdiagnosen behalten ihre strukturierte
+Severity; beide Renderer kennzeichnen `INFO`, `WARNUNG` und `FEHLER`
+deterministisch. Quellen werden nur aus vorhandenen
 `StabilitySourceReference`-Werten übernommen; der Builder führt keine
-Dateisuche aus und enthält keine zweite Quellenliste. Eigene positive
+Dateisuche aus und enthält keine zweite Quellenliste. Der Quellenabschnitt
+folgt dem Status der Stability-Stufe und unterscheidet vollständig, nicht
+anwendbar, fehlgeschlagen und blockiert. Eigene positive
 Darstellungslimits verhindern stille Kürzung einzelner Ausdrücke oder
 mathematischer Aussagen. Phase 2C.2 führt keine GUI, PDF-Erzeugung,
 Dateispeicherung, Serialisierung oder neue Fachrechnung ein.

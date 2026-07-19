@@ -47,6 +47,7 @@ from klausurbotpro.application.transfer_function_workflow_contracts import (
     WorkflowValueOrigin,
 )
 from klausurbotpro.domain import (
+    DiagnosticSeverity,
     PolynomialRootAnalysis,
     PolynomialRootStatus,
     RealPartSign,
@@ -61,6 +62,7 @@ from klausurbotpro.domain import (
 
 _RESOURCE_ERRORS = (MemoryError, RecursionError, OverflowError)
 _DEFAULT_SOLUTION_REPORT_LIMITS = SolutionReportLimits()
+_DEFAULT_WORKFLOW_LIMITS = TransferFunctionWorkflowLimits()
 
 
 class TransferFunctionSolutionReportBuilder:
@@ -69,10 +71,17 @@ class TransferFunctionSolutionReportBuilder:
     def __init__(
         self,
         limits: SolutionReportLimits = _DEFAULT_SOLUTION_REPORT_LIMITS,
+        *,
+        workflow_limits: TransferFunctionWorkflowLimits = _DEFAULT_WORKFLOW_LIMITS,
     ) -> None:
         if type(limits) is not SolutionReportLimits:
             raise TypeError("limits must be a SolutionReportLimits value.")
+        if type(workflow_limits) is not TransferFunctionWorkflowLimits:
+            raise TypeError(
+                "workflow_limits must be a TransferFunctionWorkflowLimits value."
+            )
         self._limits = limits
+        self._workflow_limits = workflow_limits
 
     def build(
         self,
@@ -84,9 +93,8 @@ class TransferFunctionSolutionReportBuilder:
             raise TypeError("state must be a TransferFunctionWorkflowState.")
         errors = validate_workflow_state(
             state,
-            TransferFunctionWorkflowLimits(),
+            self._workflow_limits,
         )
-        errors = _allow_limit_created_partial_state(state, errors)
         if errors:
             return self._apply_limits(self._invalid_state_report(errors))
 
@@ -95,6 +103,7 @@ class TransferFunctionSolutionReportBuilder:
         except _RESOURCE_ERRORS:
             diagnostic = ReportDiagnostic(
                 ReportDiagnosticCode.REPORT_LIMIT_EXCEEDED,
+                DiagnosticSeverity.ERROR,
                 "Die Berichtserzeugung überschritt verfügbare Ressourcen.",
                 details=(("limit", "runtime_resource"),),
             )
@@ -207,7 +216,7 @@ class TransferFunctionSolutionReportBuilder:
         )
         root_override = _active_override(state, WorkflowStage.ROOT_ANALYSIS)
         if root_override is not None:
-            zero_lines = (*zero_lines, root_override)
+            zero_lines = (root_override, *zero_lines)
         pole_lines = (
             self._root_lines(
                 root.reduced_poles,
@@ -218,6 +227,8 @@ class TransferFunctionSolutionReportBuilder:
             if root is not None and root.reduced_poles is not None
             else ()
         )
+        if root_override is not None:
+            pole_lines = (root_override, *pole_lines)
         real_part_lines = (
             self._real_part_lines(stability)
             if stability is not None and stability.succeeded
@@ -244,6 +255,7 @@ class TransferFunctionSolutionReportBuilder:
         notice_lines = tuple(
             WarningLine(
                 entry.diagnostic.code.value,
+                entry.diagnostic.severity,
                 entry.stage,
                 entry.diagnostic.message,
             )
@@ -251,6 +263,12 @@ class TransferFunctionSolutionReportBuilder:
         )
 
         records = {record.stage: record for record in state.stage_records}
+        active_stage = (
+            WorkflowStage.REDUCTION
+            if reduced is not None
+            else WorkflowStage.RAW_TRANSFER_FUNCTION
+        )
+        active_record = records[active_stage]
         reduction_section = _section(
             SolutionSectionKind.REDUCTION,
             records[WorkflowStage.REDUCTION],
@@ -287,15 +305,17 @@ class TransferFunctionSolutionReportBuilder:
                 WorkflowStage.RAW_TRANSFER_FUNCTION,
             ),
             reduction_section,
-            _optional_section(
+            _section(
                 SolutionSectionKind.PREREQUISITES,
+                active_record,
                 prerequisite_lines,
-                WorkflowStage.REDUCTION,
+                active_stage,
             ),
-            _optional_section(
+            _section(
                 SolutionSectionKind.DOMAIN_EXCLUSIONS,
+                active_record,
                 exclusion_lines,
-                WorkflowStage.ROOT_ANALYSIS,
+                active_stage,
             ),
             _optional_section(
                 SolutionSectionKind.PARAMETER_SUBSTITUTIONS,
@@ -326,8 +346,9 @@ class TransferFunctionSolutionReportBuilder:
                 stability_lines,
                 WorkflowStage.STABILITY_ANALYSIS,
             ),
-            _optional_section(
+            _section(
                 SolutionSectionKind.SOURCES,
+                records[WorkflowStage.STABILITY_ANALYSIS],
                 source_lines,
                 WorkflowStage.STABILITY_ANALYSIS,
             ),
@@ -624,6 +645,7 @@ class TransferFunctionSolutionReportBuilder:
             lines.append(
                 WarningLine(
                     ReportDiagnosticCode.REPORT_MISSING_STAGE_RESULT.value,
+                    DiagnosticSeverity.WARNING,
                     WorkflowStage.ROOT_ANALYSIS,
                     "Die Wurzelanalyse wurde nicht ausgewertet.",
                 )
@@ -778,6 +800,7 @@ class TransferFunctionSolutionReportBuilder:
     ) -> TransferFunctionSolutionReport:
         diagnostic = ReportDiagnostic(
             ReportDiagnosticCode.REPORT_INVALID_WORKFLOW_STATE,
+            DiagnosticSeverity.ERROR,
             "Der Workflow-State ist inkonsistent oder manipuliert.",
             SolutionSectionKind.WORKFLOW_NOTICES,
             errors,
@@ -798,6 +821,7 @@ class TransferFunctionSolutionReportBuilder:
             (
                 WarningLine(
                     diagnostic.code.value,
+                    diagnostic.severity,
                     None,
                     statement,
                 ),
@@ -826,6 +850,7 @@ class TransferFunctionSolutionReportBuilder:
             accepted.pop()
         diagnostic = ReportDiagnostic(
             ReportDiagnosticCode.REPORT_LIMIT_EXCEEDED,
+            DiagnosticSeverity.ERROR,
             "Der Lösungsbericht überschreitet ein konfiguriertes Limit.",
             (
                 report.sections[index].kind
@@ -840,6 +865,7 @@ class TransferFunctionSolutionReportBuilder:
             (
                 WarningLine(
                     diagnostic.code.value,
+                    diagnostic.severity,
                     None,
                     "Berichtslimit überschritten; der betroffene Abschnitt "
                     "wurde nicht teilweise ausgegeben.",
@@ -871,64 +897,6 @@ class TransferFunctionSolutionReportBuilder:
             tuple(accepted),
             diagnostics,
         )
-
-
-def _allow_limit_created_partial_state(
-    state: TransferFunctionWorkflowState,
-    errors: tuple[tuple[str, str], ...],
-) -> tuple[tuple[str, str], ...]:
-    """Allow failed results produced under stricter service limits."""
-
-    if not errors:
-        return ()
-    potentially_limit_dependent = {
-        "raw_result",
-        "reduction_result",
-        "root_analysis_result",
-        "stability_analysis_result",
-    }
-    if any(field not in potentially_limit_dependent for field, _ in errors):
-        return errors
-    allowed: dict[str, set[str]] = {}
-    stage_fields = (
-        (
-            "raw_result",
-            WorkflowStage.RAW_TRANSFER_FUNCTION,
-            {"independent_revalidation_failed"},
-        ),
-        (
-            "reduction_result",
-            WorkflowStage.REDUCTION,
-            {"independent_revalidation_failed"},
-        ),
-        (
-            "root_analysis_result",
-            WorkflowStage.ROOT_ANALYSIS,
-            {
-                "independent_revalidation_failed",
-                "foreign_reduced_value",
-            },
-        ),
-        (
-            "stability_analysis_result",
-            WorkflowStage.STABILITY_ANALYSIS,
-            {
-                "independent_revalidation_failed",
-                "foreign_root_result",
-                "missing_or_invalid",
-            },
-        ),
-    )
-    records = {record.stage: record for record in state.stage_records}
-    for field, stage, reasons in stage_fields:
-        if records[stage].status is WorkflowStageStatus.FAILED:
-            allowed[field] = reasons
-    if all(
-        field in allowed and reason in allowed[field]
-        for field, reason in errors
-    ):
-        return ()
-    return errors
 
 
 def _active_override(
@@ -967,6 +935,7 @@ def _section(
             *line_tuple,
             WarningLine(
                 ReportDiagnosticCode.REPORT_MISSING_STAGE_RESULT.value,
+                DiagnosticSeverity.ERROR,
                 stage,
                 "Die Workflow-Stufe ist fehlgeschlagen.",
             ),

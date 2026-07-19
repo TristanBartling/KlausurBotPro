@@ -16,6 +16,8 @@ from klausurbotpro.application import (
     WorkflowInputForm,
     WorkflowOverrideOriginKind,
     WorkflowStage,
+    render_solution_report_latex,
+    render_solution_report_plaintext,
 )
 
 
@@ -100,6 +102,14 @@ def test_root_override_is_visible_without_claiming_recomputation() -> None:
 
     report = TransferFunctionSolutionReportBuilder().build(changed)
     zeros = report.section(SolutionSectionKind.ZEROS)
+    poles = report.section(SolutionSectionKind.POLES)
     assert zeros is not None
-    override = next(line for line in zeros.lines if type(line) is OverrideLine)
-    assert override.target_stage is WorkflowStage.ROOT_ANALYSIS
+    assert poles is not None
+    assert type(zeros.lines[0]) is OverrideLine
+    assert type(poles.lines[0]) is OverrideLine
+    assert zeros.lines[0] == poles.lines[0]
+    assert zeros.lines[0].target_stage is WorkflowStage.ROOT_ANALYSIS
+    plaintext = render_solution_report_plaintext(report)
+    latex = render_solution_report_latex(report)
+    assert plaintext.count("[Override root_analysis/manual]") == 2
+    assert latex.count("Override root\\_analysis/manual") == 2

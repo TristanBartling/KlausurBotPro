@@ -15,6 +15,7 @@ from klausurbotpro.application.transfer_function_solution_report_contracts impor
     TransformationLine,
     WarningLine,
 )
+from klausurbotpro.domain import DiagnosticSeverity
 
 _HEADINGS = {
     SolutionSectionKind.GIVEN: "Gegeben",
@@ -40,6 +41,12 @@ _OPERATION_LABELS = {
     "normalize_sign": "Vorzeichen normieren",
     "reduce_zero_numerator": "Nullzähler reduzieren",
     "no_reduction": "keine Reduktion erforderlich",
+}
+
+_SEVERITY_LABELS = {
+    DiagnosticSeverity.INFO: "INFO",
+    DiagnosticSeverity.WARNING: "WARNUNG",
+    DiagnosticSeverity.ERROR: "FEHLER",
 }
 
 
@@ -131,13 +138,14 @@ def _render_plain_line(line: SolutionLine) -> str:
             f"{_escape_plain_text(line.reason)}"
         )
     if type(line) is WarningLine:
+        severity = _SEVERITY_LABELS[line.severity]
         stage = (
             ""
             if line.affected_stage is None
             else f" ({line.affected_stage.value})"
         )
         return (
-            f"[{line.code}{stage}] "
+            f"[{severity}] [{line.code}{stage}] "
             f"{_escape_plain_text(line.statement)}"
         )
     if type(line) is SourceReferenceLine:
@@ -202,12 +210,13 @@ def _render_latex_line(line: SolutionLine) -> str:
         )
         return rf"\textit{{{_escape_latex_text(text)}}}"
     if type(line) is WarningLine:
+        severity = _SEVERITY_LABELS[line.severity]
         stage = (
             ""
             if line.affected_stage is None
             else f"/{line.affected_stage.value}"
         )
-        text = f"[{line.code}{stage}] {line.statement}"
+        text = f"[{severity}] [{line.code}{stage}] {line.statement}"
         return rf"\textit{{{_escape_latex_text(text)}}}"
     if type(line) is SourceReferenceLine:
         page = "" if line.page is None else f", Seite {line.page}"

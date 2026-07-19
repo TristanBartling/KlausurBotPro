@@ -8,16 +8,21 @@ from klausurbotpro.application import (
     RawTransferFunctionOverride,
     ResultLine,
     SolutionSectionKind,
+    SolutionSectionStatus,
     SourceReferenceLine,
     TransferFunctionSolutionReportBuilder,
     TransferFunctionWorkflowRequest,
     TransferFunctionWorkflowService,
     TransferFunctionWorkflowState,
+    WarningLine,
     WorkflowInputForm,
     WorkflowOverrideOriginKind,
     WorkflowStage,
     render_solution_report_latex,
     render_solution_report_plaintext,
+)
+from klausurbotpro.application import (
+    transfer_function_solution_report_builder as report_builder_module,
 )
 
 
@@ -100,6 +105,7 @@ def test_sources_are_copied_only_from_structured_stability_result() -> None:
     report = TransferFunctionSolutionReportBuilder().build(state)
     sources = report.section(SolutionSectionKind.SOURCES)
     assert sources is not None
+    assert sources.status is SolutionSectionStatus.COMPLETE
 
     actual = tuple(
         (
@@ -121,6 +127,81 @@ def test_sources_are_copied_only_from_structured_stability_result() -> None:
         for reference in state.stability_analysis_result.source_references
     )
     assert actual == expected
+
+
+def test_succeeded_stability_without_sources_is_not_applicable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _state("1/(s+1)")
+    assert state.stability_analysis_result is not None
+    object.__setattr__(
+        state.stability_analysis_result,
+        "source_references",
+        (),
+    )
+    monkeypatch.setattr(
+        report_builder_module,
+        "validate_workflow_state",
+        lambda state, limits: (),
+    )
+
+    report = TransferFunctionSolutionReportBuilder().build(state)
+    sources = report.section(SolutionSectionKind.SOURCES)
+
+    assert sources is not None
+    assert sources.status is SolutionSectionStatus.NOT_APPLICABLE
+    assert not sources.lines
+
+
+def test_warning_severities_are_preserved_and_rendered() -> None:
+    info_report = TransferFunctionSolutionReportBuilder().build(
+        _state("0/(s+1)")
+    )
+    warning_state = TransferFunctionWorkflowService().run(
+        TransferFunctionWorkflowRequest(
+            WorkflowInputForm.COMMON,
+            common_expression_text="1/(T*s+1)",
+            allowed_parameter_names=("T",),
+        )
+    )
+    warning_report = TransferFunctionSolutionReportBuilder().build(
+        warning_state
+    )
+    error_report = TransferFunctionSolutionReportBuilder().build(
+        _state("open('x')")
+    )
+
+    for state, report in (
+        (
+            TransferFunctionWorkflowService().run(
+                TransferFunctionWorkflowRequest(
+                    WorkflowInputForm.COMMON,
+                    common_expression_text="0/(s+1)",
+                )
+            ),
+            info_report,
+        ),
+        (warning_state, warning_report),
+    ):
+        notices = report.section(SolutionSectionKind.WORKFLOW_NOTICES)
+        assert notices is not None
+        actual = tuple(
+            line.severity
+            for line in notices.lines
+            if type(line) is WarningLine
+        )
+        expected = tuple(
+            entry.diagnostic.severity
+            for entry in state.aggregated_diagnostics
+        )
+        assert actual == expected
+
+    assert "[INFO]" in render_solution_report_plaintext(info_report)
+    assert "[WARNUNG]" in render_solution_report_plaintext(warning_report)
+    assert "[FEHLER]" in render_solution_report_plaintext(error_report)
+    assert r"[INFO]" in render_solution_report_latex(info_report)
+    assert r"[WARNUNG]" in render_solution_report_latex(warning_report)
+    assert r"[FEHLER]" in render_solution_report_latex(error_report)
 
 
 def test_renderers_reject_wrong_top_level_types() -> None:

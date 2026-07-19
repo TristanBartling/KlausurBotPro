@@ -6,6 +6,8 @@ import pytest
 
 from klausurbotpro.application import (
     EquationLine,
+    ReportDiagnostic,
+    ReportDiagnosticCode,
     ReportMathExpression,
     SolutionReportLimits,
     SolutionReportStatus,
@@ -13,7 +15,11 @@ from klausurbotpro.application import (
     SolutionSectionKind,
     SolutionSectionStatus,
     TransferFunctionSolutionReport,
+    TransferFunctionSolutionReportBuilder,
+    TransferFunctionWorkflowLimits,
+    WarningLine,
 )
+from klausurbotpro.domain import DiagnosticSeverity
 
 
 def _equation() -> EquationLine:
@@ -83,4 +89,50 @@ def test_unavailable_sections_cannot_hide_lines() -> None:
             SolutionSectionKind.POLES,
             SolutionSectionStatus.BLOCKED,
             (_equation(),),
+        )
+
+
+def test_warning_and_report_diagnostic_require_exact_severity() -> None:
+    warning = WarningLine(
+        "workflow.hint",
+        DiagnosticSeverity.INFO,
+        None,
+        "Hinweis",
+    )
+    diagnostic = ReportDiagnostic(
+        ReportDiagnosticCode.REPORT_INVALID_WORKFLOW_STATE,
+        DiagnosticSeverity.ERROR,
+        "Ungültig",
+    )
+
+    assert warning.severity is DiagnosticSeverity.INFO
+    assert diagnostic.severity is DiagnosticSeverity.ERROR
+    with pytest.raises(TypeError, match="DiagnosticSeverity"):
+        WarningLine("workflow.hint", "info", None, "Hinweis")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="DiagnosticSeverity"):
+        ReportDiagnostic(
+            ReportDiagnosticCode.REPORT_INVALID_WORKFLOW_STATE,
+            "error",  # type: ignore[arg-type]
+            "Ungültig",
+        )
+
+
+def test_builder_requires_exact_limit_contract_types() -> None:
+    class ReportLimitsSubclass(SolutionReportLimits):
+        pass
+
+    class WorkflowLimitsSubclass(TransferFunctionWorkflowLimits):
+        pass
+
+    with pytest.raises(TypeError, match="SolutionReportLimits"):
+        TransferFunctionSolutionReportBuilder(object())  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="SolutionReportLimits"):
+        TransferFunctionSolutionReportBuilder(ReportLimitsSubclass())
+    with pytest.raises(TypeError, match="TransferFunctionWorkflowLimits"):
+        TransferFunctionSolutionReportBuilder(
+            workflow_limits=object(),  # type: ignore[arg-type]
+        )
+    with pytest.raises(TypeError, match="TransferFunctionWorkflowLimits"):
+        TransferFunctionSolutionReportBuilder(
+            workflow_limits=WorkflowLimitsSubclass()
         )
