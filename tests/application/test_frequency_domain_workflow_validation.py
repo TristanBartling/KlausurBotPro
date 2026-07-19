@@ -7,6 +7,7 @@ from copy import copy
 import pytest
 
 from klausurbotpro.application import (
+    FrequencyDomainWorkflowDiagnosticCode,
     FrequencyDomainWorkflowLimits,
     FrequencyDomainWorkflowMode,
     FrequencyDomainWorkflowRequest,
@@ -22,7 +23,12 @@ from klausurbotpro.application._frequency_domain_workflow_validation import (
     FrequencyDomainWorkflowFailure,
     validate_frequency_domain_workflow_result,
 )
-from klausurbotpro.domain import ExactRationalValue, LogFrequencyGridRequest
+from klausurbotpro.domain import (
+    DiagnosticCode,
+    DiagnosticSeverity,
+    ExactRationalValue,
+    LogFrequencyGridRequest,
+)
 
 
 def _preparation(expression: str = "1/(s+1)") -> TransferFunctionWorkflowRequest:
@@ -59,6 +65,15 @@ def _bode(*, unwrap: bool = False) -> FrequencyDomainWorkflowResult:
     return FrequencyDomainWorkflowService().run(request)
 
 
+def _invalid_request() -> FrequencyDomainWorkflowResult:
+    return FrequencyDomainWorkflowService().run(
+        FrequencyDomainWorkflowRequest(
+            _preparation(),
+            FrequencyDomainWorkflowMode.SINGLE_POINT,
+        )
+    )
+
+
 def _validate(result: object) -> None:
     validate_frequency_domain_workflow_result(
         result,  # type: ignore[arg-type]
@@ -88,6 +103,42 @@ def test_complete_single_bode_and_unwrap_results_revalidate() -> None:
 def test_wrong_top_level_result_type_raises_type_error() -> None:
     with pytest.raises(TypeError):
         _validate(object())
+
+
+@pytest.mark.parametrize(
+    ("attribute", "replacement"),
+    [
+        ("severity", DiagnosticSeverity.INFO),
+        (
+            "code",
+            FrequencyDomainWorkflowDiagnosticCode.PREPARATION_FAILED,
+        ),
+        ("code", DiagnosticCode.LOG_FREQUENCY_GRID_INVALID_REQUEST),
+        ("message", " "),
+        ("field", "frequency"),
+        ("technical_details", ()),
+        ("technical_details", (("", "invalid"),)),
+    ],
+)
+def test_manipulated_invalid_request_diagnostic_is_rejected(
+    attribute: str,
+    replacement: object,
+) -> None:
+    result = _invalid_request()
+    diagnostic = result.diagnostics[0]
+    object.__setattr__(diagnostic, attribute, replacement)
+
+    _reject(result)
+
+
+def test_invalid_request_rejects_additional_diagnostics() -> None:
+    result = _invalid_request()
+    object.__setattr__(
+        result,
+        "diagnostics",
+        (result.diagnostics[0], result.diagnostics[0]),
+    )
+    _reject(result)
 
 
 @pytest.mark.parametrize(

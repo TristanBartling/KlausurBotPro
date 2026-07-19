@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from math import gcd
-from typing import NoReturn, TypeGuard
+from typing import NoReturn, TypeGuard, cast
 
 from klausurbotpro.application._frequency_domain_workflow_diagnostics import (
     owned_diagnostics,
@@ -12,6 +12,7 @@ from klausurbotpro.application._transfer_function_preparation_validation import 
     TransferFunctionPreparationFailure,
     validate_transfer_function_preparation_result,
 )
+from klausurbotpro.application._workflow_validation import validate_request
 from klausurbotpro.application.frequency_domain_workflow_contracts import (
     FREQUENCY_DOMAIN_STAGE_ORDER,
     FrequencyDomainWorkflowDiagnosticCode,
@@ -73,11 +74,20 @@ class FrequencyDomainWorkflowFailure(ValueError):
 
 def validate_frequency_domain_request(
     request: FrequencyDomainWorkflowRequest,
+    limits: FrequencyDomainWorkflowLimits,
 ) -> tuple[tuple[str, str], ...]:
     errors: list[tuple[str, str]] = []
     if type(request.preparation_request) is not TransferFunctionWorkflowRequest:
         errors.append(
             ("preparation_request", "Ungültiger Transferfunktionsauftrag.")
+        )
+    else:
+        errors.extend(
+            (f"preparation_request.{field}", reason)
+            for field, reason in validate_request(
+                request.preparation_request,
+                limits.preparation,
+            )
         )
     if type(request.mode) is not FrequencyDomainWorkflowMode:
         errors.append(("mode", "Ungültiger Frequenzworkflowmodus."))
@@ -183,7 +193,7 @@ def _validate_result(
     if result.request is None:
         _validate_invalid_request_result(result)
         return
-    request_errors = validate_frequency_domain_request(result.request)
+    request_errors = validate_frequency_domain_request(result.request, limits)
     if request_errors:
         _fail("A retained frequency request must be valid.")
     records = result.stage_records
@@ -228,11 +238,29 @@ def _validate_invalid_request_result(
         or any(value is not None for value in values)
         or result.stage_records
         or len(result.diagnostics) != 1
-        or result.diagnostics[0].severity is not DiagnosticSeverity.ERROR
-        or result.diagnostics[0].code.value
-        != FrequencyDomainWorkflowDiagnosticCode.INVALID_REQUEST.value
     ):
         _fail("An invalid request requires one value-free failure diagnostic.")
+    diagnostic = result.diagnostics[0]
+    diagnostic_code = cast(object, diagnostic.code)
+    if (
+        type(diagnostic) is not Diagnostic
+        or diagnostic.severity is not DiagnosticSeverity.ERROR
+        or type(diagnostic_code) is not FrequencyDomainWorkflowDiagnosticCode
+        or diagnostic_code
+        is not FrequencyDomainWorkflowDiagnosticCode.INVALID_REQUEST
+        or type(diagnostic.message) is not str
+        or not diagnostic.message.strip()
+        or diagnostic.field is not None
+        or type(diagnostic.technical_details) is not tuple
+        or not diagnostic.technical_details
+        or any(
+            type(item) is not tuple
+            or len(item) != 2
+            or any(type(value) is not str or not value for value in item)
+            for item in diagnostic.technical_details
+        )
+    ):
+        _fail("The invalid-request diagnostic is manipulated.")
 
 
 def _validate_record(record: FrequencyDomainWorkflowStageRecord) -> None:

@@ -64,7 +64,10 @@ class FrequencyDomainWorkflowService:
     ) -> FrequencyDomainWorkflowResult:
         if type(request) is not FrequencyDomainWorkflowRequest:
             raise TypeError("request must be FrequencyDomainWorkflowRequest.")
-        request_errors = validate_frequency_domain_request(request)
+        request_errors = validate_frequency_domain_request(
+            request,
+            self._limits,
+        )
         if request_errors:
             return self._invalid_request(request_errors)
         try:

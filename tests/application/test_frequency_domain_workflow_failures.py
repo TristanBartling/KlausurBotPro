@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from klausurbotpro.application import (
@@ -9,11 +11,13 @@ from klausurbotpro.application import (
     FrequencyDomainWorkflowLimits,
     FrequencyDomainWorkflowMode,
     FrequencyDomainWorkflowRequest,
+    FrequencyDomainWorkflowResult,
     FrequencyDomainWorkflowService,
     FrequencyDomainWorkflowStageStatus,
     FrequencyDomainWorkflowStatus,
     FrequencyPhasePresentation,
     TransferFunctionPreparationService,
+    TransferFunctionPreparationStatus,
     TransferFunctionWorkflowLimits,
     TransferFunctionWorkflowRequest,
     WorkflowInputForm,
@@ -29,6 +33,7 @@ from klausurbotpro.domain import (
     TransferFunctionFrequencyResponseAnalyzer,
     TransferFunctionReductionLimits,
 )
+from klausurbotpro.parsing import ParserLimits
 
 
 def _preparation(expression: str = "1/(s+1)") -> TransferFunctionWorkflowRequest:
@@ -73,6 +78,24 @@ def _bode(
     )
 
 
+def _assert_value_free_invalid(result: FrequencyDomainWorkflowResult) -> None:
+    assert result.status is FrequencyDomainWorkflowStatus.FAILED
+    assert result.request is None
+    assert result.stage_records == ()
+    assert result.preparation_result is None
+    assert result.single_point_result is None
+    assert result.grid_result is None
+    assert result.bode_data_result is None
+    assert result.phase_unwrap_result is None
+    assert len(result.diagnostics) == 1
+    diagnostic = result.diagnostics[0]
+    assert cast(object, diagnostic.code) is (
+        FrequencyDomainWorkflowDiagnosticCode.INVALID_REQUEST
+    )
+    assert diagnostic.field is None
+    assert diagnostic.technical_details
+
+
 @pytest.mark.parametrize(
     "workflow_request",
     [
@@ -115,14 +138,7 @@ def test_invalid_mode_combinations_return_value_free_failure(
     workflow_request: FrequencyDomainWorkflowRequest,
 ) -> None:
     result = FrequencyDomainWorkflowService().run(workflow_request)
-    assert result.status is FrequencyDomainWorkflowStatus.FAILED
-    assert result.request is None
-    assert result.stage_records == ()
-    assert result.preparation_result is None
-    assert len(result.diagnostics) == 1
-    assert result.diagnostics[0].code.value == (
-        FrequencyDomainWorkflowDiagnosticCode.INVALID_REQUEST.value
-    )
+    _assert_value_free_invalid(result)
 
 
 def test_wrong_top_level_request_type_raises_type_error() -> None:
@@ -158,52 +174,98 @@ def test_structurally_manipulated_nested_request_is_value_free(
 
     result = FrequencyDomainWorkflowService().run(workflow_request)
 
-    assert result.status is FrequencyDomainWorkflowStatus.FAILED
-    assert result.request is None
-    assert result.stage_records == ()
-    assert result.preparation_result is None
-    assert result.diagnostics[0].code.value == (
-        FrequencyDomainWorkflowDiagnosticCode.INVALID_REQUEST.value
+    _assert_value_free_invalid(result)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("input_form", "common"),
+        ("variable_name", "__unsafe__"),
+        ("common_expression_text", 7),
+        ("allowed_parameter_names", ["K"]),
+        ("substitutions", object()),
+        ("field", 42),
+    ],
+)
+def test_manipulated_preparation_request_is_value_free(
+    field: str,
+    value: object,
+) -> None:
+    request = _single()
+    object.__setattr__(request.preparation_request, field, value)
+
+    _assert_value_free_invalid(FrequencyDomainWorkflowService().run(request))
+
+
+def test_preparation_request_is_validated_against_active_limits() -> None:
+    preparation = TransferFunctionWorkflowRequest(
+        WorkflowInputForm.COMMON,
+        common_expression_text="K/(T*s+1)",
+        allowed_parameter_names=("K", "T"),
+    )
+    request = FrequencyDomainWorkflowRequest(
+        preparation,
+        FrequencyDomainWorkflowMode.SINGLE_POINT,
+        single_angular_frequency=ExactRationalValue(1),
+    )
+    limits = FrequencyDomainWorkflowLimits(
+        preparation=TransferFunctionWorkflowLimits(
+            parser=ParserLimits(max_symbols=2)
+        )
+    )
+
+    _assert_value_free_invalid(
+        FrequencyDomainWorkflowService(limits).run(request)
     )
 
 
 @pytest.mark.parametrize(
-    ("expression", "expected_statuses"),
+    ("expression", "expected_status", "retains_parsed_input"),
     [
         (
             "open('x')",
-            (
-                FrequencyDomainWorkflowStageStatus.FAILED,
-                FrequencyDomainWorkflowStageStatus.BLOCKED,
-            ),
+            FrequencyDomainWorkflowStatus.FAILED,
+            False,
         ),
         (
             "1/0",
-            (
-                FrequencyDomainWorkflowStageStatus.FAILED,
-                FrequencyDomainWorkflowStageStatus.BLOCKED,
-            ),
+            FrequencyDomainWorkflowStatus.PARTIAL,
+            True,
         ),
     ],
 )
 def test_preparation_failures_block_only_requested_followers(
     expression: str,
-    expected_statuses: tuple[
-        FrequencyDomainWorkflowStageStatus,
-        FrequencyDomainWorkflowStageStatus,
-    ],
+    expected_status: FrequencyDomainWorkflowStatus,
+    retains_parsed_input: bool,
 ) -> None:
     result = FrequencyDomainWorkflowService().run(_single(expression))
-    assert result.stage_records[0].status is expected_statuses[0]
-    assert result.stage_records[1].status is expected_statuses[1]
+    assert result.request is not None
+    assert result.preparation_result is not None
+    assert result.status is expected_status
+    assert result.stage_records[0].status is (
+        FrequencyDomainWorkflowStageStatus.FAILED
+    )
+    assert result.stage_records[1].status is (
+        FrequencyDomainWorkflowStageStatus.BLOCKED
+    )
     assert all(
         item.status is FrequencyDomainWorkflowStageStatus.NOT_APPLICABLE
         for item in result.stage_records[2:]
     )
-    assert result.status in (
-        FrequencyDomainWorkflowStatus.FAILED,
-        FrequencyDomainWorkflowStatus.PARTIAL,
-    )
+    if retains_parsed_input:
+        assert result.preparation_result.status is (
+            TransferFunctionPreparationStatus.PARTIAL
+        )
+        assert result.preparation_result.parsed_input is not None
+        assert result.preparation_result.raw_result is not None
+        assert not result.preparation_result.raw_result.succeeded
+    else:
+        assert result.preparation_result.status is (
+            TransferFunctionPreparationStatus.FAILED
+        )
+        assert result.preparation_result.parsed_input is None
 
 
 def test_preparation_reduction_failure_is_partial() -> None:
@@ -217,6 +279,8 @@ def test_preparation_reduction_failure_is_partial() -> None:
     )
     assert result.status is FrequencyDomainWorkflowStatus.PARTIAL
     assert result.preparation_result is not None
+    assert result.request is not None
+    assert result.preparation_result.request is result.request.preparation_request
     assert result.preparation_result.raw_result is not None
     assert result.stage_records[0].status is (
         FrequencyDomainWorkflowStageStatus.FAILED
@@ -233,6 +297,9 @@ def test_grid_bode_and_unwrap_failures_retain_predecessors() -> None:
         _bode(grid=invalid_grid)
     )
     assert grid_failed.status is FrequencyDomainWorkflowStatus.PARTIAL
+    assert grid_failed.request is not None
+    assert grid_failed.preparation_result is not None
+    assert grid_failed.preparation_result.succeeded
     assert grid_failed.grid_result is not None
     assert grid_failed.stage_records[2].status is (
         FrequencyDomainWorkflowStageStatus.FAILED
