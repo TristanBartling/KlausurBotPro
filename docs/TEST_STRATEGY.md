@@ -225,6 +225,47 @@ angeforderte Präzision, Schutzziffern und die maximale temporäre
 Limit- und Ressourcentests prüfen strukturierte Diagnosen, ohne exakte
 Erwartungen oder bestehende Tests abzuschwächen.
 
+## Tests der quellengebundenen Stabilitätsklassifikation
+
+Phase 2B wird ausschließlich mit erfolgreichen, strukturellen
+`TransferFunctionRootAnalysisResult`-Werten geprüft. Die Akzeptanzmatrix
+umfasst strikt linke reelle und komplexe Pole, rechte Pole, einfache und
+mehrfache Pole bei null sowie einfache und mehrfache konjugierte Pole auf der
+imaginären Achse, polfreie Übertragungsfunktionen, symbolisch unbestimmte
+Phase-2A-Ergebnisse und sicher instabile Fälle mit zugleich unbestimmten Polen.
+Sie sichert `STABLE` als E/A-stabil und
+`BORDERLINE_STABLE` ausdrücklich als nicht E/A-/BIBO-stabil.
+
+Klassifikatortests prüfen explizite rationale und algebraische Wurzeln sowie
+`RootOfValue` über exakte SymPy-Prädikate und den öffentlichen zertifizierten
+`eval_rational`-Pfad. Ein nach begrenzter Verfeinerung die imaginäre Achse
+schneidender Nachweis bleibt konservativ `UNDETERMINED`. Numerische
+Phase-2A-Werte werden manipuliert, um zu belegen, dass sie den Status niemals
+festlegen, bei deutlichem Widerspruch nur warnen und einen exakt verschwindenden
+Realteil nicht umklassifizieren.
+
+Integrations- und Manipulationstests sichern, dass reduzierte Nullstellen,
+erhaltene `DomainExclusions` und gekürzte Stellen keinen Einfluss auf den
+Gesamtstatus besitzen. Nichtnegative und unbestimmte gekürzte Stellen erhalten
+separate Hinweise ohne Behauptung interner Instabilität oder I-Stabilität.
+Defensive Revalidierung umfasst Typen, Status, Quellenrollen, zusammenhängende
+Indizes, positive Multiplizitäten, vollständige Grade, numerische Zuordnung,
+Substitutionen, Gruppen und Diagnosen. Jede `StabilityAnalysisLimits`-Grenze
+und erwartbare Ressourcenfehler besitzt einen strukturierten Testpfad.
+Zusätzliche Manipulationstests ersetzen Nennerquelle, Polwerte,
+Multiplizitäten und RootOf-Werte oder duplizieren gleiche algebraische Wurzeln
+auch über verschiedene Darstellungen. Die unabhängige Prüfung muss jeden
+solchen Widerspruch exakt erkennen. Korrekte explizite und RootOf-Wurzeln
+werden dagegen über Ableitungswerte beziehungsweise irreduzible Polynomreste
+bestätigt. Regressionstests sichern außerdem, dass benutzerdefinierte
+Phase-2A-Grad- und Substitutionsgrenzen innerhalb des Stability-Vertrags
+akzeptiert und zu große Werte vor teurer SymPy-Verarbeitung begrenzt werden.
+Vertragstests decken Unveränderlichkeit, kontrollierte Ergebniskonstruktion,
+mathematische Gleichheit und Hash sowie die exakten drei offiziellen
+Quellenreferenzen und alle öffentlichen Exporte des Domain-Facades ab. Der neue
+Fachkern enthält keine Parsing-, UI-, Properness-, Hurwitz-, Routh- oder
+Nyquistfunktion und verändert keine globale SymPy-Konfiguration.
+
 ## Regressionstests mit offiziellen Aufgaben
 
 Verifizierte Aufgaben aus offiziellen Unterlagen werden später als

@@ -132,6 +132,37 @@ class DiagnosticCode(StrEnum):
     ROOT_ANALYSIS_NUMERIC_CHECK_SKIPPED = (
         "root_analysis.numeric_check_skipped"
     )
+    STABILITY_ANALYSIS_INVALID_ROOT_ANALYSIS = (
+        "stability_analysis.invalid_root_analysis"
+    )
+    STABILITY_ANALYSIS_LIMIT_EXCEEDED = (
+        "stability_analysis.limit_exceeded"
+    )
+    STABILITY_ANALYSIS_RESOURCE_LIMIT_EXCEEDED = (
+        "stability_analysis.resource_limit_exceeded"
+    )
+    STABILITY_ANALYSIS_REAL_PART_UNDETERMINED = (
+        "stability_analysis.real_part_undetermined"
+    )
+    STABILITY_ANALYSIS_SYMBOLIC_UNDETERMINED = (
+        "stability_analysis.symbolic_undetermined"
+    )
+    STABILITY_ANALYSIS_CANCELLED_LOCATION_NONNEGATIVE = (
+        "stability_analysis.cancelled_location_nonnegative"
+    )
+    STABILITY_ANALYSIS_CANCELLED_LOCATION_UNDETERMINED = (
+        "stability_analysis.cancelled_location_undetermined"
+    )
+    STABILITY_ANALYSIS_NUMERIC_CONTRADICTION = (
+        "stability_analysis.numeric_contradiction"
+    )
+    STABILITY_ANALYSIS_BORDERLINE_NOT_EA_STABLE = (
+        "stability_analysis.borderline_not_ea_stable"
+    )
+    STABILITY_ANALYSIS_CANCELLED_LOCATIONS_NOT_EVALUATED = (
+        "stability_analysis.cancelled_locations_not_evaluated"
+    )
+    STABILITY_ANALYSIS_NO_POLES = "stability_analysis.no_poles"
 
 
 @dataclass(frozen=True, slots=True)
