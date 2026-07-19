@@ -430,6 +430,39 @@ zusammenhängenden Bereichen ohne erneute Fachrechnung aufgebaut werden kann.
 GUI, Reserven, Nyquist, asymptotische Geraden und Berichtserzeugung bleiben
 außerhalb dieser Phase.
 
+## Tests der optionalen Bode-Phasenentfaltung
+
+Phase 3A.2c wird zunächst auf der privaten exakten Dezimal- und
+Fortsetzungslogik geprüft. Die Fälle umfassen konstante Phasen, beide
+±180°-Grenzübergänge, den Gleichstand bei Offset null und bei bereits
+positivem beziehungsweise negativem Offset, mehrere Umläufe,
+Exponentenschreibweise, deterministische Wiederholung und veränderte globale
+`Decimal`-Kontexte. Offset- und Dezimalgrenzen müssen ohne Rundung als
+strukturierte Grenzfehler enden.
+
+Integrationstests verwenden ausschließlich bereits erzeugte Bode-Daten für
+PT1, negative konstante Verstärkung, komplexe Pole, Ein-Punkt- und mehrere
+durch eine Singularität getrennte Segmente. Sie prüfen unveränderte
+Hauptphasen, Objektidentität von Quelle, Segmenten und Punkten sowie Offset
+null an jedem Segmentanfang. Nullantworten und symbolisch oder numerisch
+unbestimmte Quellen ergeben `NO_PHASE_DATA` mit genau einem zusätzlichen
+globalen Hinweis. Ein Spy verbietet während der Projektion jeden erneuten
+Aufruf der Frequenzganganalyse.
+
+Die unabhängige Resultatrevalidierung wird durch manipulierte Bode-Quellen,
+fremde oder geklonte Punkte, veränderte Offsets, entfaltete Werte, Indizes,
+Segmentgrenzen, Metadaten, Status und Diagnosen angegriffen. Alle fünf
+Limitarten, Ressourcenfehler und wertfreie Fehlerresultate werden geprüft.
+Künstliche interne `TypeError`- und `ValueError`-Fehler bleiben sichtbar und
+werden nicht pauschal als normale Kontextfehler maskiert.
+
+Vertragstests sichern gesperrte Direktkonstruktion, positive exakte
+Ganzzahllimits ohne `bool`, strukturierte Metadaten und öffentliche
+Domain-Exporte. Architekturregressionen schließen binäre Floats, SymPy sowie
+Application-, UI-, Plot-, Laufzeit- und Referenzabhängigkeiten im neuen
+Phasenentfaltungskern aus. Reserven, Durchtrittsfrequenzen, Nyquist, GUI und
+Berichte bleiben außerhalb dieser Phase.
+
 ## Tests des Transferfunktionsworkflows
 
 Phase 2C.1 wird als UI-unabhängige Integration der bestehenden Parser- und
