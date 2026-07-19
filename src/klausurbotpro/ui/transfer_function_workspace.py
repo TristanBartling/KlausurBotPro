@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import QSize, Qt, Slot
 from PySide6.QtGui import QFontDatabase, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
@@ -35,6 +37,7 @@ from klausurbotpro.application import (
     ResultLine,
     SolutionSection,
     SolutionSectionKind,
+    SolutionSectionStatus,
     TransferFunctionInputDraft,
     WarningLine,
     WorkflowInputForm,
@@ -60,7 +63,7 @@ _STATUS_LABELS = {
     "not_evaluated": "Nicht ausgewertet",
     "succeeded": "Erfolgreich",
     "failed": "Fehlgeschlagen",
-    "blocked": "Blockiert",
+    "blocked": "Nicht berechnet (vorherige Stufe fehlgeschlagen)",
 }
 _SEVERITY_LABELS = {
     "info": "ℹ INFO",
@@ -68,6 +71,28 @@ _SEVERITY_LABELS = {
     "error": "✖ FEHLER",
 }
 _SEVERITY_RANK = {"info": 1, "warning": 2, "error": 3}
+_SECTION_STATUS_LABELS = {
+    SolutionSectionStatus.COMPLETE: "vollständig",
+    SolutionSectionStatus.PARTIAL: "teilweise verfügbar",
+    SolutionSectionStatus.FAILED: "fehlgeschlagen",
+    SolutionSectionStatus.BLOCKED: (
+        "nicht berechnet, da eine vorherige Stufe fehlgeschlagen ist"
+    ),
+    SolutionSectionStatus.NOT_APPLICABLE: "keine",
+}
+_REAL_PART_RELATIONS = {
+    "negative": "< 0",
+    "zero": "= 0",
+    "positive": "> 0",
+}
+_FIELD_LABELS = {
+    "common_expression_text": "Gemeinsamer Ausdruck",
+    "numerator_expression_text": "Zähler",
+    "denominator_expression_text": "Nenner",
+    "variable_name": "Hauptvariable",
+    "parameter_rows": "Parametertabelle",
+    "field": "Allgemeine Eingabe",
+}
 
 
 class TransferFunctionWorkspace(QWidget):
@@ -83,12 +108,14 @@ class TransferFunctionWorkspace(QWidget):
             raise TypeError("presenter has an invalid type.")
         self.presenter = presenter
         self.setObjectName("transferFunctionWorkspace")
+        self._configure_base_font()
         self._build_ui()
         self._connect_ui()
         self._set_tab_order()
         self.render_state(presenter.state)
 
     def _build_ui(self) -> None:
+        line_height = self.fontMetrics().lineSpacing()
         self.common_radio = QRadioButton("Gemeinsamer Ausdruck")
         self.common_radio.setObjectName("commonInputForm")
         self.separated_radio = QRadioButton("Zähler und Nenner getrennt")
@@ -132,6 +159,12 @@ class TransferFunctionWorkspace(QWidget):
             QAbstractItemView.SelectionBehavior.SelectRows
         )
         self.parameter_table.setMinimumHeight(120)
+        self.parameter_table.verticalHeader().setDefaultSectionSize(
+            round(line_height * 1.8)
+        )
+        self.parameter_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
         self.add_parameter_button = QPushButton("Zeile hinzufügen")
         self.add_parameter_button.setObjectName("addParameterRow")
         self.remove_parameter_button = QPushButton("Ausgewählte Zeile entfernen")
@@ -165,42 +198,67 @@ class TransferFunctionWorkspace(QWidget):
         self.stage_tree.setObjectName("workflowStages")
         self.stage_tree.setHeaderLabels(("Stufe", "Status", "Severity", "Meldung"))
         self.stage_tree.setRootIsDecorated(False)
-        self.stage_tree.setMinimumHeight(180)
+        self.stage_tree.setMinimumHeight(round(line_height * 9))
+        stage_header = self.stage_tree.header()
+        stage_header.setMinimumSectionSize(
+            self.fontMetrics().horizontalAdvance("WARNUNG") + line_height
+        )
+        stage_header.setSectionResizeMode(
+            0,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+        stage_header.setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+        stage_header.setSectionResizeMode(
+            2,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+        stage_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         for stage in WorkflowStage:
-            QTreeWidgetItem(
+            item = QTreeWidgetItem(
                 self.stage_tree,
                 (_STAGE_LABELS[stage], "Nicht ausgewertet", "—", ""),
             )
+            item.setSizeHint(0, QSize(0, round(line_height * 1.8)))
 
         self.summary_edits: dict[SolutionSectionKind, QPlainTextEdit] = {}
-        summary_layout = QFormLayout()
-        for kind, label in (
+        summary_widget = QWidget()
+        summary_layout = QGridLayout(summary_widget)
+        for index, (kind, label) in enumerate((
             (SolutionSectionKind.TRANSFER_FUNCTION, "Übertragungsfunktion:"),
             (SolutionSectionKind.ZEROS, "Nullstellen:"),
             (SolutionSectionKind.POLES, "Pole:"),
             (SolutionSectionKind.STABILITY, "Stabilität:"),
             (SolutionSectionKind.PREREQUISITES, "Voraussetzungen:"),
             (SolutionSectionKind.DOMAIN_EXCLUSIONS, "Definitionsausschlüsse:"),
-        ):
+        )):
             edit = QPlainTextEdit()
             edit.setObjectName(f"summary_{kind.value}")
             edit.setReadOnly(True)
-            edit.setMaximumHeight(72)
+            edit.setMinimumHeight(round(line_height * 4.5))
             self.summary_edits[kind] = edit
-            summary_layout.addRow(label, edit)
+            summary_layout.addWidget(QLabel(label), index // 2 * 2, index % 2)
+            summary_layout.addWidget(edit, index // 2 * 2 + 1, index % 2)
+            summary_layout.setColumnStretch(index % 2, 1)
         result_group = QGroupBox("Ergebnis")
         result_layout = QVBoxLayout(result_group)
         result_layout.addWidget(self.stage_tree)
-        result_layout.addLayout(summary_layout)
+        result_layout.addWidget(summary_widget, 1)
 
-        top_splitter = QSplitter(Qt.Orientation.Horizontal)
-        top_splitter.addWidget(input_group)
-        top_splitter.addWidget(result_group)
-        top_splitter.setSizes((480, 600))
+        self.top_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.top_splitter.addWidget(input_group)
+        self.top_splitter.addWidget(result_group)
+        self.top_splitter.setSizes((410, 690))
 
         fixed_font = QFontDatabase.systemFont(
             QFontDatabase.SystemFont.FixedFont
         )
+        if fixed_font.pointSizeF() > 0:
+            fixed_font.setPointSizeF(
+                max(fixed_font.pointSizeF(), self.font().pointSizeF())
+            )
         self.plaintext_report_edit = QPlainTextEdit()
         self.plaintext_report_edit.setObjectName("plaintextReport")
         self.plaintext_report_edit.setReadOnly(True)
@@ -212,7 +270,14 @@ class TransferFunctionWorkspace(QWidget):
         self.report_tabs = QTabWidget()
         self.report_tabs.setObjectName("reportTabs")
         self.report_tabs.addTab(self.plaintext_report_edit, "Plaintext")
-        self.report_tabs.addTab(self.latex_report_edit, "LaTeX")
+        latex_index = self.report_tabs.addTab(
+            self.latex_report_edit,
+            "LaTeX-Quelltext",
+        )
+        self.report_tabs.setTabToolTip(
+            latex_index,
+            "Quelltext zum Kopieren in ein LaTeX-Dokument; keine Vorschau.",
+        )
         self.copy_button = QPushButton("Aktiven Bericht kopieren")
         self.copy_button.setObjectName("copyActiveReport")
         report_group = QGroupBox("Papierübertragbarer Bericht")
@@ -220,10 +285,10 @@ class TransferFunctionWorkspace(QWidget):
         report_layout.addWidget(self.report_tabs)
         report_layout.addWidget(self.copy_button)
 
-        main_splitter = QSplitter(Qt.Orientation.Vertical)
-        main_splitter.addWidget(top_splitter)
-        main_splitter.addWidget(report_group)
-        main_splitter.setSizes((440, 270))
+        self.main_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.main_splitter.addWidget(self.top_splitter)
+        self.main_splitter.addWidget(report_group)
+        self.main_splitter.setSizes((500, 280))
 
         self.status_label = QLabel()
         self.status_label.setObjectName("workspaceStatus")
@@ -241,7 +306,7 @@ class TransferFunctionWorkspace(QWidget):
         status_layout.addWidget(self.details_toggle)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(main_splitter, 1)
+        layout.addWidget(self.main_splitter, 1)
         layout.addLayout(status_layout)
         layout.addWidget(self.details_edit)
 
@@ -378,11 +443,23 @@ class TransferFunctionWorkspace(QWidget):
         if type(value) is not TransferFunctionViewState:
             raise TypeError("value must be a TransferFunctionViewState.")
         running = value.run_status is TransferFunctionUiRunStatus.RUNNING
-        self.calculate_button.setEnabled(not running)
-        self.reset_button.setEnabled(not running)
-        self.add_parameter_button.setEnabled(not running)
-        self.remove_parameter_button.setEnabled(not running)
-        self.copy_button.setEnabled(bool(self.presenter.active_report_text()))
+        for widget in (
+            self.common_radio,
+            self.separated_radio,
+            self.common_expression_edit,
+            self.numerator_edit,
+            self.denominator_edit,
+            self.variable_edit,
+            self.parameter_table,
+            self.add_parameter_button,
+            self.remove_parameter_button,
+            self.calculate_button,
+            self.reset_button,
+        ):
+            widget.setEnabled(not running)
+        self.copy_button.setEnabled(
+            not running and bool(self.presenter.active_report_text())
+        )
         self.status_label.setText(value.general_message)
         self.plaintext_report_edit.setPlainText(value.plaintext_report)
         self.latex_report_edit.setPlainText(value.latex_report)
@@ -403,6 +480,11 @@ class TransferFunctionWorkspace(QWidget):
         for index, _stage in enumerate(WorkflowStage):
             item = self.stage_tree.topLevelItem(index)
             assert item is not None
+            if state.run_status is TransferFunctionUiRunStatus.RUNNING:
+                item.setText(1, "Berechnung läuft")
+                item.setText(2, "—")
+                item.setText(3, "")
+                continue
             if workflow is None:
                 item.setText(1, "Nicht ausgewertet")
                 item.setText(2, "—")
@@ -438,27 +520,32 @@ class TransferFunctionWorkspace(QWidget):
 
     def _render_summary(self, state: TransferFunctionViewState) -> None:
         for kind, edit in self.summary_edits.items():
-            section = (
-                None
-                if state.solution_report is None
-                else state.solution_report.section(kind)
-            )
-            edit.setPlainText(_section_summary(section))
+            if state.solution_report is None:
+                edit.clear()
+                continue
+            section = state.solution_report.section(kind)
+            if kind is SolutionSectionKind.STABILITY:
+                real_parts = state.solution_report.section(
+                    SolutionSectionKind.POLE_REAL_PARTS
+                )
+                edit.setPlainText(_stability_summary(real_parts, section))
+            else:
+                edit.setPlainText(_section_summary(section))
 
     def _render_details(self, state: TransferFunctionViewState) -> None:
         lines = [
-            f"{error.field}"
+            f"{_FIELD_LABELS[error.field]}"
             + (
                 ""
                 if error.row_index is None
                 else f"[Zeile {error.row_index + 1}]"
             )
-            + f": {error.code} – {error.message}"
+            + f": {error.message}"
             for error in state.request_errors
         ]
         if state.workflow_state is not None:
             lines.extend(
-                f"{entry.stage.value}: {entry.diagnostic.code.value} – "
+                f"{_STAGE_LABELS[entry.stage]}: "
                 f"{entry.diagnostic.message}"
                 for entry in state.workflow_state.aggregated_diagnostics
             )
@@ -483,29 +570,102 @@ class TransferFunctionWorkspace(QWidget):
     def _switch_input_form(self, common_checked: bool) -> None:
         self.input_stack.setCurrentIndex(0 if common_checked else 1)
 
+    def _configure_base_font(self) -> None:
+        font = self.font()
+        if font.pointSizeF() > 0:
+            font.setPointSizeF(font.pointSizeF() + 1.25)
+        self.setFont(font)
+
 
 def _section_summary(section: SolutionSection | None) -> str:
     if section is None:
         return ""
     if not section.lines:
-        return f"[{section.status.value}]"
-    return "\n".join(_summary_line(line) for line in section.lines)
+        return _SECTION_STATUS_LABELS[section.status]
+    return "\n".join(
+        _summary_line(line, section.kind) for line in section.lines
+    )
 
 
-def _summary_line(line: object) -> str:
+def _summary_line(line: object, section_kind: SolutionSectionKind) -> str:
     if type(line) is EquationLine:
-        return f"{line.left.plaintext} {line.relation} {line.right.plaintext}"
+        equation = (
+            f"{line.left.plaintext} {line.relation} {line.right.plaintext}"
+        )
+        if line.identifier == "root_equation":
+            label = (
+                "Nullstellenbedingung"
+                if section_kind is SolutionSectionKind.ZEROS
+                else "Polgleichung"
+            )
+            return f"{label}: {equation}"
+        return equation
     if type(line) is ResultLine:
-        role = "" if line.source_role is None else f"[{line.source_role}] "
-        return f"{role}{line.label}: {line.exact_value.plaintext}"
+        if line.label == "Stabilitätsaussage":
+            return f"⇒ {line.exact_value.plaintext}"
+        if (
+            line.label == "Ergebnis"
+            and section_kind is SolutionSectionKind.ZEROS
+        ):
+            return f"⇒ {line.exact_value.plaintext}"
+        return (
+            f"{_summary_result_label(line.label)} = "
+            f"{line.exact_value.plaintext}"
+        )
     if type(line) is ConditionLine:
         values = ", ".join(value.plaintext for value in line.expressions)
+        if line.relation == "NOT_ALL_ZERO":
+            return f"Nicht alle gleichzeitig null: {values}"
         return f"{values} {line.relation}"
     if type(line) is WarningLine:
-        return f"[{line.severity.value}] {line.statement}"
+        return f"{_SEVERITY_LABELS[line.severity.value]} {line.statement}"
     if type(line) is OverrideLine:
-        return f"[Override] {line.reason}"
+        return f"[Manuelle Vorgabe] {line.reason}"
     return "Strukturiertes Ergebnis im Bericht verfügbar."
+
+
+def _stability_summary(
+    real_parts: SolutionSection | None,
+    stability: SolutionSection | None,
+) -> str:
+    lines: list[str] = []
+    if real_parts is not None and real_parts.lines:
+        for line in real_parts.lines:
+            if type(line) is not ResultLine:
+                continue
+            relation = (
+                None
+                if line.source_role is None
+                else _REAL_PART_RELATIONS.get(line.source_role)
+            )
+            rendered = (
+                f"{line.label} = {line.exact_value.plaintext}"
+            )
+            lines.append(
+                rendered if relation is None else f"{rendered} {relation}"
+            )
+    if stability is None:
+        return "\n".join(lines)
+    if not stability.lines:
+        lines.append(_SECTION_STATUS_LABELS[stability.status])
+    else:
+        conclusions = [
+            _summary_line(line, SolutionSectionKind.STABILITY)
+            for line in stability.lines
+            if type(line) is ResultLine
+        ]
+        lines.extend(conclusions)
+    return "\n".join(lines)
+
+
+def _summary_result_label(label: str) -> str:
+    for prefix, replacement in (
+        ("s_excluded,", "Ausgeschlossene Stelle s_"),
+        ("s_cancelled,", "Gekürzte Stelle s_"),
+    ):
+        if label.startswith(prefix) and label[len(prefix) :].isdigit():
+            return f"{replacement}{label[len(prefix):]}"
+    return label
 
 
 __all__ = ["TransferFunctionWorkspace"]

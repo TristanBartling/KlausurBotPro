@@ -111,5 +111,7 @@ def test_root_override_is_visible_without_claiming_recomputation() -> None:
     assert zeros.lines[0].target_stage is WorkflowStage.ROOT_ANALYSIS
     plaintext = render_solution_report_plaintext(report)
     latex = render_solution_report_latex(report)
-    assert plaintext.count("[Override root_analysis/manual]") == 2
-    assert latex.count("Override root\\_analysis/manual") == 2
+    assert plaintext.count("[manuelle Vorgabe – Wurzelanalyse]") == 2
+    assert latex.count("manuelle Vorgabe – Wurzelanalyse") == 2
+    assert "root_analysis" not in plaintext
+    assert "root\\_analysis" not in latex

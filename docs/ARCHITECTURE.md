@@ -560,6 +560,23 @@ ein Requestfehler vor Workerstart das klar gekennzeichnete vorherige Ergebnis
 weiter anzeigen darf. Phase 2D.1 enthält weiterhin keine Overrides, Historie,
 Persistenz, Dateien, PDFs, Quellenbrowser oder Diagramme.
 
+Die Darstellungshärtung aus Phase 2D.1a übersetzt interne Abschnittsstatus,
+Workflowstufen und Override-Herkünfte über explizite typbezogene Tabellen.
+`source_role` bleibt Bestandteil des strukturierten Berichts, wird aber weder
+im papierorientierten Renderer noch in der Ergebniszusammenfassung
+ungefiltert angezeigt. Root-Gleichungen erhalten die fachlichen Bezeichnungen
+„Nullstellenbedingung“ und „Polgleichung“. Leere Voraussetzungen und
+Definitionsausschlüsse erscheinen als „keine“.
+
+Beim Start eines gültigen Requests erzeugt der Presenter einen frischen
+RUNNING-State ohne frühere Workflow- oder Berichtswerte. Alle Eingabewidgets
+bleiben inhaltlich unverändert, werden aber bis zum Ergebnis deaktiviert.
+Stufen zeigen währenddessen ausschließlich „Berechnung läuft“. Punktbasierte
+Qt-Schriftgrößen, fontmetrisch abgeleitete Zeilenhöhen, inhaltsbezogene
+Tabellenspalten und verstellbare Splitter verbessern die DPI-taugliche
+Lesbarkeit. Der zweite Berichtstab ist ausdrücklich als
+„LaTeX-Quelltext“ ohne Vorschaufunktion gekennzeichnet.
+
 ## Offene Architekturentscheidungen
 
 - genaue Grenzen und Repräsentationen weiterer Domain-Modelle

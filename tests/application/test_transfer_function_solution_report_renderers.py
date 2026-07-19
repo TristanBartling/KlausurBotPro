@@ -52,6 +52,17 @@ def test_renderers_are_deterministic_and_do_not_mutate_report() -> None:
     assert "\\xRightarrow" not in first_latex
     assert "s_{1}" in first_latex
     assert r"\mathrm{Re}(s_{1})" in first_latex
+    for internal_value in (
+        "stable",
+        "numerator",
+        "denominator",
+        "retained_domain_exclusion",
+        "cancelled_location",
+        "not_applicable",
+        "symbolic_undetermined",
+    ):
+        assert internal_value not in first_plain
+        assert internal_value not in first_latex
 
 
 def test_renderers_include_every_structured_equation_and_result() -> None:
@@ -151,6 +162,35 @@ def test_succeeded_stability_without_sources_is_not_applicable(
     assert sources is not None
     assert sources.status is SolutionSectionStatus.NOT_APPLICABLE
     assert not sources.lines
+    assert "Quellen\nkeine" in render_solution_report_plaintext(report)
+    assert "not_applicable" not in render_solution_report_plaintext(report)
+    assert "not\\_applicable" not in render_solution_report_latex(report)
+
+
+def test_root_equations_and_blocked_sections_are_labeled_in_german() -> None:
+    complete = TransferFunctionSolutionReportBuilder().build(
+        _state("1/(s+1)")
+    )
+    failed = TransferFunctionSolutionReportBuilder().build(
+        _state("open('x')")
+    )
+
+    complete_plain = render_solution_report_plaintext(complete)
+    complete_latex = render_solution_report_latex(complete)
+    failed_plain = render_solution_report_plaintext(failed)
+    failed_latex = render_solution_report_latex(failed)
+
+    assert "Nullstellenbedingung: Z(s) = 0" in complete_plain
+    assert "Polgleichung: N(s) = 0" in complete_plain
+    assert "Nullstellenbedingung" in complete_latex
+    assert "Polgleichung" in complete_latex
+    blocked = (
+        "nicht berechnet, da eine vorherige Stufe fehlgeschlagen ist"
+    )
+    assert blocked in failed_plain
+    assert blocked in failed_latex
+    assert "[blocked]" not in failed_plain
+    assert "blocked" not in failed_latex
 
 
 def test_warning_severities_are_preserved_and_rendered() -> None:

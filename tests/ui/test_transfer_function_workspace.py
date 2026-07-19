@@ -134,15 +134,31 @@ def test_summary_reports_clipboard_tabs_and_reset() -> None:
             if kind.value == "poles"
         )
     ].toPlainText()
-    assert "[stable]" in workspace.summary_edits[
+    assert "System ist E/A-stabil." in workspace.summary_edits[
         next(
             kind
             for kind in workspace.summary_edits
             if kind.value == "stability"
         )
     ].toPlainText()
+    visible_summary = "\n".join(
+        edit.toPlainText() for edit in workspace.summary_edits.values()
+    )
+    assert "Nullstellenbedingung: Z(s) = 0" in visible_summary
+    assert "Polgleichung: N(s) = 0" in visible_summary
+    assert "⇒ keine Nullstellen" in visible_summary
+    assert "Re(s_1) = -1 < 0" in visible_summary
+    assert "Voraussetzungen" not in visible_summary
+    for internal_value in (
+        "stable",
+        "numerator",
+        "retained_domain_exclusion",
+    ):
+        assert internal_value not in visible_summary
     assert workspace.plaintext_report_edit.toPlainText() == result.plaintext_report
     assert workspace.latex_report_edit.toPlainText() == result.latex_report
+    assert workspace.report_tabs.tabText(1) == "LaTeX-Quelltext"
+    assert "keine Vorschau" in workspace.report_tabs.tabToolTip(1)
     QTest.mouseClick(workspace.copy_button, Qt.MouseButton.LeftButton)
     assert QApplication.clipboard().text() == result.plaintext_report
     workspace.report_tabs.setCurrentIndex(1)
@@ -172,9 +188,111 @@ def test_stage_status_and_severity_are_textual() -> None:
     assert parse is not None and blocked is not None
     assert parse.text(1) == "Fehlgeschlagen"
     assert "FEHLER" in parse.text(2)
-    assert blocked.text(1) == "Blockiert"
+    assert "vorherige Stufe fehlgeschlagen" in blocked.text(1)
     assert blocked.text(2) == "—"
     assert workspace.plaintext_report_edit.toPlainText()
+    workspace.close()
+
+
+def test_running_clears_old_result_and_locks_all_inputs_until_complete() -> None:
+    workspace, requests, _application = _workspace()
+    workspace.common_expression_edit.setPlainText("1/(s+1)")
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    first_request = requests[0]
+    assert type(first_request) is TransferFunctionWorkflowRequest
+    _complete(workspace, first_request)
+    assert workspace.plaintext_report_edit.toPlainText()
+
+    workspace.common_expression_edit.setPlainText("1/(s+2)")
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+
+    assert workspace.presenter.state.run_status is (
+        TransferFunctionUiRunStatus.RUNNING
+    )
+    for widget in (
+        workspace.common_radio,
+        workspace.separated_radio,
+        workspace.common_expression_edit,
+        workspace.numerator_edit,
+        workspace.denominator_edit,
+        workspace.variable_edit,
+        workspace.parameter_table,
+        workspace.add_parameter_button,
+        workspace.remove_parameter_button,
+        workspace.calculate_button,
+        workspace.reset_button,
+        workspace.copy_button,
+    ):
+        assert not widget.isEnabled()
+    assert workspace.common_expression_edit.toPlainText() == "1/(s+2)"
+    assert workspace.plaintext_report_edit.toPlainText() == ""
+    assert workspace.latex_report_edit.toPlainText() == ""
+    assert all(
+        not edit.toPlainText() for edit in workspace.summary_edits.values()
+    )
+    for index in range(workspace.stage_tree.topLevelItemCount()):
+        item = workspace.stage_tree.topLevelItem(index)
+        assert item is not None
+        assert item.text(1) == "Berechnung läuft"
+
+    second_request = requests[1]
+    assert type(second_request) is TransferFunctionWorkflowRequest
+    _complete(workspace, second_request)
+    for widget in (
+        workspace.common_radio,
+        workspace.separated_radio,
+        workspace.common_expression_edit,
+        workspace.numerator_edit,
+        workspace.denominator_edit,
+        workspace.variable_edit,
+        workspace.parameter_table,
+        workspace.add_parameter_button,
+        workspace.remove_parameter_button,
+        workspace.calculate_button,
+        workspace.reset_button,
+        workspace.copy_button,
+    ):
+        assert widget.isEnabled()
+    assert workspace.copy_button.isEnabled()
+    assert "s + 2" in workspace.plaintext_report_edit.toPlainText()
+    workspace.close()
+
+
+def test_request_error_keeps_clearly_marked_previous_result() -> None:
+    workspace, requests, _application = _workspace()
+    workspace.common_expression_edit.setPlainText("1/(s+1)")
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    request = requests[0]
+    assert type(request) is TransferFunctionWorkflowRequest
+    _complete(workspace, request)
+    old_report = workspace.plaintext_report_edit.toPlainText()
+
+    workspace.add_parameter_row()
+    workspace.parameter_table.setItem(0, 0, QTableWidgetItem("T"))
+    workspace.parameter_table.setItem(0, 1, QTableWidgetItem("0.5"))
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+
+    assert len(requests) == 1
+    assert workspace.plaintext_report_edit.toPlainText() == old_report
+    assert "vorherigen Berechnung" in workspace.status_label.text()
+    workspace.close()
+
+
+def test_readable_font_layout_and_report_source_tab() -> None:
+    workspace, _requests, application = _workspace()
+
+    assert workspace.font().pointSizeF() > application.font().pointSizeF()
+    assert workspace.stage_tree.minimumHeight() >= (
+        workspace.fontMetrics().lineSpacing() * 8
+    )
+    assert all(
+        edit.minimumHeight() >= workspace.fontMetrics().lineSpacing() * 4
+        for edit in workspace.summary_edits.values()
+    )
+    assert workspace.top_splitter.isCollapsible(0)
+    assert workspace.main_splitter.handleWidth() > 0
+    assert workspace.report_tabs.tabText(1) == "LaTeX-Quelltext"
+    assert workspace.report_tabs.tabToolTip(1)
     workspace.close()
 
 

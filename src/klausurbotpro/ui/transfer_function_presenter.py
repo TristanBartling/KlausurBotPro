@@ -70,11 +70,9 @@ class TransferFunctionPresenter(QObject):
             return False
         assert creation.request is not None
         self._set_state(
-            replace(
-                self._state,
+            TransferFunctionViewState(
                 run_status=TransferFunctionUiRunStatus.RUNNING,
-                request_errors=(),
-                focused_field=None,
+                active_report_view=self._state.active_report_view,
                 general_message="Berechnung läuft …",
             )
         )

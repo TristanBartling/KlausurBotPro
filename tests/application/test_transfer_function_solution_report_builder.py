@@ -279,9 +279,20 @@ def test_symbolically_undetermined_is_a_complete_mathematical_report() -> None:
     assert any(type(line) is ConditionLine for line in substitutions.lines)
 
 
-def test_exact_parameter_assignment_and_specialized_pole_are_visible() -> None:
+@pytest.mark.parametrize(
+    ("value", "expected_pole", "expected_polynomial"),
+    (
+        (ExactRationalValue(2), "-1/2", "2*s + 1"),
+        (ExactRationalValue(1, 2), "-2", "s/2 + 1"),
+    ),
+)
+def test_exact_parameter_assignment_and_specialized_pole_are_visible(
+    value: ExactRationalValue,
+    expected_pole: str,
+    expected_polynomial: str,
+) -> None:
     substitutions = ParameterSubstitutions(
-        (ParameterAssignment("T", ExactRationalValue(2)),)
+        (ParameterAssignment("T", value),)
     )
     report = _report(
         "1/(T*s+1)",
@@ -289,13 +300,21 @@ def test_exact_parameter_assignment_and_specialized_pole_are_visible() -> None:
         substitutions=substitutions,
     )
 
-    assert "-1/2" in _result_values(report, SolutionSectionKind.POLES)
+    assert expected_pole in _result_values(
+        report,
+        SolutionSectionKind.POLES,
+    )
     given = report.section(SolutionSectionKind.GIVEN)
     assert given is not None
     assert any(
         type(line) is EquationLine
         and line.identifier == "active_parameter_substitution"
-        and line.right.plaintext == "2"
+        and line.right.plaintext
+        == (
+            str(value.numerator)
+            if value.denominator == 1
+            else f"{value.numerator}/{value.denominator}"
+        )
         for line in given.lines
     )
     poles = report.section(SolutionSectionKind.POLES)
@@ -303,7 +322,7 @@ def test_exact_parameter_assignment_and_specialized_pole_are_visible() -> None:
     assert any(
         type(line) is EquationLine
         and line.identifier == "specialized_polynomial"
-        and line.right.plaintext == "2*s + 1"
+        and line.right.plaintext == expected_polynomial
         for line in poles.lines
     )
 
