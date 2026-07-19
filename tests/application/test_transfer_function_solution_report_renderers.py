@@ -1,8 +1,11 @@
 """Plaintext and LaTeX rendering of the same structured report."""
 
+from dataclasses import replace
+
 import pytest
 
 from klausurbotpro.application import (
+    ConditionLine,
     EquationLine,
     OverrideProvenance,
     RawTransferFunctionOverride,
@@ -14,6 +17,7 @@ from klausurbotpro.application import (
     TransferFunctionWorkflowRequest,
     TransferFunctionWorkflowService,
     TransferFunctionWorkflowState,
+    TransformationLine,
     WarningLine,
     WorkflowInputForm,
     WorkflowOverrideOriginKind,
@@ -35,6 +39,49 @@ def _state(expression: str) -> TransferFunctionWorkflowState:
     )
 
 
+def _parameterized_state(
+    expression: str,
+    *parameters: str,
+) -> TransferFunctionWorkflowState:
+    return TransferFunctionWorkflowService().run(
+        TransferFunctionWorkflowRequest(
+            WorkflowInputForm.COMMON,
+            common_expression_text=expression,
+            allowed_parameter_names=parameters,
+        )
+    )
+
+
+def _separated_state(
+    numerator: str,
+    denominator: str,
+) -> TransferFunctionWorkflowState:
+    return TransferFunctionWorkflowService().run(
+        TransferFunctionWorkflowRequest(
+            WorkflowInputForm.SEPARATED,
+            numerator_expression_text=numerator,
+            denominator_expression_text=denominator,
+        )
+    )
+
+
+_INTERNAL_OUTPUT_TOKENS = (
+    "not_applicable",
+    "blocked",
+    "stable",
+    "borderline_stable",
+    "unstable",
+    "symbolic_undetermined",
+    "numerator",
+    "denominator",
+    "retained_domain_exclusion",
+    "cancelled_location",
+    "NOT_ALL_ZERO",
+    "common",
+    "separated",
+)
+
+
 def test_renderers_are_deterministic_and_do_not_mutate_report() -> None:
     report = TransferFunctionSolutionReportBuilder().build(_state("1/(s+1)"))
     before_hash = hash(report)
@@ -52,17 +99,98 @@ def test_renderers_are_deterministic_and_do_not_mutate_report() -> None:
     assert "\\xRightarrow" not in first_latex
     assert "s_{1}" in first_latex
     assert r"\mathrm{Re}(s_{1})" in first_latex
-    for internal_value in (
-        "stable",
-        "numerator",
-        "denominator",
-        "retained_domain_exclusion",
-        "cancelled_location",
-        "not_applicable",
-        "symbolic_undetermined",
-    ):
+    for internal_value in _INTERNAL_OUTPUT_TOKENS:
         assert internal_value not in first_plain
         assert internal_value not in first_latex
+
+
+def test_retained_not_all_zero_condition_is_german_in_both_formats() -> None:
+    report = TransferFunctionSolutionReportBuilder().build(
+        _parameterized_state("1/((K-1)*s+T)", "K", "T")
+    )
+    prerequisites = report.section(SolutionSectionKind.PREREQUISITES)
+    reduction = report.section(SolutionSectionKind.REDUCTION)
+    assert prerequisites is not None
+    assert reduction is not None
+    condition = next(
+        line for line in prerequisites.lines if type(line) is ConditionLine
+    )
+    transformation = next(
+        line for line in reduction.lines if type(line) is TransformationLine
+    )
+    assert condition.relation == "NOT_ALL_ZERO"
+    assert tuple(
+        expression.plaintext for expression in condition.expressions
+    ) == ("K - 1", "T")
+    retained_transformation = replace(
+        transformation,
+        retained_prerequisites=(condition,),
+    )
+    retained_reduction = replace(
+        reduction,
+        lines=tuple(
+            retained_transformation if line is transformation else line
+            for line in reduction.lines
+        ),
+    )
+    report = replace(
+        report,
+        sections=tuple(
+            retained_reduction if section is reduction else section
+            for section in report.sections
+        ),
+    )
+
+    plaintext = render_solution_report_plaintext(report)
+    latex = render_solution_report_latex(report)
+
+    assert "Nicht alle gleichzeitig null: K - 1, T" in plaintext
+    assert (
+        r"\mathrm{nicht\ alle\ gleichzeitig\ null}"
+        r"\left(K - 1, T\right)"
+    ) in latex
+    assert "NOT_ALL_ZERO" not in plaintext
+    assert "NOT_ALL_ZERO" not in latex
+
+
+def test_representative_complete_outputs_hide_internal_contract_tokens() -> None:
+    service = TransferFunctionWorkflowService()
+    base = _state("1/(s+1)")
+    override_source = _state("1/(s+2)")
+    assert override_source.raw_value is not None
+    overridden = service.apply_override(
+        base,
+        RawTransferFunctionOverride(
+            override_source.raw_value,
+            OverrideProvenance(
+                WorkflowOverrideOriginKind.MANUAL,
+                "Geprüfte Vorgabe",
+                1,
+                WorkflowStage.RAW_TRANSFER_FUNCTION,
+            ),
+        ),
+    )
+    states = (
+        base,
+        _separated_state("1", "s+1"),
+        _parameterized_state("1/(T*s+1)", "T"),
+        _parameterized_state("1/((K-1)*s+T)", "K", "T"),
+        _state("open('x')"),
+        _state("1/s"),
+        _state("1/(s-1)"),
+        _state("(s+1)/(s+1)"),
+        overridden,
+    )
+
+    for state in states:
+        report = TransferFunctionSolutionReportBuilder().build(state)
+        outputs = (
+            render_solution_report_plaintext(report),
+            render_solution_report_latex(report),
+        )
+        for output in outputs:
+            for internal_value in _INTERNAL_OUTPUT_TOKENS:
+                assert internal_value not in output
 
 
 def test_renderers_include_every_structured_equation_and_result() -> None:

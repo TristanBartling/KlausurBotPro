@@ -425,7 +425,10 @@ def _latex_transformation_conditions(line: TransformationLine) -> str:
 def _latex_condition_inline(line: ConditionLine) -> str:
     values = ", ".join(expression.latex for expression in line.expressions)
     if line.relation == "NOT_ALL_ZERO":
-        return rf"\mathrm{{NOT\_ALL\_ZERO}}\left({values}\right)"
+        return (
+            r"\mathrm{nicht\ alle\ gleichzeitig\ null}"
+            rf"\left({values}\right)"
+        )
     return rf"{values} {_latex_relation(line.relation)}"
 
 
