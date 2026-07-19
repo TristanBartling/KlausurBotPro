@@ -14,6 +14,9 @@ from klausurbotpro.domain._log_frequency_grid_numeric import (
     approximate_logarithmic_target,
     approximate_rational_for_display,
 )
+from klausurbotpro.domain._log_frequency_grid_result_validation import (
+    validate_log_frequency_grid_result,
+)
 from klausurbotpro.domain._log_frequency_grid_validation import (
     CertificationBudget,
     LogFrequencyGridFailure,
@@ -192,7 +195,7 @@ class LogFrequencyGridGenerator:
         points = tuple(
             self._public_point(data, interval_count) for data in ordered_data
         )
-        return LogFrequencyGridResult._create(
+        result = LogFrequencyGridResult._create(
             request=validated.request,
             interval_count=interval_count,
             status=LogFrequencyGridStatus.COMPLETE,
@@ -203,6 +206,8 @@ class LogFrequencyGridGenerator:
                 for diagnostic in point.diagnostics
             ),
         )
+        validate_log_frequency_grid_result(result, self._limits)
+        return result
 
     def _generated_point(
         self,
@@ -243,7 +248,7 @@ class LogFrequencyGridGenerator:
                 self._display_decimal(exact_explicit),
                 target_index,
                 _canonical_origins(origins),
-                epsilon,
+                Fraction(0),
             )
         target_decimal, candidate = self._certified_candidate(
             validated,
@@ -339,12 +344,12 @@ class LogFrequencyGridGenerator:
             "Verschiedene Zielpunkte fallen auf dieselbe Auswertungsfrequenz.",
         )
 
-    @staticmethod
     def _failure(
+        self,
         failure: LogFrequencyGridFailure,
         field: str | None,
     ) -> LogFrequencyGridResult:
-        return LogFrequencyGridResult._create(
+        result = LogFrequencyGridResult._create(
             request=None,
             interval_count=None,
             status=LogFrequencyGridStatus.FAILED,
@@ -358,6 +363,8 @@ class LogFrequencyGridGenerator:
                 ),
             ),
         )
+        validate_log_frequency_grid_result(result, self._limits)
+        return result
 
 
 def _canonical_origins(

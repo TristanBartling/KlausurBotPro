@@ -243,8 +243,19 @@ class LogFrequencyGridPoint:
             and self.target_interval_count is not None
             and 0 < self.target_index < self.target_interval_count
         )
-        if is_inner and self.maximum_relative_error.numerator == 0:
-            raise ValueError("An inner generated target needs a positive error bound.")
+        has_explicit_origin = LogFrequencyPointOrigin.EXPLICIT in self.origins
+        if (
+            is_inner
+            and not has_explicit_origin
+            and self.maximum_relative_error.numerator == 0
+        ):
+            raise ValueError("An approximated inner target needs a positive error bound.")
+        if (
+            is_inner
+            and has_explicit_origin
+            and self.maximum_relative_error.numerator != 0
+        ):
+            raise ValueError("An exact explicit target match needs zero error.")
         if not is_inner and self.maximum_relative_error.numerator != 0:
             raise ValueError("Exact boundaries and explicit points need zero error.")
         if type(self.diagnostics) is not tuple or any(

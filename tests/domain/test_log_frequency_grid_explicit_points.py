@@ -92,6 +92,29 @@ def test_explicit_exact_inner_target_merges_generated_origin() -> None:
         LogFrequencyPointOrigin.GENERATED,
         LogFrequencyPointOrigin.EXPLICIT,
     )
+    assert point.maximum_relative_error == ExactRationalValue(0)
+
+
+def test_nearby_explicit_point_is_not_treated_as_exact_target() -> None:
+    nearby = ExactRationalValue(10_000_001, 1_000_000)
+    result = LogFrequencyGridGenerator().generate(
+        LogFrequencyGridRequest(
+            ExactRationalValue(1),
+            ExactRationalValue(100),
+            5,
+            (nearby,),
+        )
+    )
+
+    explicit = next(
+        point for point in result.points if point.evaluation_frequency == nearby
+    )
+    generated = next(point for point in result.points if point.target_index == 5)
+    assert explicit.target_index is None
+    assert explicit.maximum_relative_error == ExactRationalValue(0)
+    assert generated.evaluation_frequency == ExactRationalValue(10)
+    assert generated.origins == (LogFrequencyPointOrigin.GENERATED,)
+    assert generated.maximum_relative_error.numerator > 0
 
 
 def test_exact_target_merge_is_counted_before_total_point_limit() -> None:

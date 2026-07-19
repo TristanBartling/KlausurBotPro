@@ -525,6 +525,25 @@ Gesamt- und Zusatzpunkte, rationale Ziffern, Decimal-Präzision,
 Zertifizierungsversuche und -schritte sowie Diagnosen. Ein harter
 In-Process-Timeout wird nicht behauptet.
 
+Eine eigene interne Resultatgrenze revalidiert das fertige Raster unabhängig
+vom vorangegangenen Generatorlauf. Sie bestimmt die Intervallzahl erneut
+exakt, gleicht jeden Ziel- und Zusatzpunkt mit dem Request ab, prüft
+Monotonie, Herkunft, Punktzahl, Dezimaldarstellung und Limits und führt für
+jeden approximierten inneren Punkt die rationale Fehlerzertifizierung erneut
+aus. Manipulierte verschachtelte Werte werden dabei in strukturierte
+Rasterfehler übersetzt. Diese Grenze ist für spätere Domainkonsumenten
+wiederverwendbar, aber keine neue öffentliche API.
+
+Ist ein inneres logarithmisches Ziel nachweislich rational und zugleich als
+exakte Zusatzfrequenz vorhanden, bleibt seine rationale Frequenz unverändert.
+Die Herkunft lautet dann `GENERATED` und `EXPLICIT`, die Fehlergrenze ist
+exakt null. Nur tatsächlich approximierte innere Ziele besitzen die positive
+zertifizierte Schranke. Vollständige Raster besitzen in dieser Phase keine
+Punkt- oder globalen Diagnosen; Fehlerresultate enthalten höchstens die
+begrenzte strukturierte Fehlerdiagnose. Dadurch wird `max_diagnostics`
+tatsächlich an der Resultatgrenze geprüft, obwohl Generatorergebnisse die
+Standardgrenze konstruktiv unterschreiten.
+
 Phase 3A.2a enthält ausdrücklich noch keinen Aufruf der punktweisen
 Frequenzganganalyse, keine Bode-Plotdaten oder -serien, keine Segmentierung,
 keine Phasenentfaltung, keine Reserven, keine Nyquist-Auswertung und keine

@@ -362,6 +362,22 @@ Transferfunktionen, Frequenzganganalyse, Application, UI und Parsing aus.
 Bode-Daten, Segmentierung und Phasenentfaltung werden in Phase 3A.2a weder
 implementiert noch getestet.
 
+Die interne Resultatgrenze wird zusätzlich gegen nachträglich manipulierte
+Intervallzahlen, Requestgrenzen, Punktdichten, Zielkoordinaten,
+Auswertungsfrequenzen, Fehlergrenzen, Dezimalwerte, Herkunftsangaben,
+Diagnosen, Reihenfolgen und fremde beziehungsweise fehlende explizite Punkte
+geprüft. Sie muss die Intervallzahl und Zertifizierung unabhängig erneut
+berechnen und erwartbare verschachtelte Typ- und Wertfehler strukturiert
+kapseln. Ein eigener Grenztest belegt die tatsächliche Durchsetzung von
+`max_diagnostics`; erfolgreiche Generatorraster besitzen konstruktiv keine
+Diagnosen.
+
+Regressionsfälle unterscheiden einen exakt rationalen inneren Zieltreffer mit
+Fehlergrenze null von einem nur nahe gelegenen expliziten Punkt und einem
+weiterhin positiv zertifizierten irrationalen Ziel. Größenprüfungen des
+`ScientificDecimal` erfolgen vor Textdarstellungen, sodass manipulierte
+Exponenten keine unkontrollierten Ausgaben erzeugen.
+
 ## Tests des Transferfunktionsworkflows
 
 Phase 2C.1 wird als UI-unabhängige Integration der bestehenden Parser- und
