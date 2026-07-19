@@ -538,6 +538,31 @@ def _validate_root_result(
         return None
     if not _record_preserves_diagnostics(record, result.diagnostics):
         errors.append(("root_analysis_result", "diagnostics_mismatch"))
+    if record.status is WorkflowStageStatus.FAILED and not result.succeeded:
+        if not _substitutions_match(result.substitutions, state.substitutions):
+            errors.append(("root_analysis_result", "substitution_mismatch"))
+        if reduced is None:
+            errors.append(("root_analysis_result", "missing_reduced_context"))
+            return None
+        analyzer = TransferFunctionRootAnalyzer(limits.root_analysis)
+        expected = (
+            analyzer.analyze_reduction(
+                state.reduction_result,
+                state.substitutions,
+                field=state.request.field,
+            )
+            if state.reduction_result is not None
+            else analyzer.analyze(
+                reduced,
+                state.substitutions,
+                field=state.request.field,
+            )
+        )
+        if expected != result:
+            errors.append(
+                ("root_analysis_result", "independent_revalidation_failed")
+            )
+        return result
     if reduced is None or result.reduced_transfer_function != reduced:
         errors.append(("root_analysis_result", "foreign_reduced_value"))
         return None
@@ -605,6 +630,18 @@ def _validate_stability_result(
         return
     if not _record_preserves_diagnostics(record, result.diagnostics):
         errors.append(("stability_analysis_result", "diagnostics_mismatch"))
+    if record.status is WorkflowStageStatus.FAILED and not result.succeeded:
+        expected = TransferFunctionStabilityAnalyzer(
+            limits.stability_analysis
+        ).analyze(root, field=state.request.field)
+        if expected != result:
+            errors.append(
+                (
+                    "stability_analysis_result",
+                    "independent_revalidation_failed",
+                )
+            )
+        return
     if result.root_analysis != root:
         errors.append(("stability_analysis_result", "foreign_root_result"))
         return

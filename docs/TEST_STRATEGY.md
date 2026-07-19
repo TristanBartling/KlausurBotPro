@@ -305,6 +305,46 @@ erhält genau den strukturierten Limitfehler, frühere Teilresultate bleiben
 erhalten, spätere Stufen sind blockiert und die aggregierte Anzahl bleibt
 innerhalb des konfigurierten Limits.
 
+## Tests des Transferfunktions-Lösungsberichts
+
+Phase 2C.2 wird ausschließlich als Übersetzung vorhandener Workflowwerte
+geprüft. Strukturtests sichern unveränderliche, hashbare und SymPy-freie
+Zeilen, die feste Abschnittsreihenfolge, exakte Werte vor optionalen
+Näherungen sowie deterministische Gleichheit ohne Operations- oder
+Diagnoseprovenienzsequenzen.
+
+Die Akzeptanzmatrix umfasst ungekürzte, vollständig und teilweise gekürzte
+Funktionen, erhaltene Definitionslücken, Nullzähler, rationale, komplexe und
+`RootOf`-Pole, fehlende und vollständige Parameterbelegungen sowie stabile,
+grenzstabile, instabile und symbolisch unbestimmte Ergebnisse. Strukturierte
+Assertions prüfen Wurzelmultiplizitäten, spezialisierte Polynome,
+Reduktionsschritte, Voraussetzungen, Definitionsausschlüsse und die Trennung
+gekürzter Stellen von reduzierten Polen.
+
+Override-Tests verlangen sichtbare Raw-, Reduced- und Root-Herkunft. Ein
+Reduced-Override darf keinen erfundenen Reduktionsschritt enthalten. Ein
+Root-Override muss vor den mathematischen Werten in Nullstellen- und
+Polabschnitt sowie in beiden Renderern erscheinen.
+Teilberichtstests erzwingen Parser-, Reduktions-, Root- und
+Stabilitätsfehler; manipulierte States dürfen keine mathematischen Werte in
+den Fehlerbericht übernehmen. Jede Reportgrenze besitzt einen strukturierten
+Überlaufpfad ohne stilles Abschneiden.
+
+Rendererprüfungen vergleichen alle strukturierten Gleichungen und Ergebnisse
+mit Plaintext und LaTeX, prüfen deterministische Leerzeilen sowie sicheres
+Escaping und stellen sicher, dass beide Ausgaben denselben mathematischen
+Inhalt besitzen. Quellenzeilen werden exakt gegen die vorhandenen
+`StabilitySourceReference`-Werte geprüft; nicht vorhandene Fundstellen werden
+nicht ergänzt. Workflowdiagnosen müssen ihre exakte Severity behalten; beide
+Renderer geben `INFO`, `WARNUNG` und `FEHLER` identisch aus. Complete-,
+fehlgeschlagene und blockierte Stability-Stufen sowie ein erfolgreiches
+Ergebnis ohne Quellen sichern den Quellenstatus. Workflowlimit-Tests verwenden
+dieselbe Konfiguration in Service und Builder und lehnen denselben State unter
+strengeren Buildergrenzen ab. Manipulierte fehlgeschlagene Root- und
+Stability-Ergebnisse werden unabhängig revalidiert. Architekturtests schließen
+UI-Abhängigkeiten, rohe
+SymPy-Stringpfade und Domain→Application-Abhängigkeiten weiterhin aus.
+
 ## Regressionstests mit offiziellen Aufgaben
 
 Verifizierte Aufgaben aus offiziellen Unterlagen werden später als
