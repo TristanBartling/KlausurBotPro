@@ -44,6 +44,15 @@ from klausurbotpro.domain.log_frequency_grid_contracts import (
 )
 
 _NESTED_ERRORS = (AttributeError, IndexError, TypeError, ValueError)
+_FAILED_DIAGNOSTIC_CODES = frozenset(
+    {
+        DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_INPUT,
+        DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_SOURCE,
+        DiagnosticCode.BODE_PHASE_UNWRAP_CONTEXT_MISMATCH,
+        DiagnosticCode.BODE_PHASE_UNWRAP_LIMIT_EXCEEDED,
+        DiagnosticCode.BODE_PHASE_UNWRAP_RESOURCE_LIMIT_EXCEEDED,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +136,7 @@ def _validate_result(
         allow_errors=result.status is BodePhaseUnwrapStatus.FAILED,
     )
     if result.status is BodePhaseUnwrapStatus.FAILED:
+        _validate_failed_diagnostics(result.diagnostics)
         return
     source = result.source_bode_data
     if source is None:
@@ -316,6 +326,21 @@ def _validate_diagnostics(
         raise BodePhaseUnwrapFailure(
             DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_INPUT,
             "Ein erfolgreiches Unwrap-Ergebnis darf keinen Fehler enthalten.",
+        )
+
+
+def _validate_failed_diagnostics(
+    diagnostics: tuple[Diagnostic, ...],
+) -> None:
+    if (
+        len(diagnostics) != 1
+        or diagnostics[0].severity is not DiagnosticSeverity.ERROR
+        or diagnostics[0].code not in _FAILED_DIAGNOSTIC_CODES
+    ):
+        raise BodePhaseUnwrapFailure(
+            DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_INPUT,
+            "Ein fehlgeschlagenes Unwrap-Ergebnis benötigt genau eine "
+            "zulässige Fehlerdiagnose.",
         )
 
 

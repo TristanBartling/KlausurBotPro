@@ -181,6 +181,128 @@ def test_failed_bode_source_is_rejected_without_retaining_it() -> None:
     assert result.source_bode_data is None
 
 
+def _failed_result(diagnostics: tuple[Diagnostic, ...]) -> BodePhaseUnwrapResult:
+    result = BodePhaseUnwrapResult._create(
+        status=BodePhaseUnwrapStatus.FAILED,
+        diagnostics=(
+            Diagnostic(
+                DiagnosticSeverity.ERROR,
+                DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_SOURCE,
+                "valid failure",
+            ),
+        ),
+    )
+    object.__setattr__(result, "diagnostics", diagnostics)
+    return result
+
+
+@pytest.mark.parametrize(
+    "diagnostics",
+    [
+        (
+            Diagnostic(
+                DiagnosticSeverity.ERROR,
+                DiagnosticCode.BODE_DATA_INVALID_INPUT,
+                "foreign code",
+            ),
+        ),
+        (
+            Diagnostic(
+                DiagnosticSeverity.ERROR,
+                DiagnosticCode.BODE_PHASE_UNWRAP_NO_PHASE_DATA,
+                "not an error code",
+            ),
+        ),
+        (
+            Diagnostic(
+                DiagnosticSeverity.ERROR,
+                DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_SOURCE,
+                "first",
+            ),
+            Diagnostic(
+                DiagnosticSeverity.ERROR,
+                DiagnosticCode.BODE_PHASE_UNWRAP_LIMIT_EXCEEDED,
+                "second",
+            ),
+        ),
+        (
+            Diagnostic(
+                DiagnosticSeverity.ERROR,
+                DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_SOURCE,
+                "error",
+            ),
+            Diagnostic(
+                DiagnosticSeverity.WARNING,
+                DiagnosticCode.BODE_PHASE_UNWRAP_CONTEXT_MISMATCH,
+                "warning",
+            ),
+        ),
+        (
+            Diagnostic(
+                DiagnosticSeverity.WARNING,
+                DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_SOURCE,
+                "warning only",
+            ),
+        ),
+        (),
+    ],
+)
+def test_failed_result_rejects_noncanonical_diagnostics(
+    diagnostics: tuple[Diagnostic, ...],
+) -> None:
+    with pytest.raises(BodePhaseUnwrapFailure):
+        _validate(_failed_result(diagnostics))
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_SOURCE,
+        DiagnosticCode.BODE_PHASE_UNWRAP_LIMIT_EXCEEDED,
+        DiagnosticCode.BODE_PHASE_UNWRAP_RESOURCE_LIMIT_EXCEEDED,
+    ],
+)
+def test_failed_result_accepts_supported_error_diagnostics(
+    code: DiagnosticCode,
+) -> None:
+    result = _failed_result(
+        (
+            Diagnostic(
+                DiagnosticSeverity.ERROR,
+                code,
+                "arbitrary nonempty message",
+                technical_details=(("source", "test"),),
+            ),
+        )
+    )
+    _validate(result)
+
+
+def test_manipulated_failed_result_is_independently_rejected() -> None:
+    result = _failed_result(
+        (
+            Diagnostic(
+                DiagnosticSeverity.ERROR,
+                DiagnosticCode.BODE_PHASE_UNWRAP_INVALID_SOURCE,
+                "valid",
+            ),
+        )
+    )
+    object.__setattr__(
+        result,
+        "diagnostics",
+        (
+            Diagnostic(
+                DiagnosticSeverity.INFO,
+                DiagnosticCode.BODE_PHASE_UNWRAP_NO_PHASE_DATA,
+                "manipulated",
+            ),
+        ),
+    )
+    with pytest.raises(BodePhaseUnwrapFailure):
+        _validate(result)
+
+
 @pytest.mark.parametrize("error", [TypeError("bug"), ValueError("bug")])
 def test_internal_programming_errors_are_not_masked(
     monkeypatch: pytest.MonkeyPatch,
