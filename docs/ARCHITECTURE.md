@@ -604,6 +604,41 @@ Bereichen. Phase 3A.2b erzeugt selbst keinen Bericht. Sie enthält außerdem
 keine GUI, Plotbibliothek, Phasenentfaltung, Reserven, Nyquist-Auswertung,
 Stabilitätsentscheidung oder automatische asymptotische Geraden.
 
+## Implementierte optionale Bode-Phasenentfaltung (Phase 3A.2c)
+
+`BodePhaseUnwrapAnalyzer` projiziert ausschließlich die bereits vorhandenen
+Hauptphasensegmente eines defensiv revalidierten
+`TransferFunctionBodeDataResult`. Er ruft keine Frequenzganganalyse auf,
+verändert keinen `BodePlotPoint` und berechnet weder Betrag noch dB neu. Jeder
+entfaltete Punkt und jedes Segment referenziert sein Quellobjekt durch
+Identität; die Hauptphase bleibt unverändert erhalten.
+
+Innerhalb jedes Quellsegments wählt eine exakte endliche Dezimalarithmetik den
+ganzzahligen 360°-Offset mit dem kleinsten Abstand zur vorherigen entfalteten
+Phase. Kandidaten entstehen begrenzt aus Abrunden und Aufrunden des exakten
+Quotienten sowie dem vorherigen Offset. Bei einem exakten 180°-Gleichstand
+bleibt der vorherige Offset erhalten; der defensive Fallback bevorzugt danach
+den kleineren absoluten und schließlich den kleineren ganzzahligen Offset.
+Diese Regel ist eine Darlegungskonvention und behauptet keine physikalisch
+eindeutige Drehrichtung.
+
+Jedes neue Quellsegment beginnt unabhängig mit Offset null. Unterbrechungen
+durch Nullantwort, Singularität oder symbolisch beziehungsweise numerisch
+unbestimmte Punkte werden weder verbunden noch interpoliert. Daher entstehen
+die Statuswerte `COMPLETE`, `PARTIAL` und `NO_PHASE_DATA` ausschließlich aus
+der revalidierten Bode-Quelle und ihren vorhandenen Phasensegmenten.
+
+`BodePhaseUnwrapLimits` begrenzt Segmente, Punkte, absoluten Offset,
+Dezimalziffern und Diagnosen ohne Rundung oder Kürzung. Die interne
+Resultatgrenze reproduziert Status, Metadaten, Segment- und Punktidentitäten,
+Indizes, Offsetrekurrenz, Dezimalwerte und Diagnoseaggregation. Ungültige
+Quellen, Manipulationen, Limit- und Ressourcenfehler liefern ein wertfreies
+`FAILED`.
+
+Die Projektion kann reale Phasenänderungen von mehr als 180° zwischen zwei
+Abtastpunkten nicht eindeutig erkennen. Sie enthält keine Reserven,
+Durchtrittsfrequenzen, Nyquist-Auswertung, GUI, Plot- oder Berichtserzeugung.
+
 ## Implementierter Transferfunktionsworkflow (Phase 2C.1)
 
 Die UI-unabhängige Application-Schicht orchestriert den vorhandenen sicheren

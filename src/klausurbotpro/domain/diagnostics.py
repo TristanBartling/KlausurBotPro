@@ -211,6 +211,16 @@ class DiagnosticCode(StrEnum):
     BODE_DATA_LIMIT_EXCEEDED = "bode_data.limit_exceeded"
     BODE_DATA_NO_PLOTTABLE_DATA = "bode_data.no_plottable_data"
     BODE_DATA_RESOURCE_LIMIT_EXCEEDED = "bode_data.resource_limit_exceeded"
+    BODE_PHASE_UNWRAP_INVALID_INPUT = "bode_phase_unwrap.invalid_input"
+    BODE_PHASE_UNWRAP_INVALID_SOURCE = "bode_phase_unwrap.invalid_source"
+    BODE_PHASE_UNWRAP_CONTEXT_MISMATCH = (
+        "bode_phase_unwrap.context_mismatch"
+    )
+    BODE_PHASE_UNWRAP_LIMIT_EXCEEDED = "bode_phase_unwrap.limit_exceeded"
+    BODE_PHASE_UNWRAP_NO_PHASE_DATA = "bode_phase_unwrap.no_phase_data"
+    BODE_PHASE_UNWRAP_RESOURCE_LIMIT_EXCEEDED = (
+        "bode_phase_unwrap.resource_limit_exceeded"
+    )
 
 
 @dataclass(frozen=True, slots=True)
