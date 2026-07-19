@@ -9,11 +9,16 @@ from klausurbotpro.application.transfer_function_solution_report_contracts impor
     ResultLine,
     SolutionLine,
     SolutionSectionKind,
+    SolutionSectionStatus,
     SourceReferenceLine,
     TransferFunctionExpressionPair,
     TransferFunctionSolutionReport,
     TransformationLine,
     WarningLine,
+)
+from klausurbotpro.application.transfer_function_workflow_contracts import (
+    WorkflowOverrideOriginKind,
+    WorkflowStage,
 )
 from klausurbotpro.domain import DiagnosticSeverity
 
@@ -49,6 +54,43 @@ _SEVERITY_LABELS = {
     DiagnosticSeverity.ERROR: "FEHLER",
 }
 
+_SECTION_STATUS_LABELS = {
+    SolutionSectionStatus.COMPLETE: "vollständig",
+    SolutionSectionStatus.PARTIAL: "teilweise verfügbar",
+    SolutionSectionStatus.FAILED: "fehlgeschlagen",
+    SolutionSectionStatus.BLOCKED: (
+        "nicht berechnet, da eine vorherige Stufe fehlgeschlagen ist"
+    ),
+    SolutionSectionStatus.NOT_APPLICABLE: "nicht erforderlich",
+}
+
+_EMPTY_SECTION_LABELS = {
+    SolutionSectionKind.PREREQUISITES: "keine",
+    SolutionSectionKind.DOMAIN_EXCLUSIONS: "keine",
+    SolutionSectionKind.PARAMETER_SUBSTITUTIONS: "keine",
+    SolutionSectionKind.SOURCES: "keine",
+    SolutionSectionKind.WORKFLOW_NOTICES: "keine",
+}
+
+_WORKFLOW_STAGE_LABELS = {
+    WorkflowStage.PARSE: "Parse",
+    WorkflowStage.RAW_TRANSFER_FUNCTION: "Raw-Transferfunktion",
+    WorkflowStage.REDUCTION: "Reduktion",
+    WorkflowStage.ROOT_ANALYSIS: "Wurzelanalyse",
+    WorkflowStage.STABILITY_ANALYSIS: "Stabilitätsanalyse",
+}
+
+_OVERRIDE_ORIGIN_LABELS = {
+    WorkflowOverrideOriginKind.MANUAL: "manuelle Vorgabe",
+    WorkflowOverrideOriginKind.IMPORT: "importierte Vorgabe",
+    WorkflowOverrideOriginKind.TEST: "Testvorgabe",
+}
+
+_PLAIN_RELATION_LABELS = {
+    "not assigned": "nicht belegt",
+    "not fully decidable": "nicht vollständig entscheidbar",
+}
+
 
 def render_solution_report_plaintext(
     report: TransferFunctionSolutionReport,
@@ -61,9 +103,12 @@ def render_solution_report_plaintext(
         heading = _HEADINGS[section.kind]
         lines = [heading]
         if not section.lines:
-            lines.append(f"[{section.status.value}]")
+            lines.append(_empty_section_label(section.kind, section.status))
         else:
-            lines.extend(_render_plain_line(line) for line in section.lines)
+            lines.extend(
+                _render_plain_line(line, section.kind)
+                for line in section.lines
+            )
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
 
@@ -80,10 +125,15 @@ def render_solution_report_latex(
         lines = [rf"\textbf{{{heading}}}"]
         if not section.lines:
             lines.append(
-                rf"\textit{{{_escape_latex_text(section.status.value)}}}"
+                rf"\textit{{{_escape_latex_text(
+                    _empty_section_label(section.kind, section.status)
+                )}}}"
             )
         else:
-            lines.extend(_render_latex_line(line) for line in section.lines)
+            lines.extend(
+                _render_latex_line(line, section.kind)
+                for line in section.lines
+            )
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
 
@@ -93,16 +143,32 @@ def _require_report(report: object) -> None:
         raise TypeError("report must be a TransferFunctionSolutionReport.")
 
 
-def _render_plain_line(line: SolutionLine) -> str:
+def _render_plain_line(
+    line: SolutionLine,
+    section_kind: SolutionSectionKind | None = None,
+) -> str:
     if type(line) is EquationLine:
-        return (
+        equation = (
             f"{line.left.plaintext} {line.relation} "
             f"{line.right.plaintext}"
         )
+        root_label = _root_equation_label(section_kind, line)
+        return equation if root_label is None else f"{root_label}: {equation}"
     if type(line) is ResultLine:
         if line.label == "Stabilitätsaussage":
             return f"⇒ {line.exact_value.plaintext}"
-        value = f"{line.label} = {line.exact_value.plaintext}"
+        if (
+            line.label == "Ergebnis"
+            and section_kind in (
+                SolutionSectionKind.ZEROS,
+                SolutionSectionKind.POLES,
+            )
+        ):
+            return f"⇒ {line.exact_value.plaintext}"
+        value = (
+            f"{_plain_result_label(line.label)} = "
+            f"{line.exact_value.plaintext}"
+        )
         if line.numerical_approximation is not None:
             value += f" ≈ {line.numerical_approximation}"
         if line.multiplicity is not None:
@@ -113,11 +179,15 @@ def _render_plain_line(line: SolutionLine) -> str:
             values = ", ".join(
                 expression.plaintext for expression in line.expressions
             )
-            return f"NOT_ALL_ZERO({values})"
+            return f"Nicht alle gleichzeitig null: {values}"
         values = ", ".join(
             expression.plaintext for expression in line.expressions
         )
-        return f"{values} {line.relation}"
+        relation = _PLAIN_RELATION_LABELS.get(
+            line.relation,
+            line.relation,
+        )
+        return f"{values} {relation}"
     if type(line) is TransformationLine:
         before = _plain_pair(line.before)
         after = _plain_pair(line.after)
@@ -133,19 +203,19 @@ def _render_plain_line(line: SolutionLine) -> str:
         conditions = _plain_transformation_conditions(line)
         return f"{before}  -- {operation}{factor} ⇒  {after}{conditions}"
     if type(line) is OverrideLine:
+        stage = _WORKFLOW_STAGE_LABELS[line.target_stage]
+        origin = _OVERRIDE_ORIGIN_LABELS[line.origin_kind]
         return (
-            f"[Override {line.target_stage.value}/{line.origin_kind.value}] "
+            f"[{origin} – {stage}] "
             f"{_escape_plain_text(line.reason)}"
         )
     if type(line) is WarningLine:
         severity = _SEVERITY_LABELS[line.severity]
-        stage = (
-            ""
-            if line.affected_stage is None
-            else f" ({line.affected_stage.value})"
+        stage = "" if line.affected_stage is None else (
+            f" ({_WORKFLOW_STAGE_LABELS[line.affected_stage]})"
         )
         return (
-            f"[{severity}] [{line.code}{stage}] "
+            f"[{severity}]{stage} "
             f"{_escape_plain_text(line.statement)}"
         )
     if type(line) is SourceReferenceLine:
@@ -158,12 +228,30 @@ def _render_plain_line(line: SolutionLine) -> str:
     raise TypeError("Unsupported solution line.")
 
 
-def _render_latex_line(line: SolutionLine) -> str:
+def _render_latex_line(
+    line: SolutionLine,
+    section_kind: SolutionSectionKind | None = None,
+) -> str:
     if type(line) is EquationLine:
         relation = _latex_relation(line.relation)
-        return rf"\[{line.left.latex} {relation} {line.right.latex}\]"
+        equation = rf"\[{line.left.latex} {relation} {line.right.latex}\]"
+        root_label = _root_equation_label(section_kind, line)
+        if root_label is None:
+            return equation
+        return (
+            rf"\textit{{{_escape_latex_text(root_label)}:}}"
+            f"\n{equation}"
+        )
     if type(line) is ResultLine:
         if line.label == "Stabilitätsaussage":
+            return rf"\[\Longrightarrow {line.exact_value.latex}\]"
+        if (
+            line.label == "Ergebnis"
+            and section_kind in (
+                SolutionSectionKind.ZEROS,
+                SolutionSectionKind.POLES,
+            )
+        ):
             return rf"\[\Longrightarrow {line.exact_value.latex}\]"
         approximation = (
             ""
@@ -184,7 +272,10 @@ def _render_latex_line(line: SolutionLine) -> str:
             expression.latex for expression in line.expressions
         )
         if line.relation == "NOT_ALL_ZERO":
-            return rf"\[\mathrm{{NOT\_ALL\_ZERO}}\left({values}\right)\]"
+            return (
+                r"\[\mbox{Nicht alle gleichzeitig null: }\;"
+                rf"{values}\]"
+            )
         return rf"\[{values} {_latex_relation(line.relation)}\]"
     if type(line) is TransformationLine:
         operation = _OPERATION_LABELS.get(
@@ -204,19 +295,19 @@ def _render_latex_line(line: SolutionLine) -> str:
             rf"{_latex_pair(line.after)}{conditions}\]"
         )
     if type(line) is OverrideLine:
+        stage = _WORKFLOW_STAGE_LABELS[line.target_stage]
+        origin = _OVERRIDE_ORIGIN_LABELS[line.origin_kind]
         text = (
-            f"Override {line.target_stage.value}/{line.origin_kind.value}: "
+            f"{origin} – {stage}: "
             f"{line.reason}"
         )
         return rf"\textit{{{_escape_latex_text(text)}}}"
     if type(line) is WarningLine:
         severity = _SEVERITY_LABELS[line.severity]
-        stage = (
-            ""
-            if line.affected_stage is None
-            else f"/{line.affected_stage.value}"
+        stage = "" if line.affected_stage is None else (
+            f" ({_WORKFLOW_STAGE_LABELS[line.affected_stage]})"
         )
-        text = f"[{severity}] [{line.code}{stage}] {line.statement}"
+        text = f"[{severity}]{stage} {line.statement}"
         return rf"\textit{{{_escape_latex_text(text)}}}"
     if type(line) is SourceReferenceLine:
         page = "" if line.page is None else f", Seite {line.page}"
@@ -263,9 +354,48 @@ def _latex_result_label(label: str) -> str:
             return rf"{prefix[0]}_{{{label[len(prefix):]}}}"
     for prefix in ("s_excluded,", "s_cancelled,"):
         if label.startswith(prefix) and label[len(prefix) :].isdigit():
-            role = "excluded" if prefix == "s_excluded," else "cancelled"
+            role = (
+                "ausgeschlossen"
+                if prefix == "s_excluded,"
+                else "gekürzt"
+            )
             return rf"s_{{\mathrm{{{role}}},{label[len(prefix):]}}}"
     return rf"\mbox{{{_escape_latex_text(label)}}}"
+
+
+def _plain_result_label(label: str) -> str:
+    for prefix, replacement in (
+        ("s_excluded,", "Ausgeschlossene Stelle s_"),
+        ("s_cancelled,", "Gekürzte Stelle s_"),
+    ):
+        if label.startswith(prefix) and label[len(prefix) :].isdigit():
+            return f"{replacement}{label[len(prefix):]}"
+    return label
+
+
+def _root_equation_label(
+    section_kind: SolutionSectionKind | None,
+    line: EquationLine,
+) -> str | None:
+    if line.identifier != "root_equation":
+        return None
+    if section_kind is SolutionSectionKind.ZEROS:
+        return "Nullstellenbedingung"
+    if section_kind is SolutionSectionKind.POLES:
+        return "Polgleichung"
+    return None
+
+
+def _empty_section_label(
+    kind: SolutionSectionKind,
+    status: SolutionSectionStatus,
+) -> str:
+    if status is SolutionSectionStatus.NOT_APPLICABLE:
+        return _EMPTY_SECTION_LABELS.get(
+            kind,
+            _SECTION_STATUS_LABELS[status],
+        )
+    return _SECTION_STATUS_LABELS[status]
 
 
 def _plain_transformation_conditions(line: TransformationLine) -> str:
@@ -295,7 +425,10 @@ def _latex_transformation_conditions(line: TransformationLine) -> str:
 def _latex_condition_inline(line: ConditionLine) -> str:
     values = ", ".join(expression.latex for expression in line.expressions)
     if line.relation == "NOT_ALL_ZERO":
-        return rf"\mathrm{{NOT\_ALL\_ZERO}}\left({values}\right)"
+        return (
+            r"\mathrm{nicht\ alle\ gleichzeitig\ null}"
+            rf"\left({values}\right)"
+        )
     return rf"{values} {_latex_relation(line.relation)}"
 
 

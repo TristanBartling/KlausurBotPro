@@ -376,6 +376,18 @@ einem unerwarteten Workerfehler Zusammenfassungen, Stufen, beide Berichte und
 die Copy-Aktion zurückgesetzt sind. Importtests
 verbieten Domain-Analyzer, Parsing und SymPy in allen UI-Modulen.
 
+Phase 2D.1a ergänzt Regressionen aus dem ersten manuellen Sichttest:
+Zusammenfassungen und Renderer dürfen keine internen Rollen- oder Statuswerte
+anzeigen, Root-Gleichungen besitzen eindeutige deutsche Bezeichnungen und
+leere Abschnitte werden verständlich deutsch dargestellt. RUNNING-Tests
+prüfen den leeren Ergebnis-State, „Berechnung läuft“ in allen Stufen sowie die
+Sperre sämtlicher Eingaben bei unverändertem Text. Nach dem Ergebnis werden
+die Eingaben wieder aktiviert. Weitere Tests decken den
+„vorheriges Ergebnis“-Hinweis bei Factoryfehlern, den
+„LaTeX-Quelltext“-Tab samt Tooltip, punktbasierte Schriftvergrößerung,
+fontmetrische Mindesthöhen und weiterhin verstellbare Splitter ab. Es gibt
+keine pixelgenauen Screenshotassertionen.
+
 Wenige echte `QThread`-Integrationstests verwenden `QSignalSpy` zusammen mit
 einer endlichen Qt-Eventloop-Grenze statt `sleep()`. Sie prüfen einen
 vollständigen Workflow, den unveränderlichen Transportwert, identische

@@ -367,7 +367,11 @@ class TransferFunctionSolutionReportBuilder:
         lines: list[SolutionLine] = [
             ResultLine(
                 "Eingabeform",
-                descriptive_math(request.input_form.name),
+                descriptive_math(
+                    "Gemeinsamer Ausdruck"
+                    if request.input_form is WorkflowInputForm.COMMON
+                    else "Getrennte Zähler-/Nennereingabe"
+                ),
                 source_role="input_form",
             ),
             ResultLine(
@@ -619,7 +623,11 @@ class TransferFunctionSolutionReportBuilder:
             lines.append(
                 ResultLine(
                     "Ergebnis",
-                    descriptive_math("keine Wurzeln"),
+                    descriptive_math(
+                        "keine Nullstellen"
+                        if root_label == "z"
+                        else "keine Pole"
+                    ),
                     source_role=analysis.source.value,
                 )
             )

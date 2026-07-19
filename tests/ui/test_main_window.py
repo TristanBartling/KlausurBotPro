@@ -59,13 +59,24 @@ def test_real_common_end_to_end_offscreen() -> None:
         Qt.MouseButton.LeftButton,
     )
 
+    assert (
+        window.presenter.state.run_status
+        is TransferFunctionUiRunStatus.RUNNING
+    )
+    assert not window.workspace.common_expression_edit.isEnabled()
+    assert not window.workspace.copy_button.isEnabled()
+    assert window.workspace.plaintext_report_edit.toPlainText() == ""
+    for index in range(window.workspace.stage_tree.topLevelItemCount()):
+        item = window.workspace.stage_tree.topLevelItem(index)
+        assert item is not None
+        assert item.text(1) == "Berechnung läuft"
+
     QTimer.singleShot(15_000, loop.quit)
     loop.exec()
     application.processEvents()
     assert completed.count() == 1
-    assert (
-        window.presenter.state.run_status
-        is TransferFunctionUiRunStatus.COMPLETE
+    assert window.presenter.state.run_status.value == (
+        TransferFunctionUiRunStatus.COMPLETE.value
     )
     assert "-1" in window.workspace.summary_edits[
         next(
@@ -74,14 +85,24 @@ def test_real_common_end_to_end_offscreen() -> None:
             if kind.value == "poles"
         )
     ].toPlainText()
-    assert "[stable]" in window.workspace.summary_edits[
+    assert "System ist E/A-stabil." in window.workspace.summary_edits[
         next(
             kind
             for kind in window.workspace.summary_edits
             if kind.value == "stability"
         )
     ].toPlainText()
-    assert window.workspace.plaintext_report_edit.toPlainText()
+    plaintext = window.workspace.plaintext_report_edit.toPlainText()
+    latex = window.workspace.latex_report_edit.toPlainText()
+    assert plaintext
+    assert latex
+    for internal_value in (
+        "stable",
+        "numerator",
+        "retained_domain_exclusion",
+    ):
+        assert internal_value not in plaintext
+    assert window.workspace.common_expression_edit.isEnabled()
     assert window.shutdown()
     window.close()
 
