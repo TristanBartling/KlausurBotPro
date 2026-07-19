@@ -643,7 +643,11 @@ Durchtrittsfrequenzen, Nyquist-Auswertung, GUI, Plot- oder Berichtserzeugung.
 
 `TransferFunctionPreparationService` bildet die gemeinsame
 Application-Pipeline für Requestvalidierung, sicheres Parsing,
-`RawTransferFunction`-Erzeugung und exakte Reduktion. Er verwendet den
+`RawTransferFunction`-Erzeugung und exakte Reduktion. Die Pipeline besitzt
+eine einzige autoritative Implementierung und führt je Serviceaufruf einen
+produktiven Durchlauf aus. Die interne Vertrauensgrenze reproduziert Parsing,
+Raw-Erzeugung und Reduktion anschließend defensiv; dies ist keine zweite
+konkurrierende Fachimplementierung. Der Service verwendet den
 bestehenden `TransferFunctionWorkflowRequest` einschließlich unverändert
 erhaltener Parametersubstitutionen, wendet diese während der Vorbereitung
 aber nicht an. COMMON und SEPARATED laufen weiterhin ausschließlich über den
@@ -659,8 +663,16 @@ fehlgeschlagene Stufe blockiert sämtliche Nachfolger. `raw_value` und
 Domainresultate und werden nicht doppelt gespeichert.
 
 Eine interne Vertrauensgrenze revalidiert Requestkontext, Stufenfolge,
-Statusmatrix, Teilresultate, Wertherkunft, Raw-Identität der Reduktion,
-Diagnoseaggregation und die bestehenden `TransferFunctionWorkflowLimits`.
+Statusmatrix, Teilresultate und Wertherkunft vollständig feldweise.
+Parsertexte, normalisierte Texte, erlaubte Symbole und Rohbäume werden nicht
+über die bewusst provenanceblinde Eingabegleichheit geprüft. Der erfolgreiche
+Raw-Wert referenziert seinen gespeicherten `input_snapshot` identisch als
+Preparation-`parsed_input`; Raw-Metadaten, Voraussetzungen und
+Definitionsausschlüsse schließen ihre Herkunft ein. Das ReductionResult
+referenziert den Raw-Wert identisch; reduzierter Wert und vollständiger
+geordneter Bericht einschließlich Faktoren und verwendeter Voraussetzungen
+werden streng reproduziert. Zusätzlich prüft die Grenze Diagnoseaggregation
+und die bestehenden `TransferFunctionWorkflowLimits`.
 Domain-Diagnosen bleiben unverändert in Stufenreihenfolge; genau eine
 Application-Diagnose ergänzt einen erwartbaren Stufenfehler. Speicher-,
 Rekursions- und Überlauffehler werden an der betroffenen Stufe strukturiert
@@ -676,6 +688,11 @@ Stabilität zu analysieren.
 Phase 3E.1a enthält noch keine Frequenzgang-, Raster-, Bode- oder
 Phasenentfaltungsorchestrierung im Application-Layer und keinen Bericht,
 Diagramm-, GUI-, Overleaf-, Reserven- oder Nyquist-Ausbau.
+
+Die vollständige defensive Reproduktion verursacht zusätzliche Rechenkosten.
+Vor Abschluss der Frequenz-GUI werden diese mit realen Aufgaben und
+Laufzeitmessungen geprüft. Die Vertrauensgrenze wird nicht ohne gemessenen
+Grund reduziert; Unit-Tests enthalten keine zeitabhängigen Laufzeitgrenzen.
 
 ## Implementierter Transferfunktionsworkflow (Phase 2C.1)
 

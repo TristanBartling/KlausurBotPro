@@ -53,6 +53,8 @@ def test_common_and_separated_requests_produce_the_same_reduced_value() -> None:
     )
     assert common.status is TransferFunctionPreparationStatus.COMPLETE
     assert len(common.stage_records) == 3
+    assert common.raw_value is not None
+    assert common.raw_value.input_snapshot is common.parsed_input
     assert common.reduced_value == separated.reduced_value
     assert common.raw_value is common.raw_result.value  # type: ignore[union-attr]
     assert common.reduced_value is common.reduction_result.reduced  # type: ignore[union-attr]

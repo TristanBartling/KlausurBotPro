@@ -480,11 +480,22 @@ Application-Diagnose. Eigene Spies erzwingen strukturierte Ressourcenfehler in
 jeder Stufe; Diagnoseüberläufe müssen den größtmöglichen vollständigen
 Präfix erhalten.
 
-Manipulationstests verändern Request, Parsed Input, Raw- und
-Reduktionsresultat, Gesamtstatus, Stufenfolge, Stufenstatus und
-Diagnoseaggregation. Die unabhängige Vertrauensgrenze reproduziert die
-mathematischen Übergaben mit denselben expliziten Workflowlimits und lehnt
-fremde oder nach einer blockierten Stufe gespeicherte Werte ab.
+Manipulationstests verändern Request, Parserrohbaum, Original- und
+Normalisierungstexte, Symbolkontext, Raw-Inputsnapshot, abgeleitete
+Raw-Metadaten, Bedingungen, Herkunftsangaben, Reduced-Metadaten,
+Reduktionsschritte, Faktoren und Berichte sowie Gesamtstatus, Stufenfolge,
+Stufenstatus und Diagnoseaggregation. Die unabhängige Vertrauensgrenze
+reproduziert die Übergaben mit denselben expliziten Workflowlimits und
+vergleicht sie feldweise statt über die bewusst mathematische beziehungsweise
+provenienzblinde Domain-Gleichheit. Raw-Inputsnapshot und Reduction-Raw werden
+zusätzlich durch Objektidentität gebunden. Fremde oder nach einer blockierten
+Stufe gespeicherte Werte werden abgelehnt.
+
+Die Tests behaupten nicht, dass Parsing, Raw-Erzeugung oder Reduktion insgesamt
+nur einmal laufen: Nach genau einem produktiven Durchlauf reproduziert die
+Vertrauensgrenze alle drei Schritte defensiv. Laufzeitkosten werden nicht
+durch instabile Zeitassertions bewertet, sondern vor GUI-Abschluss separat an
+realen Aufgaben gemessen.
 
 Spies verbieten jeden Root- und Stabilitätsaufruf in der Preparation. Ein
 weiterer Spy belegt, dass `TransferFunctionWorkflowService.run()` genau einen

@@ -59,7 +59,7 @@ _FAILURE_CODE = {
 
 
 class TransferFunctionPreparationService:
-    """Validate, parse, create a raw value, and reduce it exactly once."""
+    """Run one productive parse-to-reduction preparation."""
 
     def __init__(
         self,
@@ -160,6 +160,7 @@ class TransferFunctionPreparationService:
                 ),
             )
         assert raw_result.value is not None
+        parsed_input = raw_result.value.input_snapshot
         raw_record = self._success_record(
             TransferFunctionPreparationStage.RAW_TRANSFER_FUNCTION,
             raw_result.diagnostics,
@@ -173,14 +174,14 @@ class TransferFunctionPreparationService:
                 request,
                 TransferFunctionPreparationStage.REDUCTION,
                 error,
-                parsed_input=parsed.value,
+                parsed_input=parsed_input,
                 raw_result=raw_result,
                 prefix=(parse_record, raw_record),
             )
         if not reduction.succeeded:
             return self._finish(
                 request=request,
-                parsed_input=parsed.value,
+                parsed_input=parsed_input,
                 raw_result=raw_result,
                 reduction_result=reduction,
                 records=(
@@ -195,7 +196,7 @@ class TransferFunctionPreparationService:
             )
         return self._finish(
             request=request,
-            parsed_input=parsed.value,
+            parsed_input=parsed_input,
             raw_result=raw_result,
             reduction_result=reduction,
             records=(

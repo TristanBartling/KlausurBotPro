@@ -29,11 +29,18 @@ from klausurbotpro.domain import (
     Diagnostic,
     DiagnosticCode,
     DiagnosticSeverity,
+    RawAlgebraicExpression,
     RawTransferFunction,
+    RawTransferFunctionCreationResult,
     ReducedTransferFunction,
     SeparatedTransferFunctionInput,
+    TransferFunctionDomainExclusion,
     TransferFunctionInput,
+    TransferFunctionPrerequisite,
     TransferFunctionReducer,
+    TransferFunctionReductionReport,
+    TransferFunctionReductionResult,
+    TransferFunctionReductionStep,
 )
 
 _NESTED_ERRORS = (AttributeError, AssertionError, IndexError, TypeError, ValueError)
@@ -234,7 +241,7 @@ def _validate_parse_stage(
     expected = parse_request(result.request, limits)
     if (
         not expected.succeeded
-        or expected.value != parsed
+        or expected.value is None
         or type(parsed) not in (
             CommonTransferFunctionInput,
             SeparatedTransferFunctionInput,
@@ -242,6 +249,9 @@ def _validate_parse_stage(
         or record.diagnostics != expected.diagnostics
     ):
         _fail("The parsed input cannot be independently reproduced.")
+    assert parsed is not None
+    if not _strict_input_matches(parsed, expected.value):
+        _fail("The parsed input provenance cannot be independently reproduced.")
     return parsed
 
 
@@ -266,7 +276,7 @@ def _validate_raw_stage(
         parsed,
         field=result.request.field,
     )
-    if raw_result != expected:
+    if not _strict_raw_result_matches(raw_result, expected, parsed):
         _fail("The raw result cannot be independently reproduced.")
     if record.status is TransferFunctionPreparationStageStatus.FAILED:
         if raw_result.succeeded:
@@ -304,7 +314,7 @@ def _validate_reduction_stage(
         raw,
         field=result.request.field,
     )
-    if reduction != expected or reduction.raw is not raw:
+    if not _strict_reduction_result_matches(reduction, expected, raw):
         _fail("The reduction result has a foreign or irreproducible raw value.")
     if record.status is TransferFunctionPreparationStageStatus.FAILED:
         if reduction.succeeded:
@@ -319,6 +329,254 @@ def _validate_reduction_stage(
     ):
         _fail("The successful reduction stage is inconsistent.")
     return reduction.reduced
+
+
+def _strict_input_matches(
+    actual: TransferFunctionInput,
+    expected: TransferFunctionInput,
+) -> bool:
+    if type(actual) is not type(expected):
+        return False
+    if (
+        type(actual.variable_name) is not str
+        or actual.variable_name != expected.variable_name
+        or type(actual.allowed_symbol_names) is not frozenset
+        or actual.allowed_symbol_names != expected.allowed_symbol_names
+        or actual.used_symbol_names != expected.used_symbol_names
+    ):
+        return False
+    if (
+        type(actual) is CommonTransferFunctionInput
+        and type(expected) is CommonTransferFunctionInput
+    ):
+        return (
+            type(actual.original_text) is str
+            and actual.original_text == expected.original_text
+            and type(actual.normalized_text) is str
+            and actual.normalized_text == expected.normalized_text
+            and _strict_expression_matches(
+                actual.expression,
+                expected.expression,
+            )
+        )
+    if (
+        type(actual) is SeparatedTransferFunctionInput
+        and type(expected) is SeparatedTransferFunctionInput
+    ):
+        return (
+            type(actual.original_numerator_text) is str
+            and actual.original_numerator_text
+            == expected.original_numerator_text
+            and type(actual.original_denominator_text) is str
+            and actual.original_denominator_text
+            == expected.original_denominator_text
+            and type(actual.normalized_numerator_text) is str
+            and actual.normalized_numerator_text
+            == expected.normalized_numerator_text
+            and type(actual.normalized_denominator_text) is str
+            and actual.normalized_denominator_text
+            == expected.normalized_denominator_text
+            and _strict_expression_matches(
+                actual.numerator,
+                expected.numerator,
+            )
+            and _strict_expression_matches(
+                actual.denominator,
+                expected.denominator,
+            )
+        )
+    return False
+
+
+def _strict_expression_matches(
+    actual: RawAlgebraicExpression,
+    expected: RawAlgebraicExpression,
+) -> bool:
+    return (
+        type(actual) is type(expected)
+        and actual == expected
+        and actual.canonical_tree == expected.canonical_tree
+        and actual.symbol_names == expected.symbol_names
+        and actual.node_count == expected.node_count
+        and actual.depth == expected.depth
+    )
+
+
+def _strict_raw_result_matches(
+    actual: RawTransferFunctionCreationResult,
+    expected: RawTransferFunctionCreationResult,
+    parsed: TransferFunctionInput,
+) -> bool:
+    if (
+        type(actual) is not RawTransferFunctionCreationResult
+        or type(expected) is not RawTransferFunctionCreationResult
+        or actual.diagnostics != expected.diagnostics
+    ):
+        return False
+    if expected.value is None:
+        return actual.value is None
+    return (
+        actual.value is not None
+        and actual.value.input_snapshot is parsed
+        and _strict_raw_matches(actual.value, expected.value)
+    )
+
+
+def _strict_raw_matches(
+    actual: RawTransferFunction,
+    expected: RawTransferFunction,
+) -> bool:
+    return (
+        type(actual) is RawTransferFunction
+        and type(expected) is RawTransferFunction
+        and type(actual.variable_name) is str
+        and actual.variable_name == expected.variable_name
+        and actual.numerator == expected.numerator
+        and actual.denominator == expected.denominator
+        and type(actual.used_parameter_names) is frozenset
+        and actual.used_parameter_names == expected.used_parameter_names
+        and _strict_input_matches(
+            actual.input_snapshot,
+            expected.input_snapshot,
+        )
+        and _strict_prerequisites_match(
+            actual.prerequisites,
+            expected.prerequisites,
+        )
+        and _strict_domain_exclusions_match(
+            actual.domain_exclusions,
+            expected.domain_exclusions,
+        )
+        and actual.numerator_conditions == expected.numerator_conditions
+        and actual.denominator_conditions == expected.denominator_conditions
+        and type(actual.is_zero) is bool
+        and actual.is_zero is expected.is_zero
+    )
+
+
+def _strict_prerequisites_match(
+    actual: tuple[TransferFunctionPrerequisite, ...],
+    expected: tuple[TransferFunctionPrerequisite, ...],
+) -> bool:
+    return (
+        type(actual) is tuple
+        and len(actual) == len(expected)
+        and all(
+            type(left) is TransferFunctionPrerequisite
+            and left.kind is right.kind
+            and left.expressions == right.expressions
+            and type(left.origins) is tuple
+            and left.origins == right.origins
+            for left, right in zip(actual, expected, strict=True)
+        )
+    )
+
+
+def _strict_domain_exclusions_match(
+    actual: tuple[TransferFunctionDomainExclusion, ...],
+    expected: tuple[TransferFunctionDomainExclusion, ...],
+) -> bool:
+    return (
+        type(actual) is tuple
+        and len(actual) == len(expected)
+        and all(
+            type(left) is TransferFunctionDomainExclusion
+            and left.polynomial == right.polynomial
+            and type(left.origins) is tuple
+            and left.origins == right.origins
+            for left, right in zip(actual, expected, strict=True)
+        )
+    )
+
+
+def _strict_reduction_result_matches(
+    actual: TransferFunctionReductionResult,
+    expected: TransferFunctionReductionResult,
+    raw: RawTransferFunction,
+) -> bool:
+    if (
+        type(actual) is not TransferFunctionReductionResult
+        or type(expected) is not TransferFunctionReductionResult
+        or actual.raw is not raw
+        or expected.raw is not raw
+        or actual.diagnostics != expected.diagnostics
+    ):
+        return False
+    if expected.reduced is None or expected.report is None:
+        return actual.reduced is None and actual.report is None
+    return (
+        actual.reduced is not None
+        and actual.report is not None
+        and _strict_reduced_matches(actual.reduced, expected.reduced)
+        and _strict_reduction_report_matches(
+            actual.report,
+            expected.report,
+        )
+    )
+
+
+def _strict_reduced_matches(
+    actual: ReducedTransferFunction,
+    expected: ReducedTransferFunction,
+) -> bool:
+    return (
+        type(actual) is ReducedTransferFunction
+        and type(expected) is ReducedTransferFunction
+        and type(actual.variable_name) is str
+        and actual.variable_name == expected.variable_name
+        and actual.numerator == expected.numerator
+        and actual.denominator == expected.denominator
+        and _strict_prerequisites_match(
+            actual.prerequisites,
+            expected.prerequisites,
+        )
+        and _strict_domain_exclusions_match(
+            actual.domain_exclusions,
+            expected.domain_exclusions,
+        )
+        and type(actual.used_parameter_names) is frozenset
+        and actual.used_parameter_names == expected.used_parameter_names
+        and type(actual.is_zero) is bool
+        and actual.is_zero is expected.is_zero
+    )
+
+
+def _strict_reduction_report_matches(
+    actual: TransferFunctionReductionReport,
+    expected: TransferFunctionReductionReport,
+) -> bool:
+    return (
+        type(actual) is TransferFunctionReductionReport
+        and type(actual.steps) is tuple
+        and len(actual.steps) == len(expected.steps)
+        and all(
+            _strict_reduction_step_matches(left, right)
+            for left, right in zip(
+                actual.steps,
+                expected.steps,
+                strict=True,
+            )
+        )
+    )
+
+
+def _strict_reduction_step_matches(
+    actual: TransferFunctionReductionStep,
+    expected: TransferFunctionReductionStep,
+) -> bool:
+    return (
+        type(actual) is TransferFunctionReductionStep
+        and actual.kind is expected.kind
+        and actual.numerator_before == expected.numerator_before
+        and actual.denominator_before == expected.denominator_before
+        and actual.numerator_after == expected.numerator_after
+        and actual.denominator_after == expected.denominator_after
+        and actual.factor == expected.factor
+        and _strict_prerequisites_match(
+            actual.prerequisites_used,
+            expected.prerequisites_used,
+        )
+    )
 
 
 def _validate_failure_diagnostics(
