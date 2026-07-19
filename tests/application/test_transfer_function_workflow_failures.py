@@ -1,21 +1,32 @@
 """Partial-result, limit, and operation failure tests."""
 
+from dataclasses import replace
+
 import pytest
 
 from klausurbotpro.application import (
+    OverrideProvenance,
+    RawTransferFunctionOverride,
     TransferFunctionWorkflowLimits,
     TransferFunctionWorkflowRequest,
     TransferFunctionWorkflowService,
     WorkflowDiagnosticCode,
     WorkflowInputForm,
+    WorkflowOverrideOriginKind,
+    WorkflowStage,
     WorkflowStageStatus,
 )
 from klausurbotpro.domain import (
+    Diagnostic,
+    DiagnosticCode,
+    DiagnosticSeverity,
     ExactRationalValue,
     ParameterAssignment,
     ParameterSubstitutions,
     StabilityAnalysisLimits,
     TransferFunctionReductionLimits,
+    TransferFunctionRootAnalyzer,
+    TransferFunctionStabilityAnalyzer,
 )
 
 
@@ -110,6 +121,148 @@ def test_aggregated_diagnostic_limit_is_structured() -> None:
 
     assert len(state.aggregated_diagnostics) == 1
     assert state.aggregated_diagnostics[0].diagnostic.code.value == (
+        WorkflowDiagnosticCode.WORKFLOW_LIMIT_EXCEEDED.value
+    )
+    failed = tuple(
+        record.stage
+        for record in state.stage_records
+        if record.status is WorkflowStageStatus.FAILED
+    )
+    assert failed != (WorkflowStage.PARSE,)
+
+
+def test_parse_diagnostic_overflow_marks_parse_only() -> None:
+    state = TransferFunctionWorkflowService(
+        TransferFunctionWorkflowLimits(max_aggregated_diagnostics=1)
+    ).run(_request("open('x')"))
+
+    assert len(state.aggregated_diagnostics) == 1
+    assert state.stage_records[0].status is WorkflowStageStatus.FAILED
+    assert all(
+        record.status is WorkflowStageStatus.BLOCKED
+        for record in state.stage_records[1:]
+    )
+    assert state.aggregated_diagnostics[0].diagnostic.code.value == (
+        WorkflowDiagnosticCode.WORKFLOW_LIMIT_EXCEEDED.value
+    )
+
+
+def test_root_diagnostic_overflow_retains_parser_raw_and_reduction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = TransferFunctionRootAnalyzer.analyze_reduction
+
+    def analyze_with_diagnostic(
+        analyzer: TransferFunctionRootAnalyzer,
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        result = original(analyzer, *args, **kwargs)  # type: ignore[arg-type]
+        return replace(
+            result,
+            diagnostics=(
+                *result.diagnostics,
+                Diagnostic(
+                    DiagnosticSeverity.WARNING,
+                    DiagnosticCode.ROOT_ANALYSIS_DEGREE_DROPPED,
+                    "controlled root diagnostic",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(
+        TransferFunctionRootAnalyzer,
+        "analyze_reduction",
+        analyze_with_diagnostic,
+    )
+    state = TransferFunctionWorkflowService(
+        TransferFunctionWorkflowLimits(max_aggregated_diagnostics=1)
+    ).run(_request("1/(s+1)"))
+
+    assert state.parsed_input is not None
+    assert state.raw_result is not None and state.raw_result.succeeded
+    assert state.reduction_result is not None
+    assert state.stage_records[2].status is WorkflowStageStatus.SUCCEEDED
+    assert state.stage_records[3].status is WorkflowStageStatus.FAILED
+    assert state.stage_records[4].status is WorkflowStageStatus.BLOCKED
+    assert state.root_analysis_result is None
+    assert len(state.aggregated_diagnostics) == 1
+
+
+def test_stability_diagnostic_overflow_retains_root_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = TransferFunctionStabilityAnalyzer.analyze
+
+    def analyze_with_diagnostic(
+        analyzer: TransferFunctionStabilityAnalyzer,
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        result = original(analyzer, *args, **kwargs)  # type: ignore[arg-type]
+        object.__setattr__(
+            result,
+            "diagnostics",
+            (
+                *result.diagnostics,
+                Diagnostic(
+                    DiagnosticSeverity.WARNING,
+                    DiagnosticCode.STABILITY_ANALYSIS_NUMERIC_CONTRADICTION,
+                    "controlled stability diagnostic",
+                ),
+            ),
+        )
+        return result
+
+    monkeypatch.setattr(
+        TransferFunctionStabilityAnalyzer,
+        "analyze",
+        analyze_with_diagnostic,
+    )
+    state = TransferFunctionWorkflowService(
+        TransferFunctionWorkflowLimits(max_aggregated_diagnostics=1)
+    ).run(_request("1/(s+1)"))
+
+    assert state.parsed_input is not None
+    assert state.raw_result is not None
+    assert state.reduction_result is not None
+    assert state.root_analysis_result is not None
+    assert state.stage_records[3].status is WorkflowStageStatus.SUCCEEDED
+    assert state.stage_records[4].status is WorkflowStageStatus.FAILED
+    assert state.stability_analysis_result is None
+    assert len(state.aggregated_diagnostics) == 1
+
+
+def test_invalid_override_overflow_preserves_active_mathematical_values() -> None:
+    service = TransferFunctionWorkflowService(
+        TransferFunctionWorkflowLimits(max_aggregated_diagnostics=1)
+    )
+    state = service.run(_request("1/(s+1)"))
+    assert state.raw_value is not None
+    rejected = service.apply_override(
+        state,
+        RawTransferFunctionOverride(
+            state.raw_value,
+            OverrideProvenance(
+                WorkflowOverrideOriginKind.TEST,
+                "wrong sequence",
+                99,
+                WorkflowStage.RAW_TRANSFER_FUNCTION,
+            ),
+        ),
+    )
+
+    assert rejected.parsed_input is state.parsed_input
+    assert rejected.raw_result is state.raw_result
+    assert rejected.reduction_result is state.reduction_result
+    assert rejected.root_analysis_result is state.root_analysis_result
+    assert rejected.stability_analysis_result is state.stability_analysis_result
+    assert all(
+        record.status is WorkflowStageStatus.SUCCEEDED
+        for record in rejected.stage_records
+    )
+    assert len(rejected.aggregated_diagnostics) == 1
+    assert rejected.aggregated_diagnostics[0].diagnostic.code.value == (
         WorkflowDiagnosticCode.WORKFLOW_LIMIT_EXCEEDED.value
     )
 

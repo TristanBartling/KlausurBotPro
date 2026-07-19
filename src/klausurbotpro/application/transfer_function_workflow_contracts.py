@@ -79,6 +79,7 @@ class WorkflowDiagnosticCode(StrEnum):
     """Stable application-level diagnostic codes."""
 
     WORKFLOW_INVALID_REQUEST = "workflow.invalid_request"
+    WORKFLOW_INVALID_STATE = "workflow.invalid_state"
     WORKFLOW_PARSE_FAILED = "workflow.parse_failed"
     WORKFLOW_RAW_FAILED = "workflow.raw_failed"
     WORKFLOW_REDUCTION_FAILED = "workflow.reduction_failed"

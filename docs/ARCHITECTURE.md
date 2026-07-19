@@ -445,6 +445,21 @@ dem Raw-Wert zu behaupten. Stabilität ist nicht direkt überschreibbar.
 Phase 2C.1 führt keine Revisionen, Wiederherstellung, Serialisierung,
 Persistenz, GUI, PDF-/Quellenfunktionen oder neue Fachverfahren ein.
 
+Follow-up-Operationen behandeln einen vorhandenen Workflowzustand als neue
+Vertrauensgrenze. Vor Substitutionsänderungen und Overrides werden Request,
+Operationssequenz, fünf StageRecords, Diagnoseaggregation sowie sämtliche
+Parser- und Domainresultate unabhängig revalidiert. Manipulierte oder fremde
+Zwischenwerte werden nicht weiterberechnet; der Rückgabestate enthält dann
+keinen aktiven mathematischen Wert. Falsche Top-Level-Python-Typen werden
+dagegen unmittelbar mit `TypeError` abgelehnt.
+
+Das aggregierte Diagnoselimit reserviert deterministisch einen Platz für den
+Application-Limitfehler. Bei einem Überlauf bleiben alle vollständig
+abgeschlossenen früheren Stufen und Teilresultate erhalten. Nur die zuerst
+betroffene Stufe wird als fehlgeschlagen markiert und noch nicht ausgeführte
+Folgestufen werden blockiert. Abgelehnte Folgeoperationen verändern ihre
+bereits revalidierten mathematischen Werte auch bei Diagnoseüberlauf nicht.
+
 ## Offene Architekturentscheidungen
 
 - genaue Grenzen und Repräsentationen weiterer Domain-Modelle

@@ -16,6 +16,7 @@ from klausurbotpro.application._workflow_validation import (
     next_sequence,
     validate_provenance,
     validate_request,
+    validate_workflow_state,
 )
 from klausurbotpro.application.transfer_function_workflow_contracts import (
     OverrideProvenance,
@@ -74,6 +75,10 @@ class TransferFunctionWorkflowService:
     ) -> TransferFunctionWorkflowState:
         """Execute all supported stages strictly in order."""
 
+        if type(request) is not TransferFunctionWorkflowRequest:
+            raise TypeError(
+                "request must be a TransferFunctionWorkflowRequest."
+            )
         errors = validate_request(request, self._limits)
         if errors:
             return self._invalid_request_state(request, errors)
@@ -138,6 +143,9 @@ class TransferFunctionWorkflowService:
         """Recompute only root and stability stages with an exact assignment."""
 
         self._require_state(state)
+        state_errors = validate_workflow_state(state, self._limits)
+        if state_errors:
+            return self._invalid_state_state(state, state_errors)
         sequence = next_sequence(state.operation_sequence, self._limits)
         if sequence is None:
             return self._operation_error(
@@ -241,6 +249,9 @@ class TransferFunctionWorkflowService:
         """Apply a defensively validated intermediate value and recompute dependents."""
 
         self._require_state(state)
+        state_errors = validate_workflow_state(state, self._limits)
+        if state_errors:
+            return self._invalid_state_state(state, state_errors)
         sequence = next_sequence(state.operation_sequence, self._limits)
         if sequence is None:
             return self._operation_error(
@@ -522,12 +533,19 @@ class TransferFunctionWorkflowService:
             expected_sequence=sequence,
             limits=self._limits,
         )
-        if provenance_errors or type(override.value) is not RawTransferFunction:
+        if (
+            provenance_errors
+            or type(override.value) is not RawTransferFunction
+            or state.parsed_input is None
+            or state.stage_records[0].status
+            is not WorkflowStageStatus.SUCCEEDED
+        ):
             return self._invalid_override(
                 state,
                 WorkflowStage.RAW_TRANSFER_FUNCTION,
                 sequence,
-                provenance_errors,
+                provenance_errors
+                or (("raw_value", "missing_parser_context"),),
             )
         try:
             revalidated = self._raw_factory_for(state.request).create(
@@ -842,22 +860,61 @@ class TransferFunctionWorkflowService:
         records = list(state.stage_records)
         index = tuple(record.stage for record in records).index(stage)
         current = records[index]
+        existing_count = sum(
+            len(record.diagnostics) for record in state.stage_records
+        )
+        has_limit_error = any(
+            diagnostic.code.value
+            == WorkflowDiagnosticCode.WORKFLOW_LIMIT_EXCEEDED.value
+            for record in state.stage_records
+            for diagnostic in record.diagnostics
+        )
+        if (
+            has_limit_error
+            or existing_count >= self._limits.max_aggregated_diagnostics
+        ):
+            return self._state(
+                request=state.request,
+                substitutions=state.substitutions,
+                parsed_input=state.parsed_input,
+                raw_result=state.raw_result,
+                reduction_result=state.reduction_result,
+                root_analysis_result=state.root_analysis_result,
+                stability_analysis_result=state.stability_analysis_result,
+                active_reduced_value=state.active_reduced_value,
+                records=state.stage_records,
+                operation_sequence=sequence,
+            )
+        additions = (
+            *domain_diagnostics,
+            application_diagnostic(
+                code,
+                message,
+                field=state.request.field,
+                details=details,
+            ),
+        )
+        if (
+            existing_count + len(additions)
+            > self._limits.max_aggregated_diagnostics - 1
+        ):
+            additions = (
+                application_diagnostic(
+                    WorkflowDiagnosticCode.WORKFLOW_LIMIT_EXCEEDED,
+                    "Die Operation würde das Workflow-Diagnoselimit überschreiten.",
+                    field=state.request.field,
+                    details=(("limit", "max_aggregated_diagnostics"),),
+                ),
+            )
         records[index] = replace(
             current,
             diagnostics=(
                 *current.diagnostics,
-                *domain_diagnostics,
-                application_diagnostic(
-                    code,
-                    message,
-                    field=state.request.field,
-                    details=details,
-                ),
+                *additions,
             ),
             diagnostic_provenances=(
                 *current.diagnostic_provenances,
-                *tuple(None for _ in domain_diagnostics),
-                None,
+                *tuple(None for _ in additions),
             ),
         )
         return self._state(
@@ -873,6 +930,48 @@ class TransferFunctionWorkflowService:
             operation_sequence=sequence,
         )
 
+    def _invalid_state_state(
+        self,
+        state: TransferFunctionWorkflowState,
+        errors: tuple[tuple[str, str], ...],
+    ) -> TransferFunctionWorkflowState:
+        request = (
+            state.request
+            if type(state.request) is TransferFunctionWorkflowRequest
+            and not validate_request(state.request, self._limits)
+            else TransferFunctionWorkflowRequest(
+                WorkflowInputForm.COMMON,
+                common_expression_text="0",
+            )
+        )
+        sequence = (
+            state.operation_sequence
+            if type(state.operation_sequence) is int
+            and 0 <= state.operation_sequence <= self._limits.max_operation_sequence
+            else 0
+        )
+        diagnostic = application_diagnostic(
+            WorkflowDiagnosticCode.WORKFLOW_INVALID_STATE,
+            "Der Workflow-State ist inkonsistent oder manipuliert.",
+            field=request.field if type(request.field) is str else None,
+            details=errors,
+        )
+        records = (
+            WorkflowStageRecord(
+                WorkflowStage.PARSE,
+                WorkflowStageStatus.FAILED,
+                diagnostics=(diagnostic,),
+            ),
+            *blocked_records_after(WorkflowStage.PARSE),
+        )
+        return self._state(
+            request=request,
+            substitutions=None,
+            parsed_input=None,
+            records=records,
+            operation_sequence=sequence,
+        )
+
     def _invalid_request_state(
         self,
         request: TransferFunctionWorkflowRequest,
@@ -881,7 +980,7 @@ class TransferFunctionWorkflowService:
         diagnostic = application_diagnostic(
             WorkflowDiagnosticCode.WORKFLOW_INVALID_REQUEST,
             "Der Workflow-Request ist ungültig.",
-            field=request.field if isinstance(request.field, str) else None,
+            field=request.field if type(request.field) is str else None,
             details=errors,
         )
         records = (
@@ -999,29 +1098,24 @@ class TransferFunctionWorkflowService:
         | None = None,
         active_reduced_value: ReducedTransferFunction | None = None,
     ) -> TransferFunctionWorkflowState:
+        records, limited_stage = self._enforce_diagnostic_limit(
+            request,
+            records,
+        )
+        if limited_stage is not None:
+            stage_index = tuple(WorkflowStage).index(limited_stage)
+            if stage_index <= 0:
+                parsed_input = None
+            if stage_index <= 1:
+                raw_result = None
+            if stage_index <= 2:
+                reduction_result = None
+                active_reduced_value = None
+            if stage_index <= 3:
+                root_analysis_result = None
+            if stage_index <= 4:
+                stability_analysis_result = None
         aggregated = aggregate_diagnostics(records, operation_sequence)
-        if len(aggregated) > self._limits.max_aggregated_diagnostics:
-            diagnostic = application_diagnostic(
-                WorkflowDiagnosticCode.WORKFLOW_LIMIT_EXCEEDED,
-                "Die aggregierten Workflow-Diagnosen überschreiten das Limit.",
-                field=request.field,
-                details=(("limit", "max_aggregated_diagnostics"),),
-            )
-            records = (
-                WorkflowStageRecord(
-                    WorkflowStage.PARSE,
-                    WorkflowStageStatus.FAILED,
-                    diagnostics=(diagnostic,),
-                ),
-                *blocked_records_after(WorkflowStage.PARSE),
-            )
-            aggregated = aggregate_diagnostics(records, operation_sequence)
-            parsed_input = None
-            raw_result = None
-            reduction_result = None
-            root_analysis_result = None
-            stability_analysis_result = None
-            active_reduced_value = None
         return TransferFunctionWorkflowState(
             request=request,
             substitutions=substitutions,
@@ -1035,6 +1129,45 @@ class TransferFunctionWorkflowService:
             operation_sequence=operation_sequence,
             active_reduced_value=active_reduced_value,
         )
+
+    def _enforce_diagnostic_limit(
+        self,
+        request: TransferFunctionWorkflowRequest,
+        records: tuple[WorkflowStageRecord, ...],
+    ) -> tuple[tuple[WorkflowStageRecord, ...], WorkflowStage | None]:
+        count = sum(len(record.diagnostics) for record in records)
+        has_limit_error = any(
+            diagnostic.code.value
+            == WorkflowDiagnosticCode.WORKFLOW_LIMIT_EXCEEDED.value
+            for record in records
+            for diagnostic in record.diagnostics
+        )
+        if has_limit_error and count <= self._limits.max_aggregated_diagnostics:
+            return records, None
+        capacity = self._limits.max_aggregated_diagnostics - 1
+        used = 0
+        for index, record in enumerate(records):
+            if used + len(record.diagnostics) <= capacity:
+                used += len(record.diagnostics)
+                continue
+            diagnostic = application_diagnostic(
+                WorkflowDiagnosticCode.WORKFLOW_LIMIT_EXCEEDED,
+                "Die Workflow-Stufe überschreitet das Diagnoselimit.",
+                field=request.field if type(request.field) is str else None,
+                details=(("limit", "max_aggregated_diagnostics"),),
+            )
+            limited = WorkflowStageRecord(
+                record.stage,
+                WorkflowStageStatus.FAILED,
+                diagnostics=(diagnostic,),
+            )
+            bounded = (
+                *records[:index],
+                limited,
+                *blocked_records_after(record.stage),
+            )
+            return bounded, record.stage
+        return records, None
 
     @staticmethod
     def _success_record(

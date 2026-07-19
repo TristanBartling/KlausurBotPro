@@ -291,6 +291,20 @@ Objektadressabhängigkeit. Importtests erlauben `application → domain/parsing`
 verbieten `domain → application` und schließen PySide6 sowie rohe SymPy-
 Parsingpfade aus.
 
+Manipulationstests verändern Requests und Workflowstates gezielt mit
+`object.__setattr__`. Sie prüfen falsche Top-Level-Typen, String-Unterklassen,
+Stage-Reihenfolge, Diagnoseaggregation, Operationssequenz, fremde Raw-,
+Reduced-, Root- und Stability-Ergebnisse sowie widersprüchliche
+Status-/Ergebniskombinationen. Vor einer Folgeoperation muss jeder solche
+State strukturiert abgelehnt werden, ohne einen unvalidierten mathematischen
+Wert weiterzuverwenden.
+
+Diagnoselimitregressionen erzwingen Überläufe in Parse-, Root- und
+Stability-Stufe sowie bei einem abgelehnten Override. Die betroffene Stufe
+erhält genau den strukturierten Limitfehler, frühere Teilresultate bleiben
+erhalten, spätere Stufen sind blockiert und die aggregierte Anzahl bleibt
+innerhalb des konfigurierten Limits.
+
 ## Regressionstests mit offiziellen Aufgaben
 
 Verifizierte Aufgaben aus offiziellen Unterlagen werden später als
