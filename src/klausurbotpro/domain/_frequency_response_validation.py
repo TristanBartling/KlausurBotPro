@@ -53,9 +53,22 @@ def validate_frequency_response_context(
 ]:
     """Validate all inputs before any point is mathematically evaluated."""
 
-    _precheck_expression_limits(reduced, limits)
     try:
+        _precheck_expression_limits(reduced, limits)
         validate_reduced_transfer_function(reduced, _root_limits(limits))
+        validate_frequency_samples(frequencies, limits)
+        normalized, mapping = validate_frequency_substitutions(
+            reduced,
+            substitutions,
+            limits,
+        )
+        prerequisites_resolved = validate_prerequisites_partially(
+            reduced,
+            mapping,
+        )
+        return normalized, mapping, prerequisites_resolved
+    except FrequencyResponseFailure:
+        raise
     except RootAnalysisFailure as error:
         code = (
             DiagnosticCode.FREQUENCY_RESPONSE_LIMIT_EXCEEDED
@@ -82,18 +95,6 @@ def validate_frequency_response_context(
             "Die reduzierte Übertragungsfunktion ist ungültig.",
             (("exception", type(error).__name__),),
         ) from error
-
-    validate_frequency_samples(frequencies, limits)
-    normalized, mapping = validate_frequency_substitutions(
-        reduced,
-        substitutions,
-        limits,
-    )
-    prerequisites_resolved = validate_prerequisites_partially(
-        reduced,
-        mapping,
-    )
-    return normalized, mapping, prerequisites_resolved
 
 
 def _precheck_expression_limits(

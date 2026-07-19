@@ -451,6 +451,26 @@ Frequenzen und der vollständige Kontext werden vor der ersten Punktrechnung
 validiert. Erwartbare Speicher-, Rekursions- und Überlauffehler werden
 strukturiert gekapselt; ein harter In-Process-Timeout wird nicht behauptet.
 
+Die gesamte verschachtelte Eingangsprüfung liegt innerhalb einer klaren
+defensiven Validierungsgrenze. Manipulierte Ausdrücke, Polynome,
+Voraussetzungen, Definitionsausschlüsse und abgeleitete Kontextfelder können
+keine erwartbaren Attribut-, Index-, Typ- oder Wertfehler nach außen tragen.
+Ein `FAILED`-Ergebnis enthält ausschließlich seine Fehlerdiagnose; reduzierte
+Funktion, Frequenzen, Substitutionen und Punkte bleiben leer, damit keine
+ungeprüften Eingaben als vertrauenswürdiger Snapshot erscheinen.
+
+Auch `FrequencyResponsePoint` ist analyzerkontrolliert. Punktstatus,
+Wertvollständigkeit und erforderlicher Diagnosecode werden bei der internen
+Erzeugung und erneut durch das Gesamtergebnis geprüft. Die Ergebnisdiagnosen
+sind exakt die geordnete Konkatenation der Punktdiagnosen. Eine einzige
+Statusableitung gilt für Analyzer und Ergebnisvertrag: Nur vollständig
+definierte Punkte einschließlich Nullantworten ergeben `COMPLETE`.
+`SYMBOLIC_UNDETERMINED` verlangt mindestens einen symbolisch unbestimmten
+Punkt und zugleich weder einen vollständig numerischen noch einen
+`NUMERIC_UNDETERMINED`-Punkt; bekannte Singularitäten dürfen daneben stehen.
+Jede andere erfolgreiche Mischung ist `PARTIAL`, insbesondere ausschließlich
+singuläre oder numerisch unbestimmte Ergebnisse.
+
 Die fachliche Grundlage sind `skript.pdf`, Abschnitt 3.3.1, Definition 3.19
 für Amplituden- und Phasengang sowie
 `Regelungstechnik_Tutorium_komplett.pdf`, Tutorium 04 für `s = i*omega`,

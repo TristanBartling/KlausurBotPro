@@ -17,11 +17,10 @@ from klausurbotpro.domain.diagnostics import (
 )
 from klausurbotpro.domain.frequency_response_contracts import (
     FrequencyResponseLimits,
-    FrequencyResponsePoint,
-    FrequencyResponsePointStatus,
     FrequencySampleSet,
     TransferFunctionFrequencyResponseResult,
     TransferFunctionFrequencyResponseStatus,
+    _aggregate_frequency_response_status,
 )
 from klausurbotpro.domain.parameter_substitutions import ParameterSubstitutions
 from klausurbotpro.domain.reduced_transfer_function import (
@@ -93,12 +92,14 @@ class TransferFunctionFrequencyResponseAnalyzer:
                 reduced_transfer_function=reduced,
                 frequencies=frequencies,
                 substitutions=normalized_substitutions,
-                status=_aggregate_status(points),
+                status=_aggregate_frequency_response_status(
+                    tuple(point.status for point in points)
+                ),
                 points=points,
                 diagnostics=diagnostics,
             )
         except FrequencyResponseFailure as failure:
-            return self._failure(failure, substitutions, field)
+            return self._failure(failure, field)
         except _RESOURCE_ERRORS as error:
             return self._failure(
                 FrequencyResponseFailure(
@@ -106,20 +107,18 @@ class TransferFunctionFrequencyResponseAnalyzer:
                     "Die Frequenzganganalyse überschreitet verfügbare Ressourcen.",
                     (("exception", type(error).__name__),),
                 ),
-                substitutions,
                 field,
             )
 
     @staticmethod
     def _failure(
         failure: FrequencyResponseFailure,
-        substitutions: ParameterSubstitutions | None,
         field: str | None,
     ) -> TransferFunctionFrequencyResponseResult:
         return TransferFunctionFrequencyResponseResult._create(
             reduced_transfer_function=None,
             frequencies=None,
-            substitutions=substitutions,
+            substitutions=None,
             status=TransferFunctionFrequencyResponseStatus.FAILED,
             diagnostics=(
                 Diagnostic(
@@ -131,27 +130,6 @@ class TransferFunctionFrequencyResponseAnalyzer:
                 ),
             ),
         )
-
-
-def _aggregate_status(
-    points: tuple[FrequencyResponsePoint, ...],
-) -> TransferFunctionFrequencyResponseStatus:
-    statuses = tuple(point.status for point in points)
-    if all(
-        status
-        in (
-            FrequencyResponsePointStatus.DEFINED,
-            FrequencyResponsePointStatus.ZERO_RESPONSE,
-        )
-        for status in statuses
-    ):
-        return TransferFunctionFrequencyResponseStatus.COMPLETE
-    if all(
-        status is FrequencyResponsePointStatus.SYMBOLIC_UNDETERMINED
-        for status in statuses
-    ):
-        return TransferFunctionFrequencyResponseStatus.SYMBOLIC_UNDETERMINED
-    return TransferFunctionFrequencyResponseStatus.PARTIAL
 
 
 __all__ = ["TransferFunctionFrequencyResponseAnalyzer"]

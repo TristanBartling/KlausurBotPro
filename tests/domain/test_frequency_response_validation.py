@@ -11,6 +11,7 @@ import klausurbotpro.domain._frequency_response_evaluator as evaluator_module
 import klausurbotpro.domain.transfer_function_frequency_response_analyzer as analyzer_module
 from klausurbotpro.domain import (
     DiagnosticCode,
+    DiagnosticSeverity,
     ExactExpression,
     ExactRationalValue,
     FrequencyResponseLimits,
@@ -20,8 +21,11 @@ from klausurbotpro.domain import (
     ParameterSubstitutions,
     PolynomialFactory,
     ReducedTransferFunction,
+    TransferFunctionDomainExclusion,
     TransferFunctionFrequencyResponseAnalyzer,
     TransferFunctionFrequencyResponseStatus,
+    TransferFunctionPrerequisite,
+    TransferFunctionPrerequisiteKind,
 )
 from klausurbotpro.domain._frequency_response_numeric import (
     FrequencyResponseNumericError,
@@ -140,6 +144,7 @@ def test_unknown_and_manipulated_substitutions_are_rejected() -> None:
         assert result.diagnostics[0].code is (
             DiagnosticCode.FREQUENCY_RESPONSE_INVALID_SUBSTITUTIONS
         )
+        assert result.substitutions is None
 
 
 def test_partial_exact_substitution_remains_pointwise_symbolic() -> None:
@@ -161,19 +166,99 @@ def test_partial_exact_substitution_remains_pointwise_symbolic() -> None:
     )
 
 
-def test_manipulated_reduced_value_is_rejected_defensively() -> None:
-    value = _reduced()
-    object.__setattr__(value, "used_parameter_names", frozenset({"forged"}))
-
+def _assert_invalid_reduced(value: ReducedTransferFunction) -> None:
     result = TransferFunctionFrequencyResponseAnalyzer().analyze(
         value,
         FrequencySampleSet((ExactRationalValue(1),)),
     )
 
     assert result.status is TransferFunctionFrequencyResponseStatus.FAILED
+    assert result.reduced_transfer_function is None
+    assert result.frequencies is None
+    assert result.substitutions is None
+    assert result.points == ()
     assert result.diagnostics[0].code is (
         DiagnosticCode.FREQUENCY_RESPONSE_INVALID_INPUT
     )
+
+
+def test_manipulated_nested_reduced_values_are_rejected_defensively() -> None:
+    exact_expression = _reduced()
+    object.__setattr__(
+        exact_expression.numerator.expression,
+        "_expression",
+        object(),
+    )
+
+    numerator = _reduced()
+    object.__setattr__(numerator, "numerator", object())
+
+    denominator = _reduced()
+    object.__setattr__(denominator, "denominator", object())
+
+    K = sp.Symbol("K")
+    prerequisite_value = _reduced(parameters=frozenset({"K"}))
+    prerequisite = TransferFunctionPrerequisite(
+        TransferFunctionPrerequisiteKind.EXPRESSION_NONZERO,
+        (ExactExpression._from_sympy(K),),
+        ("test",),
+    )
+    object.__setattr__(prerequisite, "expressions", object())
+    object.__setattr__(prerequisite_value, "prerequisites", (prerequisite,))
+    object.__setattr__(prerequisite_value, "used_parameter_names", frozenset({"K"}))
+
+    exclusion_value = _reduced()
+    factory = PolynomialFactory()
+    exclusion_polynomial = factory.create(
+        ExactExpression._from_sympy(sp.Symbol("s"))
+    ).value
+    assert exclusion_polynomial is not None
+    exclusion = TransferFunctionDomainExclusion(exclusion_polynomial, ("test",))
+    object.__setattr__(exclusion, "polynomial", object())
+    object.__setattr__(exclusion_value, "domain_exclusions", (exclusion,))
+
+    parameters = _reduced()
+    object.__setattr__(parameters, "used_parameter_names", frozenset({"forged"}))
+
+    variable = _reduced()
+    object.__setattr__(variable, "variable_name", object())
+
+    for value in (
+        exact_expression,
+        numerator,
+        denominator,
+        prerequisite_value,
+        exclusion_value,
+        parameters,
+        variable,
+    ):
+        _assert_invalid_reduced(value)
+
+
+def test_failed_result_does_not_retain_manipulated_substitutions() -> None:
+    s, T = sp.symbols("s T")
+    value = _reduced(
+        sp.Integer(1),
+        T * s + 1,
+        parameters=frozenset({"T"}),
+    )
+    assignment = ParameterAssignment("T", ExactRationalValue(1))
+    substitutions = ParameterSubstitutions((assignment,))
+    object.__setattr__(assignment.value, "numerator", 2)
+    object.__setattr__(assignment.value, "denominator", 2)
+
+    result = TransferFunctionFrequencyResponseAnalyzer().analyze(
+        value,
+        FrequencySampleSet((ExactRationalValue(1),)),
+        substitutions,
+    )
+
+    assert result.status is TransferFunctionFrequencyResponseStatus.FAILED
+    assert result.substitutions is None
+    assert result.reduced_transfer_function is None
+    assert result.frequencies is None
+    assert result.points == ()
+    assert result.diagnostics[0].severity is DiagnosticSeverity.ERROR
 
 
 def test_expression_and_operation_limits_are_enforced() -> None:

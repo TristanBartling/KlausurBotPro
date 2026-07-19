@@ -104,11 +104,11 @@ def evaluate_frequency_point(
             omega,
             field,
         )
-        return FrequencyResponsePoint(
-            omega,
-            FrequencyResponsePointStatus.SINGULAR,
-            numerator_value,
-            denominator_value,
+        return FrequencyResponsePoint._create(
+            omega=omega,
+            status=FrequencyResponsePointStatus.SINGULAR,
+            specialized_numerator=numerator_value,
+            specialized_denominator=denominator_value,
             diagnostics=(diagnostic,),
         )
     if (
@@ -152,21 +152,22 @@ def evaluate_frequency_point(
             omega,
             field,
         )
-        return FrequencyResponsePoint(
-            omega,
-            FrequencyResponsePointStatus.ZERO_RESPONSE,
-            numerator_value,
-            denominator_value,
-            response_value,
-            real_value,
-            imaginary_value,
-            magnitude_squared_value,
-            "0",
-            "0",
-            "0",
-            NumericalDecibelValue(DecibelValueKind.NEGATIVE_INFINITY),
-            None,
-            (diagnostic,),
+        return FrequencyResponsePoint._create(
+            omega=omega,
+            status=FrequencyResponsePointStatus.ZERO_RESPONSE,
+            specialized_numerator=numerator_value,
+            specialized_denominator=denominator_value,
+            exact_complex_value=response_value,
+            exact_real_part=real_value,
+            exact_imaginary_part=imaginary_value,
+            exact_magnitude_squared=magnitude_squared_value,
+            numerical_real="0",
+            numerical_imaginary="0",
+            numerical_magnitude="0",
+            numerical_decibel=NumericalDecibelValue(
+                DecibelValueKind.NEGATIVE_INFINITY
+            ),
+            diagnostics=(diagnostic,),
         )
     if response_zero is None:
         return _symbolic_point(
@@ -203,31 +204,31 @@ def evaluate_frequency_point(
             omega,
             field,
         )
-        return FrequencyResponsePoint(
-            omega,
-            FrequencyResponsePointStatus.NUMERIC_UNDETERMINED,
-            numerator_value,
-            denominator_value,
-            response_value,
-            real_value,
-            imaginary_value,
-            magnitude_squared_value,
+        return FrequencyResponsePoint._create(
+            omega=omega,
+            status=FrequencyResponsePointStatus.NUMERIC_UNDETERMINED,
+            specialized_numerator=numerator_value,
+            specialized_denominator=denominator_value,
+            exact_complex_value=response_value,
+            exact_real_part=real_value,
+            exact_imaginary_part=imaginary_value,
+            exact_magnitude_squared=magnitude_squared_value,
             diagnostics=(diagnostic,),
         )
-    return FrequencyResponsePoint(
-        omega,
-        FrequencyResponsePointStatus.DEFINED,
-        numerator_value,
-        denominator_value,
-        response_value,
-        real_value,
-        imaginary_value,
-        magnitude_squared_value,
-        numerical_real,
-        numerical_imaginary,
-        numerical_magnitude,
-        numerical_decibel,
-        numerical_phase,
+    return FrequencyResponsePoint._create(
+        omega=omega,
+        status=FrequencyResponsePointStatus.DEFINED,
+        specialized_numerator=numerator_value,
+        specialized_denominator=denominator_value,
+        exact_complex_value=response_value,
+        exact_real_part=real_value,
+        exact_imaginary_part=imaginary_value,
+        exact_magnitude_squared=magnitude_squared_value,
+        numerical_real=numerical_real,
+        numerical_imaginary=numerical_imaginary,
+        numerical_magnitude=numerical_magnitude,
+        numerical_decibel=numerical_decibel,
+        numerical_phase_degrees=numerical_phase,
     )
 
 
@@ -276,15 +277,16 @@ def _symbolic_point(
     diagnostic = _point_diagnostic(
         DiagnosticSeverity.WARNING,
         DiagnosticCode.FREQUENCY_RESPONSE_SYMBOLIC_UNDETERMINED,
-        "Ohne vollständige Parameterbelegung bleibt dieser Frequenzpunkt unbestimmt.",
+        "Der Frequenzpunkt ist mit den vorliegenden exakten Angaben nicht "
+        "eindeutig bestimmbar.",
         omega,
         field,
     )
-    return FrequencyResponsePoint(
-        omega,
-        FrequencyResponsePointStatus.SYMBOLIC_UNDETERMINED,
-        numerator,
-        denominator,
+    return FrequencyResponsePoint._create(
+        omega=omega,
+        status=FrequencyResponsePointStatus.SYMBOLIC_UNDETERMINED,
+        specialized_numerator=numerator,
+        specialized_denominator=denominator,
         diagnostics=(diagnostic,),
     )
 

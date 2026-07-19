@@ -299,6 +299,23 @@ jeder Punktrechnung ab. Jede `FrequencyResponseLimits`-Grenze,
 deterministische Präzision sowie erwartbare Speicher-, Rekursions- und
 Überlauffehler besitzen strukturierte Testpfade.
 
+Härtungsregressionen manipulieren verschachtelte `ExactExpression`-Werte,
+Zähler, Nenner, Voraussetzungen, Definitionsausschlüsse, Parameterkontext und
+Hauptvariable. Erwartbare Validierungsfehler müssen strukturiert bleiben;
+fehlgeschlagene Ergebnisse dürfen keine der ungeprüften Eingaben enthalten.
+Weitere Vertragstests blockieren den öffentlichen Punktkonstruktor und
+revalidieren fehlende, falsche, zusätzliche oder vertauschte Diagnosen,
+fremde Punktfrequenzen, manipulierte Statuswerte und Fehlerdiagnosen in
+erfolgreichen Punkten.
+
+Eine vollständige Statusmatrix prüft dieselbe zentrale Ableitungsfunktion für
+definierte Punkte, Nullantworten, Singularitäten, symbolisch und numerisch
+unbestimmte Punkte sowie alle geforderten Mischungen. Insbesondere bleiben
+symbolisch unbestimmte Punkte zusammen mit ausschließlich bekannten
+Singularitäten `SYMBOLIC_UNDETERMINED`; ausschließlich singuläre,
+ausschließlich numerisch unbestimmte und gemischt symbolisch/numerisch
+unbestimmte Ergebnisse sind `PARTIAL`.
+
 Öffentliche Ergebnisse werden auf Unveränderlichkeit, kontrollierte
 Konstruktion, Reihenfolge, fehlende rohe SymPy-Werte und fehlende
 Application-, UI-, Parsing- oder Stringauswertungspfade geprüft. Phase 3A.1
