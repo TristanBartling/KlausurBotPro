@@ -378,6 +378,50 @@ weiterhin positiv zertifizierten irrationalen Ziel. Größenprüfungen des
 `ScientificDecimal` erfolgen vor Textdarstellungen, sodass manipulierte
 Exponenten keine unkontrollierten Ausgaben erzeugen.
 
+## Tests der strukturierten Bode-Plotdaten
+
+Phase 3A.2b wird mit validierten Rasterresultaten,
+`ReducedTransferFunction`-Werten und exakten Parametersubstitutionen geprüft.
+Ein Spy belegt, dass für ein vollständiges Raster genau ein gemeinsamer
+Aufruf von `TransferFunctionFrequencyResponseAnalyzer` erfolgt. Alle
+`BodePlotPoint`-Werte werden auf direkte Identität beziehungsweise exakte
+Gleichheit mit Raster- und Phase-3A.1-Punkten geprüft; Zieldezimalwert und
+rationale Auswertungsfrequenz dürfen nicht vertauscht werden.
+
+Die Statusmatrix umfasst vollständig definierte PT1-, I-, D-, negative
+Verstärkungs- und komplexe Polfälle sowie Nullantworten, einzelne und mehrere
+Singularitäten, symbolisch unbestimmte, numerisch unbestimmte und gemischte
+Punktfolgen. Nullantworten behalten strukturiertes minus unendlich, liefern
+aber keine endlichen Segmente. I- und D-Glied prüfen unverändert -90° und
++90°, die negative Verstärkung 180°; eine Phasenentfaltung wird weder
+erwartet noch aufgerufen.
+
+Segmenttests bilden Betrags- und Phasenfolgen unabhängig in Rasterreihenfolge.
+Sie prüfen lückenlose Segmentindizes, inklusive Grenzen, Ein-Punkt-Segmente
+und direkte Ausschnitte der vollständigen Punktfolge. Nullantworten,
+Singularitäten sowie symbolisch und numerisch unbestimmte Punkte müssen
+Segmente beenden; kein Test toleriert Interpolation oder eine Verbindung über
+eine Unterbrechung.
+
+Limitfälle decken die kombinierte Punktgrenze, explizit niedrigere
+Rasterlimits, getrennte Segmentgrenzen, Diagnosen und vorhandene
+Dezimalziffern ab. Eine Überschreitung muss ein strukturiertes wertfreies
+Fehlerresultat liefern und darf Phase-3A.1-Werte weder runden noch kürzen.
+Manipulationsregressionen verändern Raster, reduzierte Funktion,
+Phase-3A.1-Übergabe, Bodepunkte, Segmente, Gesamtstatus, Metadaten,
+Punktreihenfolge und Diagnosen. Die interne Resultatgrenze muss jede
+Inkonsistenz ablehnen.
+
+Vertragstests sichern unveränderliche analyzerkontrollierte Konstruktion,
+exakte Limittypen ohne `bool`, strukturierte Enum-Metadaten, deterministische
+Ergebnisse und die öffentliche Domain-Fassade. Architekturtests schließen
+Application, UI, Plotbibliotheken und Laufzeitabhängigkeiten zu
+`docs/reference` aus. Die eingebetteten strukturierten Werte werden außerdem
+darauf geprüft, dass ein späterer Rechenweg von `G(s)` bis zu endlichen
+zusammenhängenden Bereichen ohne erneute Fachrechnung aufgebaut werden kann.
+GUI, Reserven, Nyquist, asymptotische Geraden und Berichtserzeugung bleiben
+außerhalb dieser Phase.
+
 ## Tests des Transferfunktionsworkflows
 
 Phase 2C.1 wird als UI-unabhängige Integration der bestehenden Parser- und
