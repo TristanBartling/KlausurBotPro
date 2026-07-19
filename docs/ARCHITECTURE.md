@@ -348,6 +348,48 @@ keine Iterationsgrenze. Die Phase implementiert weder Stabilität, Properness,
 Frequenz- oder Zeitbereichsanalyse noch allgemeine symbolische,
 Gleitkomma- oder komplexe Parametersubstitutionen.
 
+## Implementierte quellengebundene Stabilitätsklassifikation (Phase 2B)
+
+`TransferFunctionStabilityAnalyzer` verarbeitet ausschließlich ein bereits
+erfolgreiches, defensiv revalidiertes
+`TransferFunctionRootAnalysisResult`. Er berechnet keine Wurzeln neu und nutzt
+für den Gesamtstatus ausschließlich die reduzierten exakten Pole. `STABLE`
+bedeutet, dass alle reduzierten Pole strikt negativen Realteil besitzen, und
+entspricht damit E/A-Stabilität. `BORDERLINE_STABLE` verlangt mindestens einen
+einfachen Pol auf der imaginären Achse, keinen Pol in der rechten Halbebene und
+keinen mehrfachen imaginären Pol; dieser Status ist ausdrücklich nicht
+E/A-/BIBO-stabil. Positive Pole und Pole auf der imaginären Achse mit
+algebraischer Multiplizität größer als eins führen zu `UNSTABLE`. Nicht exakt
+oder zertifiziert entscheidbare Realteilzeichen führen, sofern keine sicher
+erkannte Instabilität vorliegt, zu `SYMBOLIC_UNDETERMINED`.
+
+Explizite Wurzeln werden über den exakten SymPy-Realteil und ausschließlich
+dessen exakte Vorzeichenprädikate klassifiziert. `RootOfValue` wird intern aus
+seinem primitiven ganzzahligen Polynom und Index rekonstruiert. Nach exakten
+öffentlichen Prädikaten darf ein öffentlicher `eval_rational`-Nachweis mit
+exakten rationalen Fehlergrenzen das Vorzeichen zertifizieren; schneidet das
+begrenzte Intervall beziehungsweise Rechteck weiterhin die imaginäre Achse,
+bleibt das Ergebnis unbestimmt. Numerische Phase-2A-Schätzwerte treffen niemals
+die Entscheidung. Sie dürfen lediglich einen deutlichen Vorzeichenwiderspruch
+zur exakten Klassifikation melden; ein numerischer Rest bei exakt verschwindendem
+Realteil wird nicht umklassifiziert.
+
+Erhaltene `DomainExclusions` bleiben unverändert referenziert und sind keine
+reduzierten Pole. Nachgewiesene `cancelled_locations` werden getrennt
+klassifiziert und können Hinweise auf mögliche verborgene interne Dynamik
+erzeugen, verändern aber den Gesamtstatus nicht. Aus dieser
+Übertragungsfunktionsanalyse wird keine I-Stabilität des gesamten Regelkreises
+abgeleitet.
+
+Die fachliche Semantik ist an drei offizielle Fundstellen gebunden:
+`skript.pdf`, Seite 107, Theorem 5.12 für das strikte Polkriterium der
+E/A-Stabilität; `skript.pdf`, Seite 102, Korollar 5.5 für die Bedeutung
+einfacher Jordanblöcke bei nichtpositiven Realteilen; sowie
+`Regelungstechnik_Tutorium_komplett.pdf`, Tutorium 09 – Stabilität I,
+Aufgabe 2 für einfache Pole bei null beziehungsweise auf der imaginären Achse
+als grenzstabile Fälle. Quellenreferenzen gehören zum Ergebnisnachweis, nicht
+zur mathematischen Statusidentität.
+
 ## Offene Architekturentscheidungen
 
 - genaue Grenzen und Repräsentationen weiterer Domain-Modelle
