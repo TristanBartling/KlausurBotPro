@@ -322,6 +322,62 @@ Application-, UI-, Parsing- oder Stringauswertungspfade geprüft. Phase 3A.1
 testet keine automatischen Raster, Diagramme, Reserven, Nyquist-Auswertung
 oder Stabilitätsentscheidung.
 
+## Tests des zertifizierten logarithmischen Frequenzrasters
+
+Phase 3A.2a wird als transferfunktionsfreier Domainkern geprüft.
+Intervalltests bestätigen `N` für ganze und nichtganzzahlige Dekadenspannen,
+insbesondere `1..10` mit zehn Punkten pro Dekade, `1..100` mit fünf Punkten
+pro Dekade und `1..20` mit zehn Punkten pro Dekade. Eine Quellprüfung sichert,
+dass die Entscheidung ausschließlich auf exakten rationalen Potenzen und
+Vergleichen beruht und weder Decimal- noch binäre Logarithmen aufruft.
+
+Zielpunkttests prüfen exakte Grenzen, vollständige Indizes `0..N`, streng
+aufsteigende rationale Auswertungsfrequenzen und die strukturierte
+Beschreibung irrationaler innerer Ziele. `sqrt(10)` dient als analytischer
+Regressionsfall. Für jeden Kandidaten wird die veröffentlichte relative
+Fehlergrenze durch dieselben beiden exakten rationalen
+Zertifizierungsungleichungen gegengeprüft. Monkeypatching erzwingt falsche
+Kandidaten, begrenzte Wiederholungen und Ressourcenfehler, ohne den
+Fehlernachweis durch numerische Toleranzen abzuschwächen.
+
+Vertragstests decken `ScientificDecimal`-Kanonisierung, stabile Decimal- und
+Scientific-Texte, Unabhängigkeit vom globalen Decimal-Kontext,
+Unveränderlichkeit sowie generator-only Punkte und Ergebnisse ab. Ein
+erfolgreiches Ergebnis muss einen disjunkten validierten Requestsnapshot
+besitzen; `FAILED` enthält weder Request noch Intervallzahl oder Teilpunkte.
+Öffentliche Rasterwerte dürfen weder Float- noch SymPy-Instanzen enthalten.
+
+Zusatzfrequenztests prüfen exakte Einfügung, Reihenfolge, kombinierte Herkunft
+an beiden Grenzen und an einem mathematisch identischen inneren Ziel sowie
+Ablehnung unsortierter, doppelter und außerhalb liegender Werte. Niedrige
+Präzision erzwingt sowohl Kollisionen verschiedener generierter Ziele als
+auch die Kollision eines nicht identischen expliziten Punkts mit einem
+gerundeten Kandidaten. Keine Kollision darf still dedupliziert werden.
+
+Limit- und Manipulationstests umfassen Dekaden, Punktdichte, Gesamtpunkte vor
+der Approximation, Zusatzpunkte, rationale Ziffern, Präzision,
+Zertifizierungsversuche und -schritte sowie alle positiven
+`LogFrequencyGridLimits`-Felder. Architekturtests schließen
+Transferfunktionen, Frequenzganganalyse, Application, UI und Parsing aus.
+Bode-Daten, Segmentierung und Phasenentfaltung werden in Phase 3A.2a weder
+implementiert noch getestet.
+
+Die interne Resultatgrenze wird zusätzlich gegen nachträglich manipulierte
+Intervallzahlen, Requestgrenzen, Punktdichten, Zielkoordinaten,
+Auswertungsfrequenzen, Fehlergrenzen, Dezimalwerte, Herkunftsangaben,
+Diagnosen, Reihenfolgen und fremde beziehungsweise fehlende explizite Punkte
+geprüft. Sie muss die Intervallzahl und Zertifizierung unabhängig erneut
+berechnen und erwartbare verschachtelte Typ- und Wertfehler strukturiert
+kapseln. Ein eigener Grenztest belegt die tatsächliche Durchsetzung von
+`max_diagnostics`; erfolgreiche Generatorraster besitzen konstruktiv keine
+Diagnosen.
+
+Regressionsfälle unterscheiden einen exakt rationalen inneren Zieltreffer mit
+Fehlergrenze null von einem nur nahe gelegenen expliziten Punkt und einem
+weiterhin positiv zertifizierten irrationalen Ziel. Größenprüfungen des
+`ScientificDecimal` erfolgen vor Textdarstellungen, sodass manipulierte
+Exponenten keine unkontrollierten Ausgaben erzeugen.
+
 ## Tests des Transferfunktionsworkflows
 
 Phase 2C.1 wird als UI-unabhängige Integration der bestehenden Parser- und

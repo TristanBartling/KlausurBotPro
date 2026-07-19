@@ -187,6 +187,21 @@ class DiagnosticCode(StrEnum):
     FREQUENCY_RESPONSE_RESOURCE_LIMIT_EXCEEDED = (
         "frequency_response.resource_limit_exceeded"
     )
+    LOG_FREQUENCY_GRID_INVALID_REQUEST = "log_frequency_grid.invalid_request"
+    LOG_FREQUENCY_GRID_INVALID_BOUNDS = "log_frequency_grid.invalid_bounds"
+    LOG_FREQUENCY_GRID_INVALID_EXPLICIT_FREQUENCIES = (
+        "log_frequency_grid.invalid_explicit_frequencies"
+    )
+    LOG_FREQUENCY_GRID_LIMIT_EXCEEDED = "log_frequency_grid.limit_exceeded"
+    LOG_FREQUENCY_GRID_CERTIFICATION_FAILED = (
+        "log_frequency_grid.certification_failed"
+    )
+    LOG_FREQUENCY_GRID_PRECISION_COLLISION = (
+        "log_frequency_grid.precision_collision"
+    )
+    LOG_FREQUENCY_GRID_RESOURCE_LIMIT_EXCEEDED = (
+        "log_frequency_grid.resource_limit_exceeded"
+    )
 
 
 @dataclass(frozen=True, slots=True)
