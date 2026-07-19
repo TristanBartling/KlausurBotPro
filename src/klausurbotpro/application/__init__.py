@@ -1,5 +1,32 @@
 """Public application-service facade."""
 
+from klausurbotpro.application.transfer_function_solution_report_builder import (
+    TransferFunctionSolutionReportBuilder,
+)
+from klausurbotpro.application.transfer_function_solution_report_contracts import (
+    ConditionLine,
+    EquationLine,
+    OverrideLine,
+    ReportDiagnostic,
+    ReportDiagnosticCode,
+    ReportMathExpression,
+    ResultLine,
+    SolutionLine,
+    SolutionReportLimits,
+    SolutionReportStatus,
+    SolutionSection,
+    SolutionSectionKind,
+    SolutionSectionStatus,
+    SourceReferenceLine,
+    TransferFunctionExpressionPair,
+    TransferFunctionSolutionReport,
+    TransformationLine,
+    WarningLine,
+)
+from klausurbotpro.application.transfer_function_solution_report_renderers import (
+    render_solution_report_latex,
+    render_solution_report_plaintext,
+)
 from klausurbotpro.application.transfer_function_workflow_contracts import (
     OverrideProvenance,
     RawTransferFunctionOverride,
@@ -23,10 +50,27 @@ from klausurbotpro.application.transfer_function_workflow_service import (
 )
 
 __all__ = [
+    "ConditionLine",
+    "EquationLine",
     "OverrideProvenance",
+    "OverrideLine",
     "RawTransferFunctionOverride",
     "ReducedTransferFunctionOverride",
+    "ReportDiagnostic",
+    "ReportDiagnosticCode",
+    "ReportMathExpression",
+    "ResultLine",
     "RootAnalysisOverride",
+    "SolutionLine",
+    "SolutionReportLimits",
+    "SolutionReportStatus",
+    "SolutionSection",
+    "SolutionSectionKind",
+    "SolutionSectionStatus",
+    "SourceReferenceLine",
+    "TransferFunctionExpressionPair",
+    "TransferFunctionSolutionReport",
+    "TransferFunctionSolutionReportBuilder",
     "TransferFunctionWorkflowLimits",
     "TransferFunctionWorkflowOverride",
     "TransferFunctionWorkflowRequest",
@@ -40,4 +84,8 @@ __all__ = [
     "WorkflowStageRecord",
     "WorkflowStageStatus",
     "WorkflowValueOrigin",
+    "TransformationLine",
+    "WarningLine",
+    "render_solution_report_latex",
+    "render_solution_report_plaintext",
 ]
