@@ -506,6 +506,47 @@ Darstellungslimits verhindern stille Kürzung einzelner Ausdrücke oder
 mathematischer Aussagen. Phase 2C.2 führt keine GUI, PDF-Erzeugung,
 Dateispeicherung, Serialisierung oder neue Fachrechnung ein.
 
+## Implementierter Transferfunktions-Arbeitsbereich (Phase 2D.1)
+
+Das PySide6-Hauptfenster enthält genau einen Transferfunktions-Arbeitsbereich.
+Widgets sammeln ausschließlich einfache Rohwerte und zeigen vorhandene
+Application-Verträge an. Sie importieren weder Domain-Analyzer, Parsing noch
+SymPy und führen keine mathematische Operation aus.
+
+Eine Qt-unabhängige `TransferFunctionRequestFactory` bildet unveränderliche
+`TransferFunctionInputDraft`- und `ParameterInputDraft`-Werte auf einen
+vollständigen `TransferFunctionWorkflowRequest` ab. Exakte rationale
+Parameterwerte werden vor jeder `int`-Konvertierung begrenzt, ohne Float- oder
+Ausdrucksparsing erstellt und bei Fehlern vollständig verworfen.
+`TransferFunctionRequestFieldError` erhält eine stabile Feld- und
+Zeilenzuordnung für den UI-Fokus.
+
+Ein Presenter besitzt den unveränderlichen, widgetfreien
+`TransferFunctionViewState`. Er koordiniert RequestFactory, RUNNING-Sperre,
+Workerergebnisse, Berichtsansicht, Fehlerfokus und Clipboardinhalt, rechnet
+aber keine fachliche Aussage neu. Teilresultate bleiben über den vorhandenen
+Workflow-State und `TransferFunctionSolutionReport` sichtbar.
+
+Ein persistenter `QObject`-Worker läuft in genau einem dedizierten `QThread`
+pro MainWindow. Er verwendet dieselben `TransferFunctionWorkflowLimits` für
+WorkflowService und ReportBuilder sowie dieselben expliziten
+`SolutionReportLimits` für den Bericht. Requests und unveränderliche
+`TransferFunctionWorkflowExecutionResult`-Werte passieren die Threadgrenze
+über Qt-Signale; Widgets werden ausschließlich im GUI-Thread verändert.
+Während einer Berechnung wird keine zweite Ausführung angenommen.
+
+Beim Schließen während einer laufenden Berechnung wird der Vorgang nicht
+gewaltsam abgebrochen. Das Fenster bleibt mit sichtbarem Hinweis offen und
+schließt nach dem Ergebnis automatisch über `thread.quit()` und
+`thread.wait()`. `terminate()` wird nicht verwendet. Die In-Process-Grenzen
+behaupten weder einen harten Timeout noch sichere Unterbrechbarkeit laufender
+SymPy-Arbeit.
+
+Die GUI zeigt die fünf Workflowstufen mit Textstatus und unveränderter
+DiagnosticSeverity, strukturierte Kernergebnisse sowie die exakten Plaintext-
+und LaTeX-Renderergebnisse. Phase 2D.1 enthält weiterhin keine Overrides,
+Historie, Persistenz, Dateien, PDFs, Quellenbrowser oder Diagramme.
+
 ## Offene Architekturentscheidungen
 
 - genaue Grenzen und Repräsentationen weiterer Domain-Modelle

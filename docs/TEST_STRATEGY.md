@@ -345,6 +345,37 @@ Stability-Ergebnisse werden unabhängig revalidiert. Architekturtests schließen
 UI-Abhängigkeiten, rohe
 SymPy-Stringpfade und Domain→Application-Abhängigkeiten weiterhin aus.
 
+## Tests des Transferfunktions-Desktoparbeitsbereichs
+
+Phase 2D.1 wird ohne neue Testabhängigkeit auf fünf Ebenen geprüft. Die
+Qt-unabhängige RequestFactory deckt unbelegte, ganzzahlige und rationale
+Parameter, kanonische Kürzung, ungültige Zeilen, doppelte und unsichere Namen,
+Variablenkonflikte sowie Parameter- und Ziffernlimits ab. Insbesondere werden
+Float-, Dezimal- und Exponentialnotation vor jeder `int`-Konvertierung
+abgelehnt und kein Teilrequest erzeugt.
+
+Presenter-Tests verwenden einen synchron angeschlossenen Fake-Empfänger. Sie
+prüfen unveränderliche View-States, RUNNING-Sperre, strukturierte
+Fokuszuordnung, Erhalt vorheriger Resultate bei neuer ungültiger Eingabe,
+Berichtsumschaltung, exakten Clipboardinhalt und Reset. Erwartbare
+Workflowfehler bleiben strukturierte Ergebnisse; unerwartete Workerfehler
+erscheinen ohne Traceback im normalen Ergebnisbereich.
+
+Workspace-Tests laufen mit dem vorhandenen `QApplication` im Offscreen-Modus.
+Sie prüfen COMMON/SEPARATED ohne Textverlust, Parameterzeilen, Buttons,
+Feldfokus, fünf textuelle Stufenstatus, Severity ohne reine Farbcodierung,
+Teilresultate, Plaintext-/LaTeX-Tabs, Clipboard und Reset. Importtests
+verbieten Domain-Analyzer, Parsing und SymPy in allen UI-Modulen.
+
+Wenige echte `QThread`-Integrationstests verwenden `QSignalSpy` zusammen mit
+einer endlichen Qt-Eventloop-Grenze statt `sleep()`. Sie prüfen einen
+vollständigen Workflow, den unveränderlichen Transportwert, identische
+Workflowlimits in Service und Builder, strukturierte unerwartete Fehler und
+sauberes Threadende. MainWindow-Tests decken Aufbau, Shortcuts, Leerlauf-
+Shutdown und zurückgestelltes Schließen während RUNNING ab. Ein echter
+Offscreen-End-to-End-Smoke berechnet `1/(s+1)`, prüft Pol, Stabilität und
+Bericht und beendet das Fenster über `shutdown()`.
+
 ## Regressionstests mit offiziellen Aufgaben
 
 Verifizierte Aufgaben aus offiziellen Unterlagen werden später als
