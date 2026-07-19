@@ -252,11 +252,19 @@ Defensive Revalidierung umfasst Typen, Status, Quellenrollen, zusammenhängende
 Indizes, positive Multiplizitäten, vollständige Grade, numerische Zuordnung,
 Substitutionen, Gruppen und Diagnosen. Jede `StabilityAnalysisLimits`-Grenze
 und erwartbare Ressourcenfehler besitzt einen strukturierten Testpfad.
+Zusätzliche Manipulationstests ersetzen Nennerquelle, Polwerte,
+Multiplizitäten und RootOf-Werte oder duplizieren gleiche algebraische Wurzeln
+auch über verschiedene Darstellungen. Die unabhängige Prüfung muss jeden
+solchen Widerspruch exakt erkennen. Korrekte explizite und RootOf-Wurzeln
+werden dagegen über Ableitungswerte beziehungsweise irreduzible Polynomreste
+bestätigt. Regressionstests sichern außerdem, dass benutzerdefinierte
+Phase-2A-Grad- und Substitutionsgrenzen innerhalb des Stability-Vertrags
+akzeptiert und zu große Werte vor teurer SymPy-Verarbeitung begrenzt werden.
 Vertragstests decken Unveränderlichkeit, kontrollierte Ergebniskonstruktion,
 mathematische Gleichheit und Hash sowie die exakten drei offiziellen
-Quellenreferenzen ab. Der neue Fachkern enthält keine Parsing-, UI-, Properness-,
-Hurwitz-, Routh- oder Nyquistfunktion und verändert keine globale
-SymPy-Konfiguration.
+Quellenreferenzen und alle öffentlichen Exporte des Domain-Facades ab. Der neue
+Fachkern enthält keine Parsing-, UI-, Properness-, Hurwitz-, Routh- oder
+Nyquistfunktion und verändert keine globale SymPy-Konfiguration.
 
 ## Regressionstests mit offiziellen Aufgaben
 

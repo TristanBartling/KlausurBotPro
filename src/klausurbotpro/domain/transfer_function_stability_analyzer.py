@@ -87,7 +87,10 @@ class TransferFunctionStabilityAnalyzer:
         """Return a source-bound classification or a structured failure."""
 
         try:
-            validate_root_analysis(root_analysis, self._limits)
+            validation_evidence = validate_root_analysis(
+                root_analysis,
+                self._limits,
+            )
             assert root_analysis.reduced_poles is not None
             poles = root_analysis.reduced_poles
             notices, cancelled_diagnostics, cancelled_evidence = (
@@ -112,7 +115,7 @@ class TransferFunctionStabilityAnalyzer:
                     (),
                     notices,
                     symbolic_diagnostics,
-                    cancelled_evidence,
+                    validation_evidence + cancelled_evidence,
                 )
                 return self._success(
                     root_analysis,
@@ -124,7 +127,7 @@ class TransferFunctionStabilityAnalyzer:
 
             contributions: list[PoleStabilityContribution] = []
             diagnostics: list[Diagnostic] = []
-            evidence_nodes = 0
+            evidence_nodes = validation_evidence
             for occurrence in poles.roots:
                 classified = classify_exact_real_part(
                     occurrence.value,

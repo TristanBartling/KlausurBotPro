@@ -103,6 +103,9 @@ class StabilityAnalysisLimits:
 
     max_poles: int = 64
     max_cancelled_locations: int = 64
+    max_source_polynomial_degree: int = 64
+    max_source_integer_digits: int = 512
+    max_substitution_integer_digits: int = 256
     max_expression_nodes: int = 2048
     max_rootof_refinements: int = 32
     max_evidence_nodes: int = 4096

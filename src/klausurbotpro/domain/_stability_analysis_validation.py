@@ -6,12 +6,14 @@ from decimal import Decimal, InvalidOperation
 from math import gcd
 
 import sympy as sp
+from sympy.polys.polyerrors import BasePolynomialError
 
 from klausurbotpro.domain._exact_polynomial_root_solver import (
     exact_root_as_sympy,
 )
 from klausurbotpro.domain._root_analysis_validation import (
     RootAnalysisFailure,
+    specialize_polynomial,
     validate_reduced_transfer_function,
     validate_substitutions,
 )
@@ -51,7 +53,7 @@ class StabilityLimitError(ValueError):
 def validate_root_analysis(
     root_analysis: TransferFunctionRootAnalysisResult,
     limits: StabilityAnalysisLimits,
-) -> None:
+) -> int:
     """Revalidate every consumed structural invariant independently."""
 
     if type(root_analysis) is not TransferFunctionRootAnalysisResult:
@@ -68,15 +70,35 @@ def validate_root_analysis(
     if reduced is None or zeros is None or poles is None:
         raise StabilityValidationError("Successful root analysis is incomplete.")
 
-    root_limits = RootAnalysisLimits()
+    root_limits = _derived_root_limits(limits)
     try:
         validate_reduced_transfer_function(reduced, root_limits)
-        normalized, _ = validate_substitutions(
+        normalized, mapping = validate_substitutions(
             reduced,
             root_analysis.substitutions,
             root_limits,
         )
-    except (RootAnalysisFailure, AttributeError, TypeError, ValueError) as error:
+        expected_denominator = (
+            reduced.denominator
+            if mapping is None
+            else specialize_polynomial(
+                reduced.denominator,
+                mapping,
+                root_limits,
+            )
+        )
+    except RootAnalysisFailure as error:
+        if error.code is DiagnosticCode.ROOT_ANALYSIS_LIMIT_EXCEEDED:
+            limit_name = (
+                error.details[0][1]
+                if error.details and error.details[0][0] == "limit"
+                else "phase_2a_revalidation"
+            )
+            raise StabilityLimitError(limit_name) from error
+        raise StabilityValidationError(
+            "Reduced value or substitutions are invalid."
+        ) from error
+    except (AttributeError, IndexError, TypeError, ValueError) as error:
         raise StabilityValidationError(
             "Reduced value or substitutions are invalid."
         ) from error
@@ -114,6 +136,263 @@ def validate_root_analysis(
         raise StabilityLimitError("max_poles")
     if cancelled_count > limits.max_cancelled_locations:
         raise StabilityLimitError("max_cancelled_locations")
+    try:
+        return _validate_reduced_pole_mathematics(
+            poles,
+            expected_denominator,
+            original_degree=reduced.denominator.degree_info.generic_degree,
+            denominator_remains_symbolic=(
+                mapping is None
+                and bool(reduced.denominator.used_parameter_names)
+            ),
+            limits=limits,
+        )
+    except (StabilityLimitError, StabilityValidationError):
+        raise
+    except (
+        AttributeError,
+        IndexError,
+        ArithmeticError,
+        TypeError,
+        ValueError,
+        BasePolynomialError,
+        sp.SympifyError,
+    ) as error:
+        raise StabilityValidationError(
+            "The reduced-pole mathematics cannot be verified exactly."
+        ) from error
+
+
+def _derived_root_limits(
+    limits: StabilityAnalysisLimits,
+) -> RootAnalysisLimits:
+    """Map stability limits without imposing unrelated Phase-2A defaults."""
+
+    return RootAnalysisLimits(
+        max_polynomial_degree=limits.max_source_polynomial_degree,
+        max_parameters=limits.max_expression_nodes,
+        max_expression_nodes=limits.max_expression_nodes,
+        max_exact_rootof_count=limits.max_poles,
+        max_results=limits.max_result_items,
+        max_factor_nodes=limits.max_expression_nodes,
+        max_substitution_nodes=limits.max_expression_nodes,
+        max_substitution_integer_digits=(
+            limits.max_substitution_integer_digits
+        ),
+        max_domain_exclusions=limits.max_result_items,
+        max_cancelled_factors=limits.max_cancelled_locations,
+    )
+
+
+def _validate_reduced_pole_mathematics(
+    poles: PolynomialRootAnalysis,
+    expected_denominator: object,
+    *,
+    original_degree: int | None,
+    denominator_remains_symbolic: bool,
+    limits: StabilityAnalysisLimits,
+) -> int:
+    """Prove source, roots, multiplicities, and distinctness exactly."""
+
+    expression = getattr(expected_denominator, "expression", None)
+    as_poly = getattr(expected_denominator, "_as_sympy_poly", None)
+    if type(expression) is not ExactExpression or not callable(as_poly):
+        raise StabilityValidationError("Expected denominator is invalid.")
+    if poles.source_expression != expression:
+        raise StabilityValidationError(
+            "Reduced-pole source does not match the expected denominator."
+        )
+    if poles.original_degree != original_degree:
+        raise StabilityValidationError(
+            "Reduced-pole original degree does not match the denominator."
+        )
+    if denominator_remains_symbolic:
+        if (
+            poles.status is not PolynomialRootStatus.SYMBOLIC_UNDETERMINED
+            or poles.roots
+            or poles.numerical_estimates
+        ):
+            raise StabilityValidationError(
+                "A parameter-dependent denominator must remain undetermined."
+            )
+        return expression_node_count(expression, limits)
+
+    polynomial = as_poly()
+    if not isinstance(polynomial, sp.Poly) or polynomial.is_zero:
+        raise StabilityValidationError(
+            "The specialized denominator must be nonzero."
+        )
+    degree = int(polynomial.degree())
+    if degree > limits.max_source_polynomial_degree:
+        raise StabilityLimitError("max_source_polynomial_degree")
+    for coefficient in polynomial.all_coeffs():
+        numerator, denominator = coefficient.as_numer_denom()
+        if (
+            _integer_exceeds_digits(
+                int(numerator),
+                limits.max_source_integer_digits,
+            )
+            or _integer_exceeds_digits(
+                int(denominator),
+                limits.max_source_integer_digits,
+            )
+        ):
+            raise StabilityLimitError("max_source_integer_digits")
+    if degree == 0:
+        if (
+            poles.status is not PolynomialRootStatus.CONSTANT_NONZERO
+            or poles.actual_degree != 0
+            or poles.roots
+        ):
+            raise StabilityValidationError(
+                "A constant denominator requires a constant root result."
+            )
+        return expression_node_count(expression, limits)
+    if (
+        poles.status is not PolynomialRootStatus.COMPLETE
+        or poles.actual_degree != degree
+        or sum(item.multiplicity for item in poles.roots) != degree
+    ):
+        raise StabilityValidationError(
+            "A positive-degree denominator requires complete exact poles."
+        )
+
+    budget = _EvidenceBudget(limits)
+    polynomial_expression = polynomial.as_expr()
+    budget.add(polynomial_expression)
+    variable = polynomial.gens[0]
+    maximum_multiplicity = max(item.multiplicity for item in poles.roots)
+    derivatives = [polynomial_expression]
+    for _ in range(maximum_multiplicity):
+        derivatives.append(sp.diff(derivatives[-1], variable))
+        budget.add(derivatives[-1])
+
+    exact_roots: list[sp.Expr] = []
+    for occurrence in poles.roots:
+        root = exact_root_as_sympy(occurrence.value)
+        budget.add(root)
+        exact_roots.append(root)
+        for order in range(occurrence.multiplicity):
+            if (
+                _derivative_zero_truth(
+                    derivatives[order],
+                    variable,
+                    occurrence.value,
+                    root,
+                    budget,
+                )
+                is not True
+            ):
+                raise StabilityValidationError(
+                    "A reported pole or multiplicity is mathematically false."
+                )
+        if (
+            _derivative_zero_truth(
+                derivatives[occurrence.multiplicity],
+                variable,
+                occurrence.value,
+                root,
+                budget,
+            )
+            is not False
+        ):
+            raise StabilityValidationError(
+                "A reported pole multiplicity is not exact."
+            )
+
+    for left_index, left in enumerate(exact_roots):
+        left_value = poles.roots[left_index].value
+        for right_index, right in enumerate(
+            exact_roots[left_index + 1 :],
+            start=left_index + 1,
+        ):
+            right_value = poles.roots[right_index].value
+            if (
+                type(left_value) is RootOfValue
+                and type(right_value) is RootOfValue
+            ):
+                if left_value == right_value:
+                    raise StabilityValidationError(
+                        "Distinct root entries represent the same algebraic root."
+                    )
+                if (
+                    left_value.defining_coefficients
+                    == right_value.defining_coefficients
+                ):
+                    continue
+                left_polynomial = _rootof_polynomial(left_value, variable)
+                right_polynomial = _rootof_polynomial(right_value, variable)
+                if left_polynomial != right_polynomial:
+                    continue
+            difference = sp.cancel(left - right)
+            budget.add(difference)
+            if _exact_zero_truth(difference) is not False:
+                raise StabilityValidationError(
+                    "Distinct root entries represent the same algebraic root."
+                )
+    return budget.count
+
+
+def _derivative_zero_truth(
+    derivative: sp.Expr,
+    variable: sp.Symbol,
+    value: ExplicitExactRootValue | RootOfValue,
+    root: sp.Expr,
+    budget: _EvidenceBudget,
+) -> bool | None:
+    if type(value) is RootOfValue:
+        defining = _rootof_polynomial(value, variable)
+        remainder = sp.Poly(
+            derivative,
+            variable,
+            domain=sp.QQ,
+        ).rem(defining)
+        budget.add(remainder.as_expr())
+        return bool(remainder.is_zero)
+    evaluated = sp.cancel(derivative.subs(variable, root))
+    budget.add(evaluated)
+    return _exact_zero_truth(evaluated)
+
+
+def _rootof_polynomial(
+    value: RootOfValue,
+    variable: sp.Symbol,
+) -> sp.Poly:
+    return sp.Poly.from_list(
+        value.defining_coefficients,
+        gens=variable,
+        domain=sp.QQ,
+    )
+
+
+def _exact_zero_truth(expression: sp.Expr) -> bool | None:
+    """Return only an exact zero decision, never a tolerance decision."""
+
+    if expression.is_zero is True:
+        return True
+    if expression.is_zero is False:
+        return False
+    equals_zero = expression.equals(sp.Integer(0))
+    return equals_zero if type(equals_zero) is bool else None
+
+
+class _EvidenceBudget:
+    """Count exact algebraic evidence under both configured node limits."""
+
+    def __init__(self, limits: StabilityAnalysisLimits) -> None:
+        self._limits = limits
+        self.count = 0
+
+    def add(self, expression: sp.Expr) -> None:
+        for local_count, _ in enumerate(
+            sp.preorder_traversal(expression),
+            start=1,
+        ):
+            self.count += 1
+            if local_count > self._limits.max_expression_nodes:
+                raise StabilityLimitError("max_expression_nodes")
+            if self.count > self._limits.max_evidence_nodes:
+                raise StabilityLimitError("max_evidence_nodes")
 
 
 def expression_node_count(
@@ -202,7 +481,7 @@ def _validate_analysis(
     ):
         raise StabilityValidationError("Root indices are not contiguous.")
     for item in analysis.roots:
-        _validate_occurrence(item, source)
+        _validate_occurrence(item, source, limits)
     if analysis.status is PolynomialRootStatus.COMPLETE:
         if (
             analysis.actual_degree is None
@@ -243,7 +522,11 @@ def _validate_analysis(
             _validate_estimate(estimate, root.index)
 
 
-def _validate_occurrence(item: RootOccurrence, source: RootSource) -> None:
+def _validate_occurrence(
+    item: RootOccurrence,
+    source: RootSource,
+    limits: StabilityAnalysisLimits,
+) -> None:
     if (
         item.source is not source
         or isinstance(item.multiplicity, bool)
@@ -272,6 +555,8 @@ def _validate_occurrence(item: RootOccurrence, source: RootSource) -> None:
         if (
             type(coefficients) is not tuple
             or len(coefficients) < 2
+            or len(coefficients) - 1
+            > limits.max_source_polynomial_degree
             or any(
                 isinstance(value, bool) or not isinstance(value, int)
                 for value in coefficients
@@ -283,9 +568,34 @@ def _validate_occurrence(item: RootOccurrence, source: RootSource) -> None:
             or not 0 <= item.value.root_index < len(coefficients) - 1
         ):
             raise StabilityValidationError("Invalid RootOf value.")
+        if any(
+            _integer_exceeds_digits(
+                coefficient,
+                limits.max_source_integer_digits,
+            )
+            for coefficient in coefficients
+        ):
+            raise StabilityLimitError("max_source_integer_digits")
         try:
+            defining = _rootof_polynomial(
+                item.value,
+                sp.Symbol("_stability_root"),
+            )
+            if defining.is_irreducible is not True:
+                raise StabilityValidationError(
+                    "RootOf defining polynomial must be irreducible."
+                )
             exact_root_as_sympy(item.value)
-        except (ArithmeticError, NotImplementedError, TypeError, ValueError) as error:
+        except (
+            AttributeError,
+            IndexError,
+            ArithmeticError,
+            NotImplementedError,
+            TypeError,
+            ValueError,
+            BasePolynomialError,
+            sp.SympifyError,
+        ) as error:
             raise StabilityValidationError(
                 "RootOf value cannot be reconstructed."
             ) from error
@@ -343,6 +653,13 @@ def _valid_diagnostics(diagnostics: object) -> bool:
         ):
             return False
     return True
+
+
+def _integer_exceeds_digits(value: int, maximum_digits: int) -> bool:
+    magnitude = value if value >= 0 else -value
+    if magnitude == 0 or magnitude.bit_length() <= maximum_digits:
+        return False
+    return bool(magnitude >= pow(10, maximum_digits))
 
 
 __all__ = [

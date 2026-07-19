@@ -363,6 +363,27 @@ algebraischer Multiplizität größer als eins führen zu `UNSTABLE`. Nicht exak
 oder zertifiziert entscheidbare Realteilzeichen führen, sofern keine sicher
 erkannte Instabilität vorliegt, zu `SYMBOLIC_UNDETERMINED`.
 
+Die öffentliche Phase-2B-API wird vollständig über das Domain-Facade
+`klausurbotpro.domain` exportiert; interne Validierungs- und
+Klassifikationshelfer bleiben privat. Vor der Klassifikation rekonstruiert die
+Stabilitätsanalyse aus reduziertem Nenner und exakten Parametersubstitutionen
+mit der vorhandenen Phase-2A-Spezialisierung das erwartete Nennerpolynom. Sie
+vergleicht dessen exakten Ausdruck und Grad mit dem Polergebnis und beweist für
+jeden gemeldeten Pol Nullstelleneigenschaft, algebraische Multiplizität und
+Verschiedenheit der Einträge. Explizite Wurzeln werden durch exakte
+Ableitungsauswertung geprüft; bei irreduziblen `RootOfValue`-Polynomen erfolgt
+derselbe Nachweis exakt über Polynomreste. Diese Prüfung verändert weder
+Wurzeln noch Multiplizitäten und führt keine neue Wurzelsuche aus.
+
+Die defensive Revalidierung verwendet nicht die Standardwerte eines neuen
+`RootAnalysisLimits`-Objekts. Endliche interne Phase-2A-Grenzen werden
+stattdessen aus `StabilityAnalysisLimits` abgeleitet. Neben Pol-, Ergebnis-,
+Ausdrucks- und Evidenzgrenzen beschränken eigene Stabilitätslimits den
+Quellpolynomgrad, die Ziffern seiner exakten Ganzzahlen und die Ziffern exakter
+Substitutionen. Damit bleiben Ergebnisse mit bewusst erhöhten
+Phase-2A-Grenzen zulässig, sofern sie innerhalb des Stabilitätsvertrags liegen.
+Ein harter Prozess-Timeout wird weiterhin nicht behauptet.
+
 Explizite Wurzeln werden über den exakten SymPy-Realteil und ausschließlich
 dessen exakte Vorzeichenprädikate klassifiziert. `RootOfValue` wird intern aus
 seinem primitiven ganzzahligen Polynom und Index rekonstruiert. Nach exakten

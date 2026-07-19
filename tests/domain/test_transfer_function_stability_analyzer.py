@@ -16,6 +16,7 @@ from klausurbotpro.domain.parameter_substitutions import (
     ParameterAssignment,
     ParameterSubstitutions,
 )
+from klausurbotpro.domain.polynomial_contracts import PolynomialLimits
 from klausurbotpro.domain.polynomial_factory import PolynomialFactory
 from klausurbotpro.domain.raw_transfer_function_contracts import (
     TransferFunctionDomainExclusion,
@@ -28,6 +29,7 @@ from klausurbotpro.domain.root_analysis_contracts import (
     PolynomialRootAnalysis,
     PolynomialRootStatus,
     RootAnalysisGroup,
+    RootAnalysisLimits,
     RootOccurrence,
     RootOfValue,
     RootSource,
@@ -53,8 +55,15 @@ def _reduced(
     numerator: sp.Expr | None = None,
     parameters: frozenset[str] = frozenset(),
     exclusions: tuple[sp.Expr, ...] = (),
+    maximum_degree: int = 32,
 ) -> ReducedTransferFunction:
-    factory = PolynomialFactory()
+    factory = PolynomialFactory(
+        PolynomialLimits(
+            max_degree=maximum_degree,
+            max_coefficients=maximum_degree + 1,
+            max_structural_terms=maximum_degree + 1,
+        )
+    )
     numerator_value = factory.create(
         ExactExpression._from_sympy(
             sp.Integer(1) if numerator is None else numerator
@@ -93,13 +102,21 @@ def _root_analysis(
     parameters: frozenset[str] = frozenset(),
     substitutions: ParameterSubstitutions | None = None,
     exclusions: tuple[sp.Expr, ...] = (),
+    root_limits: RootAnalysisLimits | None = None,
+    maximum_degree: int = 32,
 ) -> TransferFunctionRootAnalysisResult:
-    return TransferFunctionRootAnalyzer().analyze(
+    analyzer = (
+        TransferFunctionRootAnalyzer()
+        if root_limits is None
+        else TransferFunctionRootAnalyzer(root_limits)
+    )
+    return analyzer.analyze(
         _reduced(
             denominator,
             numerator=numerator,
             parameters=parameters,
             exclusions=exclusions,
+            maximum_degree=maximum_degree,
         ),
         substitutions,
     )
@@ -126,6 +143,49 @@ def _cancelled_group(*values: sp.Expr) -> RootAnalysisGroup:
         actual_degree=len(roots),
     )
     return RootAnalysisGroup(PolynomialRootStatus.COMPLETE, (analysis,))
+
+
+def _rootof_denominator_analysis(
+    defining_coefficients: tuple[int, ...],
+) -> TransferFunctionRootAnalysisResult:
+    s = sp.Symbol("s")
+    denominator_expression = sp.Poly.from_list(
+        defining_coefficients,
+        gens=s,
+    ).as_expr()
+    reduced = _reduced(denominator_expression)
+    degree = len(defining_coefficients) - 1
+    poles = PolynomialRootAnalysis(
+        PolynomialRootStatus.COMPLETE,
+        RootSource.DENOMINATOR,
+        reduced.denominator.expression,
+        tuple(
+            RootOccurrence(
+                RootOfValue(defining_coefficients, index),
+                1,
+                RootSource.DENOMINATOR,
+                index,
+            )
+            for index in range(degree)
+        ),
+        original_degree=degree,
+        actual_degree=degree,
+    )
+    zeros = PolynomialRootAnalysis(
+        PolynomialRootStatus.CONSTANT_NONZERO,
+        RootSource.NUMERATOR,
+        reduced.numerator.expression,
+        original_degree=0,
+        actual_degree=0,
+    )
+    return TransferFunctionRootAnalysisResult(
+        reduced,
+        ParameterSubstitutions(),
+        zeros,
+        poles,
+        RootAnalysisGroup(PolynomialRootStatus.COMPLETE),
+        RootAnalysisGroup(PolynomialRootStatus.NOT_EVALUATED),
+    )
 
 
 @pytest.mark.parametrize(
@@ -422,6 +482,227 @@ def test_manipulated_and_failed_root_analysis_are_structured() -> None:
         assert result.diagnostics[0].code is (
             DiagnosticCode.STABILITY_ANALYSIS_INVALID_ROOT_ANALYSIS
         )
+
+
+def test_false_reported_pole_is_rejected_mathematically() -> None:
+    root_analysis = _root_analysis(sp.Symbol("s") + 1)
+    assert root_analysis.reduced_poles is not None
+    occurrence = root_analysis.reduced_poles.roots[0]
+    object.__setattr__(
+        occurrence,
+        "value",
+        ExplicitExactRootValue(ExactExpression._from_sympy(sp.Integer(1))),
+    )
+
+    result = TransferFunctionStabilityAnalyzer().analyze(root_analysis)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.STABILITY_ANALYSIS_INVALID_ROOT_ANALYSIS
+    )
+
+
+def test_false_pole_source_expression_is_rejected_mathematically() -> None:
+    s = sp.Symbol("s")
+    root_analysis = _root_analysis(s + 1)
+    assert root_analysis.reduced_poles is not None
+    object.__setattr__(
+        root_analysis.reduced_poles,
+        "source_expression",
+        ExactExpression._from_sympy(s - 1),
+    )
+
+    result = TransferFunctionStabilityAnalyzer().analyze(root_analysis)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.STABILITY_ANALYSIS_INVALID_ROOT_ANALYSIS
+    )
+
+
+def test_duplicate_reported_roots_are_rejected_mathematically() -> None:
+    s = sp.Symbol("s")
+    root_analysis = _root_analysis((s + 1) * (s + 2))
+    assert root_analysis.reduced_poles is not None
+    first, second = root_analysis.reduced_poles.roots
+    object.__setattr__(second, "value", first.value)
+
+    result = TransferFunctionStabilityAnalyzer().analyze(root_analysis)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.STABILITY_ANALYSIS_INVALID_ROOT_ANALYSIS
+    )
+
+
+def test_false_reported_multiplicity_is_rejected_mathematically() -> None:
+    s = sp.Symbol("s")
+    root_analysis = _root_analysis((s + 1) * (s + 2))
+    assert root_analysis.reduced_poles is not None
+    first = root_analysis.reduced_poles.roots[0]
+    forged = RootOccurrence(
+        first.value,
+        2,
+        RootSource.DENOMINATOR,
+        0,
+    )
+    object.__setattr__(root_analysis.reduced_poles, "roots", (forged,))
+    object.__setattr__(
+        root_analysis.reduced_poles,
+        "numerical_estimates",
+        (),
+    )
+
+    result = TransferFunctionStabilityAnalyzer().analyze(root_analysis)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.STABILITY_ANALYSIS_INVALID_ROOT_ANALYSIS
+    )
+
+
+def test_unrelated_rootof_is_rejected_mathematically() -> None:
+    root_analysis = _root_analysis(sp.Symbol("s") + 1)
+    assert root_analysis.reduced_poles is not None
+    occurrence = root_analysis.reduced_poles.roots[0]
+    object.__setattr__(
+        occurrence,
+        "value",
+        RootOfValue((1, 0, 0, 0, -1, 1), 0),
+    )
+
+    result = TransferFunctionStabilityAnalyzer().analyze(root_analysis)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.STABILITY_ANALYSIS_INVALID_ROOT_ANALYSIS
+    )
+
+
+def test_correct_explicit_and_rootof_poles_pass_independent_validation() -> None:
+    s = sp.Symbol("s")
+    mixed = _root_analysis(s**2 - 2)
+    assert mixed.reduced_poles is not None
+    positive = mixed.reduced_poles.roots[1]
+    object.__setattr__(
+        positive,
+        "value",
+        RootOfValue((1, 0, -2), 1),
+    )
+    rootof = _rootof_denominator_analysis((1, 0, 0, -2))
+
+    mixed_result = TransferFunctionStabilityAnalyzer().analyze(mixed)
+    rootof_result = TransferFunctionStabilityAnalyzer().analyze(rootof)
+
+    assert mixed_result.succeeded
+    assert rootof_result.succeeded
+
+
+def test_cross_representation_duplicate_root_is_rejected() -> None:
+    s = sp.Symbol("s")
+    root_analysis = _root_analysis(s**2 - 2)
+    assert root_analysis.reduced_poles is not None
+    second = root_analysis.reduced_poles.roots[1]
+    object.__setattr__(
+        second,
+        "value",
+        RootOfValue((1, 0, -2), 0),
+    )
+
+    result = TransferFunctionStabilityAnalyzer().analyze(root_analysis)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.STABILITY_ANALYSIS_INVALID_ROOT_ANALYSIS
+    )
+
+
+def test_custom_phase_2a_degree_limit_is_accepted_within_stability_limit() -> None:
+    s = sp.Symbol("s")
+    root_analysis = _root_analysis(
+        s**33,
+        root_limits=RootAnalysisLimits(max_polynomial_degree=33),
+        maximum_degree=33,
+    )
+
+    result = TransferFunctionStabilityAnalyzer(
+        StabilityAnalysisLimits(max_source_polynomial_degree=33)
+    ).analyze(root_analysis)
+
+    assert result.succeeded
+    assert result.status is StabilityStatus.UNSTABLE
+
+
+def test_source_degree_limit_precedes_exact_pole_validation() -> None:
+    s = sp.Symbol("s")
+    root_analysis = _root_analysis(
+        s**33,
+        root_limits=RootAnalysisLimits(max_polynomial_degree=33),
+        maximum_degree=33,
+    )
+
+    result = TransferFunctionStabilityAnalyzer(
+        StabilityAnalysisLimits(max_source_polynomial_degree=32)
+    ).analyze(root_analysis)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.STABILITY_ANALYSIS_LIMIT_EXCEEDED
+    )
+
+
+def test_large_substitution_is_limited_before_sympy_reconstruction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s, K = sp.symbols("s K")
+    large_value = 10**300
+    substitutions = ParameterSubstitutions(
+        (ParameterAssignment("K", ExactRationalValue(large_value)),)
+    )
+    root_analysis = _root_analysis(
+        K * s + 1,
+        parameters=frozenset({"K"}),
+        substitutions=substitutions,
+        root_limits=RootAnalysisLimits(
+            max_substitution_integer_digits=301
+        ),
+    )
+    original_rational = sp.Rational
+
+    def guarded_rational(
+        numerator: object,
+        denominator: object = 1,
+    ) -> sp.Expr:
+        if numerator == large_value:
+            raise AssertionError("Oversized value reached SymPy.")
+        return original_rational(numerator, denominator)
+
+    monkeypatch.setattr(
+        "klausurbotpro.domain._root_analysis_validation.sp.Rational",
+        guarded_rational,
+    )
+    result = TransferFunctionStabilityAnalyzer(
+        StabilityAnalysisLimits(max_substitution_integer_digits=256)
+    ).analyze(root_analysis)
+
+    assert result.diagnostics[0].code is (
+        DiagnosticCode.STABILITY_ANALYSIS_LIMIT_EXCEEDED
+    )
+
+
+def test_large_valid_substitution_uses_stability_limit_not_phase_2a_default() -> None:
+    s, K = sp.symbols("s K")
+    substitutions = ParameterSubstitutions(
+        (ParameterAssignment("K", ExactRationalValue(10**300)),)
+    )
+    root_analysis = _root_analysis(
+        K * s + 1,
+        parameters=frozenset({"K"}),
+        substitutions=substitutions,
+        root_limits=RootAnalysisLimits(
+            max_substitution_integer_digits=301
+        ),
+    )
+
+    result = TransferFunctionStabilityAnalyzer(
+        StabilityAnalysisLimits(max_substitution_integer_digits=301)
+    ).analyze(root_analysis)
+
+    assert result.succeeded
+    assert result.status is StabilityStatus.STABLE
 
 
 def test_wrong_root_analysis_type_is_a_structured_error() -> None:

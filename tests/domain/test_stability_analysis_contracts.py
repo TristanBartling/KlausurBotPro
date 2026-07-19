@@ -85,3 +85,38 @@ def test_contribution_multiplicity_must_match_pole() -> None:
             contribution.contribution,
             contribution.reason,
         )
+
+
+def test_phase_2b_public_api_is_exported_by_domain_facade() -> None:
+    from klausurbotpro.domain import (
+        CancelledLocationNotice,
+        PoleStabilityContribution,
+        PoleStabilityContributionKind,
+        RealPartSign,
+        StabilityAnalysisLimits,
+        StabilityEvidenceKind,
+        StabilityReason,
+        StabilityReasonCode,
+        StabilitySourceReference,
+        StabilityStatus,
+        TransferFunctionStabilityAnalysisResult,
+        TransferFunctionStabilityAnalyzer,
+    )
+
+    assert all(
+        value is not None
+        for value in (
+            TransferFunctionStabilityAnalyzer,
+            TransferFunctionStabilityAnalysisResult,
+            StabilityStatus,
+            RealPartSign,
+            StabilityAnalysisLimits,
+            StabilityEvidenceKind,
+            PoleStabilityContribution,
+            PoleStabilityContributionKind,
+            CancelledLocationNotice,
+            StabilityReason,
+            StabilityReasonCode,
+            StabilitySourceReference,
+        )
+    )
