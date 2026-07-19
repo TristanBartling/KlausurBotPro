@@ -581,11 +581,16 @@ logarithmischer Skala, Betrag in dB sowie die Hauptphase in Grad im Bereich
 `(-180°, 180°]` fest. `BodeDataLimits` begrenzen Rasterpunkte, getrennte
 Segmentzahlen, Diagnosen und die akzeptierte bereits vorhandene
 Dezimaldarstellung. Die Dezimalgrenze rundet oder kürzt keine
-Phase-3A.1-Werte.
+Phase-3A.1-Werte. Vor der Punktanalyse gilt die kleinere Grenze aus
+`max_grid_points` und `max_frequency_points`; bei gleichen Werten wird
+deterministisch `max_grid_points` als aktive Grenze gemeldet.
 
 Eine interne Vertrauensgrenze revalidiert Raster, vollständiges
 Phase-3A.1-Ergebnis, geordnete Punktidentitäten, Statusmatrix, Segmente,
 Metadaten, Diagnoseaggregation und alle drei expliziten Limitverträge.
+Jeder Segmentpunkt muss dabei durch Objektidentität direkt aus dem durch seine
+inklusiven Grenzen bezeichneten Ausschnitt der übergeordneten Punktfolge
+stammen; wertgleiche Kopien werden nicht akzeptiert.
 Fehlerhafte Kontexte und manipulierte Zwischenergebnisse liefern ein
 wertfreies `FAILED`; erfolgreiche Diagnosen folgen Raster, Phase 3A.1,
 punktbezogenen Bode-Diagnosen und globalen Bode-Diagnosen in dieser festen

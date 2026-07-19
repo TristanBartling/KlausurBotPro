@@ -8,6 +8,7 @@ import sympy as sp
 from klausurbotpro.domain import (
     BodeDataLimits,
     BodeDataStatus,
+    BodePlotPoint,
     ExactExpression,
     ExactRationalValue,
     FrequencyResponseLimits,
@@ -132,6 +133,94 @@ def test_manipulated_segment_is_rejected(
     result = _result()
     segment = result.magnitude_segments[0]
     object.__setattr__(segment, attribute, value)
+
+    with pytest.raises(BodeDataFailure):
+        _validate(result)
+
+
+@pytest.mark.parametrize("segment_attribute", ["magnitude_segments", "phase_segments"])
+@pytest.mark.parametrize(
+    "manipulation",
+    [
+        "equal_clone",
+        "foreign_point",
+        "repeated_point",
+        "swapped_points",
+        "foreign_points_same_bounds",
+        "shared_between_segments",
+        "skipped_plottable_point",
+        "connected_over_singularity",
+    ],
+)
+def test_segment_points_must_be_identical_maximal_source_ranges(
+    segment_attribute: str,
+    manipulation: str,
+) -> None:
+    result = _result()
+    segments = getattr(result, segment_attribute)
+    segment = segments[0]
+
+    if manipulation == "equal_clone":
+        source = segment.points[0]
+        clone = BodePlotPoint._create(
+            grid_point=source.grid_point,
+            frequency_response_point=source.frequency_response_point,
+        )
+        object.__setattr__(
+            segment,
+            "points",
+            (clone,) + segment.points[1:],
+        )
+    elif manipulation in ("foreign_point", "foreign_points_same_bounds"):
+        foreign_result = _result()
+        foreign_points = getattr(
+            foreign_result,
+            segment_attribute,
+        )[0].points
+        replacement = (
+            (foreign_points[0],) + segment.points[1:]
+            if manipulation == "foreign_point"
+            else foreign_points
+        )
+        object.__setattr__(segment, "points", replacement)
+    elif manipulation == "repeated_point":
+        object.__setattr__(
+            segment,
+            "points",
+            (segment.points[0], segment.points[0]) + segment.points[2:],
+        )
+    elif manipulation == "swapped_points":
+        object.__setattr__(
+            segment,
+            "points",
+            (
+                segment.points[1],
+                segment.points[0],
+            )
+            + segment.points[2:],
+        )
+    elif manipulation == "shared_between_segments":
+        duplicate = type(segment)._create(
+            1,
+            (segment.points[0],),
+            segment.start_grid_index,
+            segment.start_grid_index,
+        )
+        object.__setattr__(
+            result,
+            segment_attribute,
+            (segment, duplicate),
+        )
+    elif manipulation == "skipped_plottable_point":
+        object.__setattr__(segment, "start_grid_index", segment.start_grid_index + 1)
+        object.__setattr__(segment, "points", segment.points[1:])
+    else:
+        object.__setattr__(segment, "start_grid_index", 0)
+        object.__setattr__(
+            segment,
+            "points",
+            (result.points[0],) + segment.points,
+        )
 
     with pytest.raises(BodeDataFailure):
         _validate(result)

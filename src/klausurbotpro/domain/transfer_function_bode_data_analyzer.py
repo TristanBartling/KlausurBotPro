@@ -193,15 +193,6 @@ class TransferFunctionBodeDataAnalyzer:
             return result
         except BodeDataFailure as failure:
             return self._failure(failure, field)
-        except (AttributeError, IndexError, TypeError, ValueError) as error:
-            return self._failure(
-                BodeDataFailure(
-                    DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH,
-                    "Die erzeugten Bode-Daten verletzen den erwarteten Kontext.",
-                    (("exception", type(error).__name__),),
-                ),
-                field,
-            )
         except _RESOURCE_ERRORS as error:
             return self._failure(
                 BodeDataFailure(

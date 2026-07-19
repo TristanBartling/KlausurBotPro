@@ -407,10 +407,18 @@ Limitfälle decken die kombinierte Punktgrenze, explizit niedrigere
 Rasterlimits, getrennte Segmentgrenzen, Diagnosen und vorhandene
 Dezimalziffern ab. Eine Überschreitung muss ein strukturiertes wertfreies
 Fehlerresultat liefern und darf Phase-3A.1-Werte weder runden noch kürzen.
+Regressionen prüfen beide möglichen aktiven Punktgrenzen, ihre
+deterministische Gleichstandsreihenfolge und den ausbleibenden
+Phase-3A.1-Aufruf bei einer Vorabüberschreitung.
 Manipulationsregressionen verändern Raster, reduzierte Funktion,
 Phase-3A.1-Übergabe, Bodepunkte, Segmente, Gesamtstatus, Metadaten,
 Punktreihenfolge und Diagnosen. Die interne Resultatgrenze muss jede
-Inkonsistenz ablehnen.
+Inkonsistenz ablehnen. Segmentpunkte werden zusätzlich durch Objektidentität
+gegen den bezeichneten Ausschnitt der Ergebnisfolge geprüft; wertgleiche
+Klone, fremde und wiederholte Punkte, vertauschte Folgen, Lücken und
+Verbindungen über Singularitäten werden abgelehnt. Künstliche interne Typ-
+und Wertfehler aus Segmentierung und Statusableitung müssen sichtbar bleiben
+und dürfen nicht als normale Kontextfehler maskiert werden.
 
 Vertragstests sichern unveränderliche analyzerkontrollierte Konstruktion,
 exakte Limittypen ohne `bool`, strukturierte Enum-Metadaten, deterministische

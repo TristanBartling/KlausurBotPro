@@ -415,6 +415,59 @@ def test_grid_frequency_segment_diagnostic_and_decimal_limits_fail_structured() 
     )
 
 
+@pytest.mark.parametrize(
+    ("bode_maximum", "frequency_maximum", "expected_limit"),
+    [
+        (2, 256, "max_grid_points"),
+        (256, 2, "max_frequency_points"),
+        (3, 2, "max_frequency_points"),
+        (2, 2, "max_grid_points"),
+    ],
+)
+def test_active_preanalysis_point_limit_is_reported_and_skips_phase_3a1(
+    monkeypatch: pytest.MonkeyPatch,
+    bode_maximum: int,
+    frequency_maximum: int,
+    expected_limit: str,
+) -> None:
+    calls = 0
+
+    def forbidden_analysis(
+        self: TransferFunctionFrequencyResponseAnalyzer,
+        reduced: ReducedTransferFunction,
+        frequencies: FrequencySampleSet,
+        substitutions: ParameterSubstitutions | None = None,
+        *,
+        field: str | None = None,
+    ) -> TransferFunctionFrequencyResponseResult:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("Phase 3A.1 must not run after a limit failure.")
+
+    monkeypatch.setattr(
+        TransferFunctionFrequencyResponseAnalyzer,
+        "analyze",
+        forbidden_analysis,
+    )
+    s = sp.Symbol("s")
+    result = TransferFunctionBodeDataAnalyzer(
+        frequency_limits=FrequencyResponseLimits(
+            max_frequency_points=frequency_maximum
+        ),
+        bode_limits=BodeDataLimits(max_grid_points=bode_maximum),
+    ).analyze(
+        _reduced(sp.Integer(1), s + 1),
+        _grid(1, 100, 2),
+    )
+
+    assert result.status is BodeDataStatus.FAILED
+    assert result.diagnostics[0].code is DiagnosticCode.BODE_DATA_LIMIT_EXCEEDED
+    assert result.diagnostics[0].technical_details == (
+        ("limit", expected_limit),
+    )
+    assert calls == 0
+
+
 def test_manipulated_reduced_and_handoff_fail_structured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -461,6 +514,49 @@ def test_manipulated_reduced_and_handoff_fail_structured(
     assert handoff.diagnostics[0].code is DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH
 
 
+def test_equal_but_foreign_frequency_sample_set_fails_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = TransferFunctionFrequencyResponseAnalyzer.analyze
+
+    def copied_sample_set(
+        self: TransferFunctionFrequencyResponseAnalyzer,
+        value: ReducedTransferFunction,
+        frequencies: FrequencySampleSet,
+        substitutions: ParameterSubstitutions | None = None,
+        *,
+        field: str | None = None,
+    ) -> TransferFunctionFrequencyResponseResult:
+        response = original(
+            self,
+            value,
+            frequencies,
+            substitutions,
+            field=field,
+        )
+        assert response.frequencies is not None
+        object.__setattr__(
+            response,
+            "frequencies",
+            FrequencySampleSet(response.frequencies.frequencies),
+        )
+        return response
+
+    monkeypatch.setattr(
+        TransferFunctionFrequencyResponseAnalyzer,
+        "analyze",
+        copied_sample_set,
+    )
+    s = sp.Symbol("s")
+    result = TransferFunctionBodeDataAnalyzer().analyze(
+        _reduced(sp.Integer(1), s + 1),
+        _grid(),
+    )
+
+    assert result.status is BodeDataStatus.FAILED
+    assert result.diagnostics[0].code is DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH
+
+
 def test_manipulated_grid_and_resource_error_fail_structured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -491,6 +587,35 @@ def test_manipulated_grid_and_resource_error_fail_structured(
     assert exhausted.diagnostics[0].code is (
         DiagnosticCode.BODE_DATA_RESOURCE_LIMIT_EXCEEDED
     )
+
+
+@pytest.mark.parametrize(
+    ("function_name", "error_type"),
+    [
+        ("build_bode_segments", ValueError),
+        ("derive_bode_data_status", TypeError),
+    ],
+)
+def test_internal_programming_errors_are_not_masked_as_context_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    function_name: str,
+    error_type: type[Exception],
+) -> None:
+    module = import_module(
+        "klausurbotpro.domain.transfer_function_bode_data_analyzer"
+    )
+
+    def fail_internally(*args: object, **kwargs: object) -> None:
+        raise error_type("synthetic internal defect")
+
+    monkeypatch.setattr(module, function_name, fail_internally)
+    s = sp.Symbol("s")
+
+    with pytest.raises(error_type, match="synthetic internal defect"):
+        TransferFunctionBodeDataAnalyzer().analyze(
+            _reduced(sp.Integer(1), s + 1),
+            _grid(),
+        )
 
 
 def test_identical_inputs_are_deterministic() -> None:

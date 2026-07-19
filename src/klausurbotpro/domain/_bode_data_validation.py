@@ -24,6 +24,8 @@ from klausurbotpro.domain.bode_data_contracts import (
     BodeAxisMetadata,
     BodeDataLimits,
     BodeDataStatus,
+    BodeMagnitudeSegment,
+    BodePhaseSegment,
     BodePlotPoint,
     TransferFunctionBodeDataResult,
 )
@@ -78,15 +80,21 @@ def validate_bode_input_grid(
             DiagnosticCode.BODE_DATA_INVALID_GRID,
             "Ein Bode-Datensatz benötigt ein vollständiges Raster.",
         )
-    maximum = min(
-        bode_limits.max_grid_points,
-        frequency_limits.max_frequency_points,
+    active_limit_name, active_limit_value = min(
+        (
+            ("max_grid_points", bode_limits.max_grid_points),
+            (
+                "max_frequency_points",
+                frequency_limits.max_frequency_points,
+            ),
+        ),
+        key=lambda item: item[1],
     )
-    if len(grid.points) > maximum:
+    if len(grid.points) > active_limit_value:
         raise BodeDataFailure(
             DiagnosticCode.BODE_DATA_LIMIT_EXCEEDED,
             "Das Raster enthält zu viele Bode-Punkte.",
-            (("limit", "max_grid_points"),),
+            (("limit", active_limit_name),),
         )
 
 
@@ -116,7 +124,7 @@ def validate_frequency_handoff(
         ) from error
     if (
         result.reduced_transfer_function is not reduced
-        or result.frequencies != sample_set
+        or result.frequencies is not sample_set
         or result.substitutions != normalized
         or len(result.points) != len(sample_set.frequencies)
         or tuple(point.omega for point in result.points)
@@ -232,6 +240,14 @@ def _validate_bode_result(
                 "Ein Bode-Punkt stammt nicht aus der geordneten Übergabe.",
             )
     validate_plot_decimal_limits(result.points, bode_limits)
+    _validate_segment_origins(
+        result.magnitude_segments,
+        result.points,
+    )
+    _validate_segment_origins(
+        result.phase_segments,
+        result.points,
+    )
     magnitude, phase = build_bode_segments(result.points)
     if (
         result.magnitude_segments != magnitude
@@ -251,6 +267,7 @@ def _validate_bode_result(
             DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH,
             "Der Bode-Gesamtstatus ist inkonsistent.",
         )
+    _validate_status_shape(result, expected_status)
     if result.axis_metadata != BodeAxisMetadata._create():
         raise BodeDataFailure(
             DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH,
@@ -328,6 +345,82 @@ def _validate_diagnostics(
         raise BodeDataFailure(
             DiagnosticCode.BODE_DATA_INVALID_INPUT,
             "Ein erfolgreiches Bode-Ergebnis darf keinen Fehler enthalten.",
+        )
+
+
+def _validate_segment_origins(
+    segments: tuple[BodeMagnitudeSegment | BodePhaseSegment, ...],
+    points: tuple[BodePlotPoint, ...],
+) -> None:
+    seen_point_ids: set[int] = set()
+    for expected_segment_index, segment in enumerate(segments):
+        try:
+            segment._validate()
+            segment_index = segment.segment_index
+            start = segment.start_grid_index
+            end = segment.end_grid_index
+            segment_points = segment.points
+        except (AttributeError, IndexError, TypeError, ValueError) as error:
+            raise BodeDataFailure(
+                DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH,
+                "Ein Bode-Segment ist manipuliert.",
+                (("exception", type(error).__name__),),
+            ) from error
+        if (
+            segment_index != expected_segment_index
+            or start < 0
+            or end < start
+            or end >= len(points)
+            or len(segment_points) != end - start + 1
+        ):
+            raise BodeDataFailure(
+                DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH,
+                "Bode-Segmentindizes oder -grenzen sind inkonsistent.",
+            )
+        for local_index, segment_point in enumerate(segment_points):
+            source_point = points[start + local_index]
+            point_id = id(segment_point)
+            if segment_point is not source_point or point_id in seen_point_ids:
+                raise BodeDataFailure(
+                    DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH,
+                    "Bode-Segmentpunkte stammen nicht identisch aus der "
+                    "geordneten Ergebnisfolge.",
+                )
+            seen_point_ids.add(point_id)
+
+
+def _validate_status_shape(
+    result: TransferFunctionBodeDataResult,
+    status: BodeDataStatus,
+) -> None:
+    if status is BodeDataStatus.COMPLETE and (
+        len(result.magnitude_segments) != 1
+        or len(result.phase_segments) != 1
+        or result.magnitude_segments[0].points != result.points
+        or result.phase_segments[0].points != result.points
+    ):
+        raise BodeDataFailure(
+            DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH,
+            "Vollständige Bode-Daten benötigen zwei vollständige Segmente.",
+        )
+    if status in (
+        BodeDataStatus.NO_PLOTTABLE_DATA,
+        BodeDataStatus.SYMBOLIC_UNDETERMINED,
+    ) and (result.magnitude_segments or result.phase_segments):
+        raise BodeDataFailure(
+            DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH,
+            "Nicht plotbare Bode-Daten dürfen keine Segmente enthalten.",
+        )
+    if status is BodeDataStatus.PARTIAL and (
+        not result.magnitude_segments
+        or not result.phase_segments
+        or all(point.magnitude_plottable for point in result.points)
+        or all(point.phase_plottable for point in result.points)
+    ):
+        raise BodeDataFailure(
+            DiagnosticCode.BODE_DATA_CONTEXT_MISMATCH,
+            "Partielle Bode-Daten benötigen endliche und unterbrochene "
+            "Segmente.",
         )
 
 
