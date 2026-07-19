@@ -18,6 +18,13 @@ from klausurbotpro.application._workflow_validation import (
     validate_request,
     validate_workflow_state,
 )
+from klausurbotpro.application.transfer_function_preparation_contracts import (
+    TransferFunctionPreparationResult,
+    TransferFunctionPreparationStageStatus,
+)
+from klausurbotpro.application.transfer_function_preparation_service import (
+    TransferFunctionPreparationService,
+)
 from klausurbotpro.application.transfer_function_workflow_contracts import (
     OverrideProvenance,
     RawTransferFunctionOverride,
@@ -49,10 +56,6 @@ from klausurbotpro.domain import (
     TransferFunctionStabilityAnalysisResult,
     TransferFunctionStabilityAnalyzer,
 )
-from klausurbotpro.parsing import (
-    ParserConfig,
-    SafeRationalExpressionParser,
-)
 
 _RESOURCE_ERRORS = (MemoryError, RecursionError, OverflowError)
 _DEFAULT_LIMITS = TransferFunctionWorkflowLimits()
@@ -79,59 +82,45 @@ class TransferFunctionWorkflowService:
             raise TypeError(
                 "request must be a TransferFunctionWorkflowRequest."
             )
-        errors = validate_request(request, self._limits)
-        if errors:
-            return self._invalid_request_state(request, errors)
-        try:
-            parser = self._parser_for(request)
-            if request.input_form is WorkflowInputForm.COMMON:
-                assert request.common_expression_text is not None
-                parsed = parser.parse_common(
-                    request.common_expression_text,
-                    variable_name=request.variable_name,
-                    field=request.field,
-                )
-            else:
-                assert request.numerator_expression_text is not None
-                assert request.denominator_expression_text is not None
-                parsed = parser.parse_pair(
-                    request.numerator_expression_text,
-                    request.denominator_expression_text,
-                    variable_name=request.variable_name,
-                    field=request.field,
-                )
-        except _RESOURCE_ERRORS as error:
-            return self._resource_failure_state(
-                request,
-                WorkflowStage.PARSE,
-                error,
-            )
-        if not parsed.succeeded:
+        preparation = TransferFunctionPreparationService(
+            self._limits
+        ).prepare(request)
+        preparation_records = self._workflow_preparation_records(preparation)
+        if not preparation.succeeded:
             records = (
-                self._failed_record(
-                    WorkflowStage.PARSE,
-                    parsed.diagnostics,
-                    WorkflowDiagnosticCode.WORKFLOW_PARSE_FAILED,
-                    request.field,
+                *preparation_records,
+                WorkflowStageRecord(
+                    WorkflowStage.ROOT_ANALYSIS,
+                    WorkflowStageStatus.BLOCKED,
                 ),
-                *blocked_records_after(WorkflowStage.PARSE),
+                WorkflowStageRecord(
+                    WorkflowStage.STABILITY_ANALYSIS,
+                    WorkflowStageStatus.BLOCKED,
+                ),
             )
             return self._state(
                 request=request,
-                substitutions=request.substitutions,
-                parsed_input=None,
+                substitutions=(
+                    request.substitutions
+                    if type(request.substitutions) is ParameterSubstitutions
+                    else None
+                ),
+                parsed_input=preparation.parsed_input,
+                raw_result=preparation.raw_result,
+                reduction_result=preparation.reduction_result,
                 records=records,
                 operation_sequence=0,
             )
-        assert parsed.value is not None
-        return self._run_from_parsed(
+        assert preparation.parsed_input is not None
+        assert preparation.raw_result is not None
+        assert preparation.reduction_result is not None
+        return self._run_from_reduction(
             request=request,
-            parsed_input=parsed.value,
+            parsed_input=preparation.parsed_input,
             substitutions=request.substitutions,
-            parse_record=self._success_record(
-                WorkflowStage.PARSE,
-                parsed.diagnostics,
-            ),
+            raw_result=preparation.raw_result,
+            reduction=preparation.reduction_result,
+            prefix_records=preparation_records[:2],
             operation_sequence=0,
         )
 
@@ -275,63 +264,6 @@ class TransferFunctionWorkflowService:
             sequence,
         )
 
-    def _run_from_parsed(
-        self,
-        *,
-        request: TransferFunctionWorkflowRequest,
-        parsed_input: TransferFunctionInput,
-        substitutions: ParameterSubstitutions | None,
-        parse_record: WorkflowStageRecord,
-        operation_sequence: int,
-    ) -> TransferFunctionWorkflowState:
-        factory = self._raw_factory_for(request)
-        try:
-            raw_result = factory.create(parsed_input, field=request.field)
-        except _RESOURCE_ERRORS as error:
-            return self._partial_resource_failure(
-                request=request,
-                substitutions=substitutions,
-                parsed_input=parsed_input,
-                prefix_records=(parse_record,),
-                failed_stage=WorkflowStage.RAW_TRANSFER_FUNCTION,
-                operation_sequence=operation_sequence,
-                error=error,
-            )
-        if not raw_result.succeeded:
-            records = (
-                parse_record,
-                self._failed_record(
-                    WorkflowStage.RAW_TRANSFER_FUNCTION,
-                    raw_result.diagnostics,
-                    WorkflowDiagnosticCode.WORKFLOW_RAW_FAILED,
-                    request.field,
-                ),
-                *blocked_records_after(WorkflowStage.RAW_TRANSFER_FUNCTION),
-            )
-            return self._state(
-                request=request,
-                substitutions=substitutions,
-                parsed_input=parsed_input,
-                raw_result=raw_result,
-                records=records,
-                operation_sequence=operation_sequence,
-            )
-        assert raw_result.value is not None
-        return self._run_from_raw(
-            request=request,
-            parsed_input=parsed_input,
-            substitutions=substitutions,
-            raw_result=raw_result,
-            prefix_records=(
-                parse_record,
-                self._success_record(
-                    WorkflowStage.RAW_TRANSFER_FUNCTION,
-                    raw_result.diagnostics,
-                ),
-            ),
-            operation_sequence=operation_sequence,
-        )
-
     def _run_from_raw(
         self,
         *,
@@ -385,6 +317,34 @@ class TransferFunctionWorkflowService:
             WorkflowStage.REDUCTION,
             reduction.diagnostics,
         )
+        return self._run_from_reduction(
+            request=request,
+            parsed_input=parsed_input,
+            substitutions=substitutions,
+            raw_result=raw_result,
+            reduction=reduction,
+            prefix_records=prefix_records,
+            operation_sequence=operation_sequence,
+            reduction_record=reduction_record,
+        )
+
+    def _run_from_reduction(
+        self,
+        *,
+        request: TransferFunctionWorkflowRequest,
+        parsed_input: TransferFunctionInput | None,
+        substitutions: ParameterSubstitutions | None,
+        raw_result: RawTransferFunctionCreationResult,
+        reduction: TransferFunctionReductionResult,
+        prefix_records: tuple[WorkflowStageRecord, ...],
+        operation_sequence: int,
+        reduction_record: WorkflowStageRecord | None = None,
+    ) -> TransferFunctionWorkflowState:
+        if reduction_record is None:
+            reduction_record = self._success_record(
+                WorkflowStage.REDUCTION,
+                reduction.diagnostics,
+            )
         try:
             root_result = TransferFunctionRootAnalyzer(
                 self._limits.root_analysis
@@ -972,75 +932,6 @@ class TransferFunctionWorkflowService:
             operation_sequence=sequence,
         )
 
-    def _invalid_request_state(
-        self,
-        request: TransferFunctionWorkflowRequest,
-        errors: tuple[tuple[str, str], ...],
-    ) -> TransferFunctionWorkflowState:
-        diagnostic = application_diagnostic(
-            WorkflowDiagnosticCode.WORKFLOW_INVALID_REQUEST,
-            "Der Workflow-Request ist ungültig.",
-            field=request.field if type(request.field) is str else None,
-            details=errors,
-        )
-        records = (
-            WorkflowStageRecord(
-                WorkflowStage.PARSE,
-                WorkflowStageStatus.FAILED,
-                diagnostics=(diagnostic,),
-            ),
-            *blocked_records_after(WorkflowStage.PARSE),
-        )
-        return self._state(
-            request=request,
-            substitutions=(
-                request.substitutions
-                if type(request.substitutions) is ParameterSubstitutions
-                else None
-            ),
-            parsed_input=None,
-            records=records,
-            operation_sequence=0,
-        )
-
-    def _resource_failure_state(
-        self,
-        request: TransferFunctionWorkflowRequest,
-        stage: WorkflowStage,
-        error: BaseException,
-    ) -> TransferFunctionWorkflowState:
-        diagnostic = application_diagnostic(
-            WorkflowDiagnosticCode.WORKFLOW_RESOURCE_LIMIT_EXCEEDED,
-            "Der Workflow überschreitet verfügbare Ressourcen.",
-            field=request.field,
-            details=(("exception", type(error).__name__),),
-        )
-        records = tuple(
-            WorkflowStageRecord(
-                item,
-                (
-                    WorkflowStageStatus.FAILED
-                    if item is stage
-                    else WorkflowStageStatus.BLOCKED
-                ),
-                diagnostics=(diagnostic,) if item is stage else (),
-            )
-            for item in (
-                WorkflowStage.PARSE,
-                WorkflowStage.RAW_TRANSFER_FUNCTION,
-                WorkflowStage.REDUCTION,
-                WorkflowStage.ROOT_ANALYSIS,
-                WorkflowStage.STABILITY_ANALYSIS,
-            )
-        )
-        return self._state(
-            request=request,
-            substitutions=request.substitutions,
-            parsed_input=None,
-            records=records,
-            operation_sequence=0,
-        )
-
     def _partial_resource_failure(
         self,
         *,
@@ -1199,19 +1090,6 @@ class TransferFunctionWorkflowService:
             ),
         )
 
-    def _parser_for(
-        self,
-        request: TransferFunctionWorkflowRequest,
-    ) -> SafeRationalExpressionParser:
-        return SafeRationalExpressionParser(
-            ParserConfig(
-                frozenset(
-                    (*request.allowed_parameter_names, request.variable_name)
-                ),
-                self._limits.parser,
-            )
-        )
-
     def _raw_factory_for(
         self,
         request: TransferFunctionWorkflowRequest,
@@ -1226,6 +1104,53 @@ class TransferFunctionWorkflowService:
     def _require_state(state: TransferFunctionWorkflowState) -> None:
         if type(state) is not TransferFunctionWorkflowState:
             raise TypeError("state must be a TransferFunctionWorkflowState.")
+
+    @staticmethod
+    def _workflow_preparation_records(
+        preparation: TransferFunctionPreparationResult,
+    ) -> tuple[WorkflowStageRecord, ...]:
+        records: list[WorkflowStageRecord] = []
+        workflow_stages = (
+            WorkflowStage.PARSE,
+            WorkflowStage.RAW_TRANSFER_FUNCTION,
+            WorkflowStage.REDUCTION,
+        )
+        for source, stage in zip(
+            preparation.stage_records,
+            workflow_stages,
+            strict=True,
+        ):
+            if (
+                source.status
+                is TransferFunctionPreparationStageStatus.SUCCEEDED
+            ):
+                records.append(
+                    WorkflowStageRecord(
+                        stage,
+                        WorkflowStageStatus.SUCCEEDED,
+                        WorkflowValueOrigin.COMPUTED,
+                        source.diagnostics,
+                    )
+                )
+            elif (
+                source.status
+                is TransferFunctionPreparationStageStatus.FAILED
+            ):
+                records.append(
+                    WorkflowStageRecord(
+                        stage,
+                        WorkflowStageStatus.FAILED,
+                        diagnostics=source.diagnostics,
+                    )
+                )
+            else:
+                records.append(
+                    WorkflowStageRecord(
+                        stage,
+                        WorkflowStageStatus.BLOCKED,
+                    )
+                )
+        return tuple(records)
 
 
 def _is_invalid_substitution(

@@ -1,5 +1,15 @@
 """Public application-service facade."""
 
+from klausurbotpro.application.transfer_function_preparation_contracts import (
+    TransferFunctionPreparationResult,
+    TransferFunctionPreparationStage,
+    TransferFunctionPreparationStageRecord,
+    TransferFunctionPreparationStageStatus,
+    TransferFunctionPreparationStatus,
+)
+from klausurbotpro.application.transfer_function_preparation_service import (
+    TransferFunctionPreparationService,
+)
 from klausurbotpro.application.transfer_function_request_factory import (
     ParameterInputDraft,
     TransferFunctionInputDraft,
@@ -78,6 +88,12 @@ __all__ = [
     "SourceReferenceLine",
     "TransferFunctionExpressionPair",
     "TransferFunctionInputDraft",
+    "TransferFunctionPreparationResult",
+    "TransferFunctionPreparationService",
+    "TransferFunctionPreparationStage",
+    "TransferFunctionPreparationStageRecord",
+    "TransferFunctionPreparationStageStatus",
+    "TransferFunctionPreparationStatus",
     "TransferFunctionRequestCreationResult",
     "TransferFunctionRequestFactory",
     "TransferFunctionRequestFieldError",

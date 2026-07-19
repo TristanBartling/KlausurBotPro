@@ -463,6 +463,37 @@ Application-, UI-, Plot-, Laufzeit- und Referenzabhängigkeiten im neuen
 Phasenentfaltungskern aus. Reserven, Durchtrittsfrequenzen, Nyquist, GUI und
 Berichte bleiben außerhalb dieser Phase.
 
+## Tests der gemeinsamen Transferfunktionsvorbereitung
+
+Phase 3E.1a prüft die drei festen Preparation-Stufen unabhängig von späteren
+Frequenzaufgaben. COMMON `1/(s+1)`, die getrennte Zähler-/Nennerform,
+symbolische Parameter und exakte rationale Substitutionen im unveränderten
+Request decken den vollständigen Pfad ab. Substitutionen werden dabei nicht
+angewendet. Feste Reihenfolge, abgeleitete Raw-/Reduced-Werte,
+Determinismus und öffentliche Application-Exporte werden separat geprüft.
+
+Fehlertests unterscheiden Parsefehler als `FAILED` von Raw- und
+Reduktionsfehlern als `PARTIAL`. Jeder Fall prüft den Erhalt aller validierten
+Vorgänger, die vollständig blockierte Restkette sowie die unveränderte
+Reihenfolge aus Parse-, Raw-, Reduktions- und genau einer
+Application-Diagnose. Eigene Spies erzwingen strukturierte Ressourcenfehler in
+jeder Stufe; Diagnoseüberläufe müssen den größtmöglichen vollständigen
+Präfix erhalten.
+
+Manipulationstests verändern Request, Parsed Input, Raw- und
+Reduktionsresultat, Gesamtstatus, Stufenfolge, Stufenstatus und
+Diagnoseaggregation. Die unabhängige Vertrauensgrenze reproduziert die
+mathematischen Übergaben mit denselben expliziten Workflowlimits und lehnt
+fremde oder nach einer blockierten Stufe gespeicherte Werte ab.
+
+Spies verbieten jeden Root- und Stabilitätsaufruf in der Preparation. Ein
+weiterer Spy belegt, dass `TransferFunctionWorkflowService.run()` genau einen
+Preparation-Aufruf verwendet. Sämtliche bisherigen Workflow-, Override-,
+Substitutions-, Report- und UI-Regressionen bleiben unverändert. Importtests
+schließen Root-, Stability-, UI-, Report- und Plotabhängigkeiten im neuen
+Preparation-Kern aus. Frequenzorchestrierung, GUI-Umbau und Berichte bleiben
+außerhalb dieser Phase.
+
 ## Tests des Transferfunktionsworkflows
 
 Phase 2C.1 wird als UI-unabhängige Integration der bestehenden Parser- und

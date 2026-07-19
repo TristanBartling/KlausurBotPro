@@ -42,6 +42,13 @@ Darstellungen.
 **Abnahmekriterien:** analytische Beispiele, numerische Referenzvergleiche,
 korrekte Einheiten und nachvollziehbare Plotdaten.
 
+**Implementierter Zwischenstand:** Die gemeinsame Phase-3E.1a-Preparation
+validiert und verarbeitet Transferfunktionseingaben bis zur exakten
+Reduktion. Der bestehende Vollworkflow verwendet dieselbe Pipeline; ein
+späterer Frequenzworkflow kann dadurch ohne unnötige Wurzel- und
+Stabilitätsanalyse auf dem reduzierten Wert aufsetzen. Frequenzorchestrierung,
+Bericht und GUI sind noch nicht Bestandteil dieses Zwischenstands.
+
 **Nicht enthalten:** vollständige Reglerauslegung, Wurzelortskurven-Editor,
 interaktiver Blockeditor.
 
