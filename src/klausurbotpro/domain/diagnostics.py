@@ -202,6 +202,15 @@ class DiagnosticCode(StrEnum):
     LOG_FREQUENCY_GRID_RESOURCE_LIMIT_EXCEEDED = (
         "log_frequency_grid.resource_limit_exceeded"
     )
+    BODE_DATA_INVALID_INPUT = "bode_data.invalid_input"
+    BODE_DATA_CONTEXT_MISMATCH = "bode_data.context_mismatch"
+    BODE_DATA_INVALID_GRID = "bode_data.invalid_grid"
+    BODE_DATA_FREQUENCY_ANALYSIS_FAILED = (
+        "bode_data.frequency_analysis_failed"
+    )
+    BODE_DATA_LIMIT_EXCEEDED = "bode_data.limit_exceeded"
+    BODE_DATA_NO_PLOTTABLE_DATA = "bode_data.no_plottable_data"
+    BODE_DATA_RESOURCE_LIMIT_EXCEEDED = "bode_data.resource_limit_exceeded"
 
 
 @dataclass(frozen=True, slots=True)

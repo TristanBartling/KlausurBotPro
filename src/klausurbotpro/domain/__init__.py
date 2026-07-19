@@ -1,5 +1,20 @@
 """Public domain contracts for exact mathematical expressions."""
 
+from klausurbotpro.domain.bode_data_contracts import (
+    BodeAxisMetadata,
+    BodeDataLimits,
+    BodeDataStatus,
+    BodeFrequencyQuantity,
+    BodeFrequencyScale,
+    BodeFrequencyUnit,
+    BodeMagnitudeQuantity,
+    BodeMagnitudeSegment,
+    BodePhaseConvention,
+    BodePhaseSegment,
+    BodePhaseUnit,
+    BodePlotPoint,
+    TransferFunctionBodeDataResult,
+)
 from klausurbotpro.domain.diagnostics import (
     Diagnostic,
     DiagnosticCode,
@@ -85,6 +100,9 @@ from klausurbotpro.domain.stability_analysis_contracts import (
     StabilityStatus,
     TransferFunctionStabilityAnalysisResult,
 )
+from klausurbotpro.domain.transfer_function_bode_data_analyzer import (
+    TransferFunctionBodeDataAnalyzer,
+)
 from klausurbotpro.domain.transfer_function_frequency_response_analyzer import (
     TransferFunctionFrequencyResponseAnalyzer,
 )
@@ -112,6 +130,18 @@ from klausurbotpro.domain.transfer_function_stability_analyzer import (
 )
 
 __all__ = [
+    "BodeAxisMetadata",
+    "BodeDataLimits",
+    "BodeDataStatus",
+    "BodeFrequencyQuantity",
+    "BodeFrequencyScale",
+    "BodeFrequencyUnit",
+    "BodeMagnitudeQuantity",
+    "BodeMagnitudeSegment",
+    "BodePhaseConvention",
+    "BodePhaseSegment",
+    "BodePhaseUnit",
+    "BodePlotPoint",
     "CommonTransferFunctionInput",
     "CancelledLocationNotice",
     "Diagnostic",
@@ -171,6 +201,8 @@ __all__ = [
     "StabilitySourceReference",
     "StabilityStatus",
     "TransferFunctionDomainExclusion",
+    "TransferFunctionBodeDataAnalyzer",
+    "TransferFunctionBodeDataResult",
     "TransferFunctionFrequencyResponseAnalyzer",
     "TransferFunctionFrequencyResponseResult",
     "TransferFunctionFrequencyResponseStatus",

@@ -549,6 +549,61 @@ Frequenzganganalyse, keine Bode-Plotdaten oder -serien, keine Segmentierung,
 keine Phasenentfaltung, keine Reserven, keine Nyquist-Auswertung und keine
 Application- oder GUI-Integration.
 
+## Implementierte strukturierte Bode-Plotdaten (Phase 3A.2b)
+
+`TransferFunctionBodeDataAnalyzer` verbindet ein defensiv revalidiertes
+logarithmisches Raster mit einer revalidierten `ReducedTransferFunction` und
+exakten Parametersubstitutionen. Aus allen geordneten
+`evaluation_frequency`-Werten entsteht genau ein `FrequencySampleSet`; der
+Analyzer ruft `TransferFunctionFrequencyResponseAnalyzer` genau einmal für
+dieses vollständige Tupel auf. Phase 3A.1 bleibt damit die einzige Quelle für
+`G(i*omega)`, Real- und Imaginärteil, Betrag, dB und Hauptphase. Phase 3A.2b
+führt keine zweite Frequenzgangrechnung aus.
+
+Jeder analyzerkontrollierte `BodePlotPoint` verknüpft den ursprünglichen
+`LogFrequencyGridPoint` direkt mit dem zugehörigen
+`FrequencyResponsePoint`. Die strukturierte Zielkoordinate
+`target_decimal` bleibt von der tatsächlich ausgewerteten exakten rationalen
+Frequenz getrennt. Numerischer dB-Wert und Hauptphase werden unverändert
+übernommen; insbesondere findet keine Phasenentfaltung statt. Nullantworten
+behalten den vorhandenen strukturierten dB-Wert minus unendlich und erzeugen
+keine endliche Ersatzkoordinate.
+
+Betrags- und Phasenserien werden unabhängig und ausschließlich in
+Rasterreihenfolge segmentiert. Jeder nicht plotbare Punkt beendet das offene
+Segment. Dadurch entstehen keine Linien über Nullantworten, Singularitäten
+oder symbolisch beziehungsweise numerisch unbestimmte Stellen. Es gibt weder
+Interpolation noch asymptotische Bode-Geraden. Ein-Punkt-Segmente bleiben als
+fachlich gültige zusammenhängende Bereiche erhalten.
+
+Die unveränderlichen Achsenmetadaten legen Kreisfrequenz in rad/s auf
+logarithmischer Skala, Betrag in dB sowie die Hauptphase in Grad im Bereich
+`(-180°, 180°]` fest. `BodeDataLimits` begrenzen Rasterpunkte, getrennte
+Segmentzahlen, Diagnosen und die akzeptierte bereits vorhandene
+Dezimaldarstellung. Die Dezimalgrenze rundet oder kürzt keine
+Phase-3A.1-Werte. Vor der Punktanalyse gilt die kleinere Grenze aus
+`max_grid_points` und `max_frequency_points`; bei gleichen Werten wird
+deterministisch `max_grid_points` als aktive Grenze gemeldet.
+
+Eine interne Vertrauensgrenze revalidiert Raster, vollständiges
+Phase-3A.1-Ergebnis, geordnete Punktidentitäten, Statusmatrix, Segmente,
+Metadaten, Diagnoseaggregation und alle drei expliziten Limitverträge.
+Jeder Segmentpunkt muss dabei durch Objektidentität direkt aus dem durch seine
+inklusiven Grenzen bezeichneten Ausschnitt der übergeordneten Punktfolge
+stammen; wertgleiche Kopien werden nicht akzeptiert.
+Fehlerhafte Kontexte und manipulierte Zwischenergebnisse liefern ein
+wertfreies `FAILED`; erfolgreiche Diagnosen folgen Raster, Phase 3A.1,
+punktbezogenen Bode-Diagnosen und globalen Bode-Diagnosen in dieser festen
+Reihenfolge.
+
+Die eingebetteten Raster- und Frequenzantwortpunkte erhalten bereits alle
+strukturierten Werte für einen späteren Rechenweg von `G(s)` über
+`s = i*omega`, Punktwert, Real- und Imaginärteil, Betrag, dB und Hauptphase
+bis zu charakteristischen Punkten, Unterbrechungen und zusammenhängenden
+Bereichen. Phase 3A.2b erzeugt selbst keinen Bericht. Sie enthält außerdem
+keine GUI, Plotbibliothek, Phasenentfaltung, Reserven, Nyquist-Auswertung,
+Stabilitätsentscheidung oder automatische asymptotische Geraden.
+
 ## Implementierter Transferfunktionsworkflow (Phase 2C.1)
 
 Die UI-unabhängige Application-Schicht orchestriert den vorhandenen sicheren
