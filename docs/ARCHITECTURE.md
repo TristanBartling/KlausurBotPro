@@ -411,6 +411,40 @@ Aufgabe 2 für einfache Pole bei null beziehungsweise auf der imaginären Achse
 als grenzstabile Fälle. Quellenreferenzen gehören zum Ergebnisnachweis, nicht
 zur mathematischen Statusidentität.
 
+## Implementierter Transferfunktionsworkflow (Phase 2C.1)
+
+Die UI-unabhängige Application-Schicht orchestriert den vorhandenen sicheren
+Parser und die vier Domainstufen Raw-Erzeugung, Reduktion, Wurzelanalyse und
+Stabilitätsanalyse. COMMON- und SEPARATED-Eingaben verwenden ausschließlich
+`SafeRationalExpressionParser`; es existiert kein zweiter Parser- oder
+String-zu-SymPy-Pfad. Parser-, Domain- und Application-Diagnosen bleiben als
+strukturierte Objekte erhalten.
+
+Jeder unveränderliche Workflowzustand enthält fünf Records in fester
+Stufenreihenfolge. Der Endstatus `NOT_EVALUATED`, `SUCCEEDED`, `FAILED` oder
+`BLOCKED` ist von der Wertherkunft `COMPUTED` oder `OVERRIDDEN` getrennt.
+Invalidierung ist ausschließlich ein interner Übergang: gespeichert wird nach
+der synchronen Neuberechnung nur der neue Endzustand. Ein fachlich
+erfolgreiches `SYMBOLIC_UNDETERMINED` bleibt deshalb `SUCCEEDED`.
+
+Schlägt eine Stufe fehl, bleiben alle davor entstandenen Parser- und
+Domainteilresultate referenziert; spätere Stufen sind `BLOCKED`. Diagnosen
+werden primär je StageRecord gehalten und daraus ohne Umformulierung,
+Deduplizierung oder Umsortierung aggregiert. Eine nichtnegative,
+deterministische Operationssequenz ersetzt Zeitstempel und Zufallskennungen.
+
+Raw-, Reduced- und Root-Overrides besitzen explizite Provenienz. Ein
+Raw-Override verwirft Reduced- und Root-Overrides, ein Reduced-Override erhält
+Raw und verwirft Root, ein Root-Override erhält beide Upstream-Overrides.
+Substitutionsänderungen erhalten Raw und Reduced und berechnen Root und
+Stabilität neu. Jeder Override wird durch die vorhandenen defensiven
+Domainpfade revalidiert. Ein unabhängiger Reduced-Override wird als aktiver
+Wert geführt, ohne fälschlich einen Reduktionsbericht oder eine Herleitung aus
+dem Raw-Wert zu behaupten. Stabilität ist nicht direkt überschreibbar.
+
+Phase 2C.1 führt keine Revisionen, Wiederherstellung, Serialisierung,
+Persistenz, GUI, PDF-/Quellenfunktionen oder neue Fachverfahren ein.
+
 ## Offene Architekturentscheidungen
 
 - genaue Grenzen und Repräsentationen weiterer Domain-Modelle
