@@ -1,5 +1,12 @@
 """Public application-service facade."""
 
+from klausurbotpro.application.transfer_function_request_factory import (
+    ParameterInputDraft,
+    TransferFunctionInputDraft,
+    TransferFunctionRequestCreationResult,
+    TransferFunctionRequestFactory,
+    TransferFunctionRequestFieldError,
+)
 from klausurbotpro.application.transfer_function_solution_report_builder import (
     TransferFunctionSolutionReportBuilder,
 )
@@ -54,6 +61,7 @@ __all__ = [
     "EquationLine",
     "OverrideProvenance",
     "OverrideLine",
+    "ParameterInputDraft",
     "RawTransferFunctionOverride",
     "ReducedTransferFunctionOverride",
     "ReportDiagnostic",
@@ -69,6 +77,10 @@ __all__ = [
     "SolutionSectionStatus",
     "SourceReferenceLine",
     "TransferFunctionExpressionPair",
+    "TransferFunctionInputDraft",
+    "TransferFunctionRequestCreationResult",
+    "TransferFunctionRequestFactory",
+    "TransferFunctionRequestFieldError",
     "TransferFunctionSolutionReport",
     "TransferFunctionSolutionReportBuilder",
     "TransferFunctionWorkflowLimits",

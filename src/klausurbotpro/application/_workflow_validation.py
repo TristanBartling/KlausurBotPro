@@ -47,7 +47,7 @@ def validate_request(
         return (("request", "invalid_type"),)
     if type(request.input_form) is not WorkflowInputForm:
         errors.append(("input_form", "invalid"))
-    if not _safe_name(request.variable_name):
+    if not _is_safe_workflow_identifier(request.variable_name):
         errors.append(("variable_name", "invalid"))
     if request.field is not None and type(request.field) is not str:
         errors.append(("field", "invalid"))
@@ -59,7 +59,7 @@ def validate_request(
     else:
         if names != tuple(sorted(set(names))):
             errors.append(("allowed_parameter_names", "not_sorted_unique"))
-        if any(not _safe_name(name) for name in names):
+        if any(not _is_safe_workflow_identifier(name) for name in names):
             errors.append(("allowed_parameter_names", "unsafe_identifier"))
         if request.variable_name in names:
             errors.append(("allowed_parameter_names", "contains_variable"))
@@ -741,7 +741,9 @@ def _substitutions_match(
     )
 
 
-def _safe_name(value: object) -> bool:
+def _is_safe_workflow_identifier(value: object) -> bool:
+    """Return whether a value follows the workflow's safe-name contract."""
+
     return (
         type(value) is str
         and value.isidentifier()
