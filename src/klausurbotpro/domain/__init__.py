@@ -6,6 +6,16 @@ from klausurbotpro.domain.diagnostics import (
     DiagnosticSeverity,
 )
 from klausurbotpro.domain.expression import ExactExpression
+from klausurbotpro.domain.frequency_response_contracts import (
+    DecibelValueKind,
+    FrequencyResponseLimits,
+    FrequencyResponsePoint,
+    FrequencyResponsePointStatus,
+    FrequencySampleSet,
+    NumericalDecibelValue,
+    TransferFunctionFrequencyResponseResult,
+    TransferFunctionFrequencyResponseStatus,
+)
 from klausurbotpro.domain.parameter_substitutions import (
     ExactRationalValue,
     ParameterAssignment,
@@ -63,6 +73,9 @@ from klausurbotpro.domain.stability_analysis_contracts import (
     StabilityStatus,
     TransferFunctionStabilityAnalysisResult,
 )
+from klausurbotpro.domain.transfer_function_frequency_response_analyzer import (
+    TransferFunctionFrequencyResponseAnalyzer,
+)
 from klausurbotpro.domain.transfer_function_input import (
     CommonTransferFunctionInput,
     SeparatedTransferFunctionInput,
@@ -92,13 +105,19 @@ __all__ = [
     "Diagnostic",
     "DiagnosticCode",
     "DiagnosticSeverity",
+    "DecibelValueKind",
     "ExactExpression",
     "ExactRationalValue",
     "ExactRootValue",
     "ExplicitExactRootValue",
+    "FrequencyResponseLimits",
+    "FrequencyResponsePoint",
+    "FrequencyResponsePointStatus",
+    "FrequencySampleSet",
     "ConjugateStatus",
     "NumericalRootEstimate",
     "NumericalRootWarning",
+    "NumericalDecibelValue",
     "ParameterAssignment",
     "ParameterSubstitutions",
     "Polynomial",
@@ -132,6 +151,9 @@ __all__ = [
     "StabilitySourceReference",
     "StabilityStatus",
     "TransferFunctionDomainExclusion",
+    "TransferFunctionFrequencyResponseAnalyzer",
+    "TransferFunctionFrequencyResponseResult",
+    "TransferFunctionFrequencyResponseStatus",
     "TransferFunctionInput",
     "TransferFunctionInputForm",
     "TransferFunctionPrerequisite",

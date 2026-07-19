@@ -411,6 +411,74 @@ Aufgabe 2 für einfache Pole bei null beziehungsweise auf der imaginären Achse
 als grenzstabile Fälle. Quellenreferenzen gehören zum Ergebnisnachweis, nicht
 zur mathematischen Statusidentität.
 
+## Implementierte punktweise Frequenzganganalyse (Phase 3A.1)
+
+`TransferFunctionFrequencyResponseAnalyzer` verarbeitet ausschließlich eine
+defensiv revalidierte `ReducedTransferFunction`, eine endliche streng
+aufsteigende Liste nichtnegativer `ExactRationalValue`-Frequenzen und optionale
+exakte Parametersubstitutionen. Die Auswertung setzt intern ausschließlich
+`s = i*omega` ein. Sie führt weder Parser noch Reduktion, Wurzelsuche oder
+Stabilitätsentscheidung erneut aus.
+
+Für jeden Frequenzpunkt werden Zähler und Nenner getrennt exakt spezialisiert.
+Erst nach einer exakten Nennernullprüfung entstehen der komplexe Wert, sein
+Real- und Imaginärteil sowie das Betragsquadrat
+`Re(G)**2 + Im(G)**2`. Erhaltene Voraussetzungen und
+Definitionsausschlüsse bleiben wirksam. Ein Nullnenner oder ein bei dieser
+Frequenz verschwindender Definitionsausschluss wird als `SINGULAR`
+klassifiziert und erzeugt keine erfundenen endlichen Werte. Eine exakte
+Nullantwort besitzt den eigenen Status `ZERO_RESPONSE`, Betrag null, einen
+strukturierten dB-Wert minus unendlich und keine definierte Phase.
+
+Unvollständige exakte Parameterbelegungen werden punktweise konservativ
+behandelt. Verschwindet ein unbelegter Parameter durch die konkrete
+Frequenzeinsetzung nachweislich, darf der Punkt vollständig bestimmt werden;
+andernfalls bleibt er `SYMBOLIC_UNDETERMINED`. Unbekannte, komplexe,
+Gleitkomma- oder nichtkanonische Parameterwerte werden nicht geschätzt.
+
+Numerische Dezimalstrings werden ausschließlich aus den exakten
+parameterfreien Ergebnissen abgeleitet und sind keine binäre
+Gleitkomma-Identität. Der Betrag wird aus dem exakten Betragsquadrat berechnet,
+der dB-Wert numerisch als `20*log10(abs(G))` und die Hauptphase mit
+quadrantenrichtiger `atan2`-Semantik im Bereich `(-180°, 180°]`. Es findet
+keine Phasenentfaltung statt. Ein numerischer Darstellungsfehler erhält
+`NUMERIC_UNDETERMINED`, ohne die exakten Punktwerte zu verwerfen.
+
+Eigene positive Grenzen beschränken Frequenzpunkte und -ziffern, Parameter,
+Polynomgrad, Definitionsausschlüsse, Ausdrucksknoten, kumulierte
+Zwischenoperationen, numerische Präzision und Dezimalexponenten. Alle
+Frequenzen und der vollständige Kontext werden vor der ersten Punktrechnung
+validiert. Erwartbare Speicher-, Rekursions- und Überlauffehler werden
+strukturiert gekapselt; ein harter In-Process-Timeout wird nicht behauptet.
+
+Die gesamte verschachtelte Eingangsprüfung liegt innerhalb einer klaren
+defensiven Validierungsgrenze. Manipulierte Ausdrücke, Polynome,
+Voraussetzungen, Definitionsausschlüsse und abgeleitete Kontextfelder können
+keine erwartbaren Attribut-, Index-, Typ- oder Wertfehler nach außen tragen.
+Ein `FAILED`-Ergebnis enthält ausschließlich seine Fehlerdiagnose; reduzierte
+Funktion, Frequenzen, Substitutionen und Punkte bleiben leer, damit keine
+ungeprüften Eingaben als vertrauenswürdiger Snapshot erscheinen.
+
+Auch `FrequencyResponsePoint` ist analyzerkontrolliert. Punktstatus,
+Wertvollständigkeit und erforderlicher Diagnosecode werden bei der internen
+Erzeugung und erneut durch das Gesamtergebnis geprüft. Die Ergebnisdiagnosen
+sind exakt die geordnete Konkatenation der Punktdiagnosen. Eine einzige
+Statusableitung gilt für Analyzer und Ergebnisvertrag: Nur vollständig
+definierte Punkte einschließlich Nullantworten ergeben `COMPLETE`.
+`SYMBOLIC_UNDETERMINED` verlangt mindestens einen symbolisch unbestimmten
+Punkt und zugleich weder einen vollständig numerischen noch einen
+`NUMERIC_UNDETERMINED`-Punkt; bekannte Singularitäten dürfen daneben stehen.
+Jede andere erfolgreiche Mischung ist `PARTIAL`, insbesondere ausschließlich
+singuläre oder numerisch unbestimmte Ergebnisse.
+
+Die fachliche Grundlage sind `skript.pdf`, Abschnitt 3.3.1, Definition 3.19
+für Amplituden- und Phasengang sowie
+`Regelungstechnik_Tutorium_komplett.pdf`, Tutorium 04 für `s = i*omega`,
+Betrag, Phase, `20*log10(abs(G))` und Ortskurven. Tutorium 06 begründet den
+späteren Ausbau. Phase 3A.1 enthält ausdrücklich noch keine automatischen
+Frequenzraster, Plotdaten, asymptotischen Bode-Geraden, Standardgliederkennung,
+Reserven, Nyquist-Umschlingungen oder Stabilitätsaussagen.
+
 ## Implementierter Transferfunktionsworkflow (Phase 2C.1)
 
 Die UI-unabhängige Application-Schicht orchestriert den vorhandenen sicheren
