@@ -1,5 +1,20 @@
 """Public application-service facade."""
 
+from klausurbotpro.application.frequency_domain_workflow_contracts import (
+    FrequencyDomainWorkflowDiagnosticCode,
+    FrequencyDomainWorkflowLimits,
+    FrequencyDomainWorkflowMode,
+    FrequencyDomainWorkflowRequest,
+    FrequencyDomainWorkflowResult,
+    FrequencyDomainWorkflowStage,
+    FrequencyDomainWorkflowStageRecord,
+    FrequencyDomainWorkflowStageStatus,
+    FrequencyDomainWorkflowStatus,
+    FrequencyPhasePresentation,
+)
+from klausurbotpro.application.frequency_domain_workflow_service import (
+    FrequencyDomainWorkflowService,
+)
 from klausurbotpro.application.transfer_function_preparation_contracts import (
     TransferFunctionPreparationResult,
     TransferFunctionPreparationStage,
@@ -69,6 +84,17 @@ from klausurbotpro.application.transfer_function_workflow_service import (
 __all__ = [
     "ConditionLine",
     "EquationLine",
+    "FrequencyDomainWorkflowDiagnosticCode",
+    "FrequencyDomainWorkflowLimits",
+    "FrequencyDomainWorkflowMode",
+    "FrequencyDomainWorkflowRequest",
+    "FrequencyDomainWorkflowResult",
+    "FrequencyDomainWorkflowService",
+    "FrequencyDomainWorkflowStage",
+    "FrequencyDomainWorkflowStageRecord",
+    "FrequencyDomainWorkflowStageStatus",
+    "FrequencyDomainWorkflowStatus",
+    "FrequencyPhasePresentation",
     "OverrideProvenance",
     "OverrideLine",
     "ParameterInputDraft",
