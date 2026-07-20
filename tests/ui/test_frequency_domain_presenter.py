@@ -581,6 +581,24 @@ def test_bode_selection_updates_latex_point_without_recomputing_workflow() -> No
     )
 
 
+def test_new_calculation_resets_selected_bode_row() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    draft = _draft(
+        "1/(s+1)",
+        mode=FrequencyDomainWorkflowMode.BODE,
+        omega_min="1/10",
+        omega_max="10",
+        points="4",
+    )
+    _run_all_requests(presenter, draft)
+    presenter.select_bode_row(2)
+    assert presenter.state.selected_bode_index == 2
+
+    _run_all_requests(presenter, draft)
+
+    assert presenter.state.selected_bode_index == 0
+
+
 def test_refined_bode_latex_names_only_added_support_frequencies() -> None:
     presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
     _run_all_requests(

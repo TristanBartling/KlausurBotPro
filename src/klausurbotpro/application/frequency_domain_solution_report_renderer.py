@@ -299,12 +299,12 @@ def _point_solution(
                 rf"\approx {decibel}\,\mathrm{{dB}}\]"
             ),
             r"\textbf{5. Phase:}",
-            rf"\[\varphi({omega})={phase}^\circ\]",
+            rf"\[\varphi({omega})\approx {phase}^\circ\]",
             (
                 rf"\[\boxed{{G({argument})={exact_value},\quad "
                 rf"|G({argument})|\approx {magnitude},\quad "
                 rf"L({omega})\approx {decibel}\,\mathrm{{dB}},\quad "
-                rf"\varphi({omega})={phase}^\circ}}\]"
+                rf"\varphi({omega})\approx {phase}^\circ}}\]"
             ),
         )
     )

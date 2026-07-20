@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from klausurbotpro.application.transfer_function_solution_report_contracts import (
     ReportMathExpression,
@@ -135,7 +135,7 @@ def compact_decimal_text(value: str) -> str:
         return value
     try:
         number = Decimal(value)
-    except ValueError:
+    except (InvalidOperation, ValueError):
         return value
     if not number.is_finite() or number.is_zero():
         return value

@@ -16,6 +16,9 @@ from klausurbotpro.application import (
     WorkflowInputForm,
     render_frequency_domain_solution_latex,
 )
+from klausurbotpro.application._solution_report_formatting import (
+    compact_decimal_text,
+)
 from klausurbotpro.domain import FrequencyResponsePointStatus
 
 
@@ -77,7 +80,8 @@ def test_single_point_pt1_is_copyable_compact_and_uses_engineering_j() -> None:
     assert r"|G(\mathrm{j})|^2=\frac{1}{2}" in latex
     assert r"|G(\mathrm{j})|\approx 0.707107" in latex
     assert r"L(1)=20\log_{10}|G(\mathrm{j})|\approx -3.0103" in latex
-    assert r"\varphi(1)=-45^\circ" in latex
+    assert r"\varphi(1)\approx -45^\circ" in latex
+    assert r"\varphi(1)=-45^\circ" not in latex
     assert r"\boxed{" in latex
     assert re.search(r"\d+\.\d{12,}", latex) is None
 
@@ -232,3 +236,8 @@ def test_renderer_source_contains_no_analysis_or_workflow_execution() -> None:
         "float(",
     ):
         assert forbidden not in source
+
+
+def test_compact_decimal_text_keeps_invalid_decimal_text_safe() -> None:
+    assert compact_decimal_text("not-a-decimal") == "not-a-decimal"
+    assert compact_decimal_text("0.7071067811865475") == "0.707107"
