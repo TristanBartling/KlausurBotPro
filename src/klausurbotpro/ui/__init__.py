@@ -1,5 +1,19 @@
 """Public PySide6 desktop UI facade."""
 
+from klausurbotpro.ui.frequency_domain_presenter import (
+    FrequencyDomainPresenter,
+)
+from klausurbotpro.ui.frequency_domain_view_state import (
+    FrequencyDomainDiagnosticView,
+    FrequencyDomainSinglePointView,
+    FrequencyDomainSummaryView,
+    FrequencyDomainTableRow,
+    FrequencyDomainUiRunStatus,
+    FrequencyDomainViewState,
+)
+from klausurbotpro.ui.frequency_domain_workspace import (
+    FrequencyDomainWorkspace,
+)
 from klausurbotpro.ui.main_window import MainWindow
 from klausurbotpro.ui.transfer_function_presenter import (
     TransferFunctionPresenter,
@@ -13,12 +27,22 @@ from klausurbotpro.ui.transfer_function_workspace import (
     TransferFunctionWorkspace,
 )
 from klausurbotpro.ui.workflow_worker import (
+    FrequencyDomainWorkflowWorker,
     TransferFunctionWorkflowExecutionResult,
     TransferFunctionWorkflowWorker,
     WorkflowWorkerFailure,
 )
 
 __all__ = [
+    "FrequencyDomainDiagnosticView",
+    "FrequencyDomainPresenter",
+    "FrequencyDomainSinglePointView",
+    "FrequencyDomainSummaryView",
+    "FrequencyDomainTableRow",
+    "FrequencyDomainUiRunStatus",
+    "FrequencyDomainViewState",
+    "FrequencyDomainWorkflowWorker",
+    "FrequencyDomainWorkspace",
     "MainWindow",
     "TransferFunctionPresenter",
     "TransferFunctionReportView",

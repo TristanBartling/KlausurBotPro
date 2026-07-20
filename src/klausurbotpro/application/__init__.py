@@ -1,5 +1,11 @@
 """Public application-service facade."""
 
+from klausurbotpro.application.frequency_domain_request_factory import (
+    FrequencyDomainInputDraft,
+    FrequencyDomainRequestCreationResult,
+    FrequencyDomainRequestFactory,
+    FrequencyDomainRequestFieldError,
+)
 from klausurbotpro.application.frequency_domain_workflow_contracts import (
     FrequencyDomainWorkflowDiagnosticCode,
     FrequencyDomainWorkflowLimits,
@@ -85,6 +91,10 @@ __all__ = [
     "ConditionLine",
     "EquationLine",
     "FrequencyDomainWorkflowDiagnosticCode",
+    "FrequencyDomainInputDraft",
+    "FrequencyDomainRequestCreationResult",
+    "FrequencyDomainRequestFactory",
+    "FrequencyDomainRequestFieldError",
     "FrequencyDomainWorkflowLimits",
     "FrequencyDomainWorkflowMode",
     "FrequencyDomainWorkflowRequest",

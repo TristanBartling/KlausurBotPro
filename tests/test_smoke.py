@@ -21,7 +21,11 @@ def test_main_window_has_expected_content_and_shutdown() -> None:
 
     assert window.windowTitle() == APP_NAME
     assert isinstance(window, MainWindow)
-    assert window.centralWidget() is window.workspace
+    assert window.centralWidget() is window.workspace_tabs
+    assert window.workspace_tabs.widget(0) is window.workspace
+    assert window.workspace_tabs.widget(1) is window.frequency_workspace
+    assert window.workspace_tabs.tabText(0) == "Transferfunktion"
+    assert window.workspace_tabs.tabText(1) == "Frequenzbereich"
     assert window.worker_thread.isRunning()
 
     assert window.shutdown()
