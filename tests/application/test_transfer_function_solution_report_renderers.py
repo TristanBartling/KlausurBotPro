@@ -28,6 +28,11 @@ from klausurbotpro.application import (
 from klausurbotpro.application import (
     transfer_function_solution_report_builder as report_builder_module,
 )
+from klausurbotpro.domain import (
+    ExactRationalValue,
+    ParameterAssignment,
+    ParameterSubstitutions,
+)
 
 
 def _state(expression: str) -> TransferFunctionWorkflowState:
@@ -97,8 +102,8 @@ def test_renderers_are_deterministic_and_do_not_mutate_report() -> None:
     assert "\x1b[" not in first_plain
     assert "\\begin{document}" not in first_latex
     assert "\\xRightarrow" not in first_latex
-    assert "s_{1}" in first_latex
-    assert r"\mathrm{Re}(s_{1})" in first_latex
+    assert "p_{1}" in first_latex
+    assert r"\operatorname{Re}(p_{1})" in first_latex
     for internal_value in _INTERNAL_OUTPUT_TOKENS:
         assert internal_value not in first_plain
         assert internal_value not in first_latex
@@ -377,3 +382,61 @@ def test_renderers_reject_wrong_top_level_types() -> None:
         render_solution_report_plaintext(object())  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="TransferFunctionSolutionReport"):
         render_solution_report_latex(object())  # type: ignore[arg-type]
+
+
+def test_unstable_report_quantifies_only_one_right_half_plane_pole() -> None:
+    report = TransferFunctionSolutionReportBuilder().build(
+        _state("(s+3)/(s^2-s-2)")
+    )
+
+    latex = render_solution_report_latex(report)
+
+    assert r"\[z_{1} = -3" in latex
+    assert r"\[p_{1} = 2" in latex
+    assert r"\[p_{2} = -1" in latex
+    assert r"\operatorname{Re}(p_{1}) = 2" in latex
+    assert r"\exists i:\operatorname{Re}(p_i) > 0" in latex
+    assert r"\operatorname{Re}(p_i) > 0" in latex
+    assert r"\[\operatorname{Re}(p_i) > 0\]" not in latex
+    assert r"\Longrightarrow \boxed{\mbox{System ist instabil.}}" in latex
+
+
+def test_parameter_substitution_shows_existing_specialized_transfer_value() -> None:
+    substitutions = ParameterSubstitutions(
+        (
+            ParameterAssignment("K", ExactRationalValue(2)),
+            ParameterAssignment("T", ExactRationalValue(1, 5)),
+        )
+    )
+    state = TransferFunctionWorkflowService().run(
+        TransferFunctionWorkflowRequest(
+            WorkflowInputForm.COMMON,
+            common_expression_text="K/(T*s+1)",
+            allowed_parameter_names=("K", "T"),
+            substitutions=substitutions,
+        )
+    )
+
+    latex = render_solution_report_latex(
+        TransferFunctionSolutionReportBuilder().build(state)
+    )
+
+    assert (
+        r"\left.G(s)\right|_{K=2,\,T=\frac{1}{5}}"
+        r" = \frac{2}{\frac{s}{5} + 1}"
+    ) in latex
+    assert r"\[p_{1} = -5" in latex
+    assert r"\operatorname{Re}(p_{1}) = -5" in latex
+    assert r"\Longrightarrow \boxed{\mbox{System ist E/A-stabil.}}" in latex
+
+
+def test_complex_poles_use_control_engineering_j_in_latex() -> None:
+    report = TransferFunctionSolutionReportBuilder().build(
+        _state("1/(s^2+4*s+13)")
+    )
+
+    latex = render_solution_report_latex(report)
+
+    assert r"\[p_{1} = -2 - 3 \mathrm{j}" in latex
+    assert r"\[p_{2} = -2 + 3 \mathrm{j}" in latex
+    assert r"3 i" not in latex

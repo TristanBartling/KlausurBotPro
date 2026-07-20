@@ -142,6 +142,10 @@ def test_presenter_dispatches_one_exact_single_point_request() -> None:
     assert presenter.state.single_point.magnitude == "0.707107"
     assert presenter.state.single_point.decibel == "-3.0103"
     assert presenter.state.single_point.principal_phase == "-45"
+    assert r"\section*{Lösung}" in presenter.state.latex_report
+    assert r"G(\mathrm{j})=\frac{1}{1 + \mathrm{j}}" in (
+        presenter.state.latex_report
+    )
 
 
 def test_zero_response_and_singularity_have_no_invented_values() -> None:
@@ -551,3 +555,46 @@ def test_refinement_limit_keeps_complete_base_result_with_hint() -> None:
     assert presenter.state.rows
     assert "Frequenzlimit" in presenter.state.general_message
     assert "Basisergebnis" in presenter.state.general_message
+
+
+def test_bode_selection_updates_latex_point_without_recomputing_workflow() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    requests = _run_all_requests(
+        presenter,
+        _draft(
+            "1/(s+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/10",
+            omega_max="10",
+            points="4",
+        ),
+    )
+    initial = presenter.state.latex_report
+
+    presenter.select_bode_row(2)
+
+    assert len(requests) == 1
+    assert presenter.state.selected_bode_index == 2
+    assert presenter.state.latex_report != initial
+    assert r"\section*{Ausgewählter Tabellenpunkt}" in (
+        presenter.state.latex_report
+    )
+
+
+def test_refined_bode_latex_names_only_added_support_frequencies() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    _run_all_requests(
+        presenter,
+        _draft(
+            "1/(s^2+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/10",
+            omega_max="10",
+            points="4",
+        ),
+    )
+
+    latex = presenter.state.latex_report
+    assert "Automatisch ergänzte Stützstellen" in latex
+    assert r"\frac{99}{100}\,\mathrm{rad/s}" in latex
+    assert r"\frac{101}{100}\,\mathrm{rad/s}" in latex

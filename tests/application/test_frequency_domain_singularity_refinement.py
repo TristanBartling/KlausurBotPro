@@ -108,6 +108,24 @@ def test_existing_explicit_point_is_not_duplicated() -> None:
     )
 
 
+def test_existing_singularity_frequency_keeps_combined_request_sorted() -> None:
+    limits = FrequencyDomainWorkflowLimits()
+    result = _result(explicit="1", limits=limits)
+
+    plan = FrequencyDomainSingularityRefinementPlanner().plan(result, limits)
+
+    assert plan.refined_request is not None
+    assert plan.refined_request.grid_request is not None
+    assert plan.refined_request.grid_request.explicit_frequencies == (
+        ExactRationalValue(99, 100),
+        ExactRationalValue(1),
+        ExactRationalValue(101, 100),
+    )
+    assert FrequencyDomainWorkflowService(limits).run(
+        plan.refined_request
+    ).succeeded
+
+
 def test_refinement_respects_existing_grid_bounds() -> None:
     limits = FrequencyDomainWorkflowLimits()
     result = _result(omega_min="1", omega_max="10", limits=limits)

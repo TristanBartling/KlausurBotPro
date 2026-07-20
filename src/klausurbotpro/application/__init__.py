@@ -11,6 +11,9 @@ from klausurbotpro.application.frequency_domain_singularity_refinement import (
     FrequencyDomainSingularityRefinementPlanner,
     FrequencyDomainSingularityRefinementReason,
 )
+from klausurbotpro.application.frequency_domain_solution_report_renderer import (
+    render_frequency_domain_solution_latex,
+)
 from klausurbotpro.application.frequency_domain_workflow_contracts import (
     FrequencyDomainWorkflowDiagnosticCode,
     FrequencyDomainWorkflowLimits,
@@ -160,4 +163,5 @@ __all__ = [
     "WarningLine",
     "render_solution_report_latex",
     "render_solution_report_plaintext",
+    "render_frequency_domain_solution_latex",
 ]

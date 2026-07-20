@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from klausurbotpro.application.transfer_function_solution_report_contracts import (
     ReportMathExpression,
     TransferFunctionExpressionPair,
@@ -124,6 +126,29 @@ def numerical_root_text(real: str, imaginary: str) -> str:
     return f"{real} {sign} {magnitude}*i"
 
 
+def compact_decimal_text(value: str) -> str:
+    """Limit an existing decimal presentation to about six significant digits."""
+
+    if type(value) is not str:
+        raise TypeError("value must be a string.")
+    if not value:
+        return value
+    try:
+        number = Decimal(value)
+    except ValueError:
+        return value
+    if not number.is_finite() or number.is_zero():
+        return value
+    exponent = number.adjusted()
+    if exponent >= 6 or exponent <= -4:
+        return f"{number:.5E}".replace("E+", "e+").replace("E-", "e-")
+    decimal_places = max(0, 5 - exponent)
+    formatted = f"{number:.{decimal_places}f}"
+    if "." in formatted:
+        formatted = formatted.rstrip("0").rstrip(".")
+    return formatted
+
+
 def _rootof_polynomial(
     coefficients: tuple[int, ...],
     variable_name: str,
@@ -230,6 +255,7 @@ def _escape_latex_text(value: str) -> str:
 
 
 __all__ = [
+    "compact_decimal_text",
     "descriptive_math",
     "exact_expression",
     "exact_rational",

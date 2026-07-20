@@ -164,6 +164,7 @@ def test_bode_row_selection_updates_numerical_worked_steps() -> None:
 
     workspace.value_table.setCurrentCell(2, 0)
     _app().processEvents()
+    selected_latex = workspace.latex_report_edit.toPlainText()
     text = workspace.worked_steps_edit.toPlainText()
     assert "Numerische Kurzlösung" not in text
     assert "Gegeben:" in text
@@ -186,6 +187,33 @@ def test_bode_row_selection_updates_numerical_worked_steps() -> None:
     updated = workspace.worked_steps_edit.toPlainText()
     assert "Bode-Tabellenzeile 4" in updated
     assert "Bode-Tabellenzeile 3" not in updated
+    assert workspace.latex_report_edit.toPlainText() != selected_latex
+    workspace.close()
+
+
+def test_latex_tab_is_read_only_and_copies_exact_visible_text() -> None:
+    workspace, requests = _workspace()
+    workspace.common_expression_edit.setPlainText("1/(s+1)")
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    request = requests[0]
+    assert type(request) is FrequencyDomainWorkflowRequest
+    workspace.presenter.accept_result(FrequencyDomainWorkflowService().run(request))
+    _app().processEvents()
+
+    visible = workspace.latex_report_edit.toPlainText()
+    assert workspace.result_tabs.tabText(workspace.latex_tab_index) == (
+        "LaTeX-Lösung"
+    )
+    assert workspace.latex_report_edit.isReadOnly()
+    assert visible
+    assert workspace.copy_latex_button.isEnabled()
+
+    QTest.mouseClick(
+        workspace.copy_latex_button,
+        Qt.MouseButton.LeftButton,
+    )
+
+    assert QApplication.clipboard().text() == visible
     workspace.close()
 
 

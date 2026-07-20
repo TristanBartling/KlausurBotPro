@@ -147,7 +147,12 @@ class FrequencyDomainSingularityRefinementPlanner:
             grid_request.omega_min,
             grid_request.omega_max,
             grid_request.points_per_decade,
-            grid_request.explicit_frequencies + added,
+            tuple(
+                sorted(
+                    grid_request.explicit_frequencies + added,
+                    key=cmp_to_key(_compare_rationals),
+                )
+            ),
         )
         refined_request = FrequencyDomainWorkflowRequest(
             request.preparation_request,
