@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -16,10 +18,12 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSplitter,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -52,26 +56,38 @@ _SUMMARY_FIELDS = (
     ("phase_unwrap", "Phasenentfaltung"),
 )
 _SINGLE_FIELDS = (
-    ("omega", "ω"),
+    ("omega", "ω [rad/s]"),
     ("status", "Punktstatus"),
     ("complex_value", "G(jω)"),
     ("real_part", "Realteil"),
     ("imaginary_part", "Imaginärteil"),
     ("magnitude", "Betrag"),
     ("decibel", "dB"),
-    ("principal_phase", "Hauptphase"),
+    ("principal_phase", "Hauptphase [°]"),
 )
 _TABLE_HEADERS = (
     "Index",
-    "Ziel-ω",
-    "Auswertungs-ω",
+    "Ziel-ω [rad/s]",
+    "Auswertungs-ω [rad/s]",
     "Status",
     "Realteil",
     "Imaginärteil",
     "Betrag",
     "dB",
-    "Hauptphase",
-    "Entfaltete Phase",
+    "Hauptphase [°]",
+    "Entfaltete Phase [°]",
+)
+_TABLE_FIELDS = (
+    "index",
+    "target_omega",
+    "evaluation_omega",
+    "status",
+    "real_part",
+    "imaginary_part",
+    "magnitude",
+    "decibel",
+    "principal_phase",
+    "unwrapped_phase",
 )
 _FIELD_LABELS = {
     "common_expression_text": "Gemeinsamer Ausdruck",
@@ -178,20 +194,50 @@ class FrequencyDomainWorkspace(QWidget):
             ("Hauptphase", "Hauptphase und entfaltete Phase")
         )
 
+        self.input_help_label = QLabel(
+            "<b>Übertragungsfunktion:</b> aus Aufgabenstellung oder "
+            "Blockschaltbild.<br>"
+            "<b>ω_min und ω_max:</b> aus Diagrammachsen oder "
+            "Aufgabenstellung; die App erfindet keine Grenzen.<br>"
+            "<b>Punkte pro Dekade:</b> numerische App-Auflösung; der "
+            "Standardwert 4 kann meist bleiben.<br>"
+            "<b>Explizite Frequenzen:</b> optional für zusätzliche "
+            "Tabellenpunkte.<br>"
+            "<b>Hauptphase:</b> Winkel im üblichen Hauptwertebereich.<br>"
+            "<b>Entfaltete Phase:</b> kontinuierliche Zusatzdarstellung "
+            "durch ±360°-Verschiebungen, keine andere physikalische Phase."
+        )
+        self.input_help_label.setObjectName("frequencyInputHelp")
+        self.input_help_label.setWordWrap(True)
+        self.input_help_label.setTextFormat(Qt.TextFormat.RichText)
+        help_group = QGroupBox("Was muss ich aus der Aufgabe übernehmen?")
+        help_layout = QVBoxLayout(help_group)
+        help_layout.addWidget(self.input_help_label)
+
         frequency_form = QFormLayout()
         frequency_form.addRow("Modus:", self.mode_combo)
         frequency_form.addRow("Kreisfrequenz ω:", self.single_frequency_edit)
         frequency_form.addRow("ω_min:", self.omega_min_edit)
         frequency_form.addRow("ω_max:", self.omega_max_edit)
-        frequency_form.addRow(
+        frequency_form.addRow("Phasendarstellung:", self.phase_combo)
+        self.advanced_grid_group = QGroupBox(
+            "Erweiterte Rastereinstellungen"
+        )
+        advanced_grid_layout = QFormLayout(self.advanced_grid_group)
+        advanced_grid_layout.addRow(
             "Punkte pro Dekade:",
             self.points_per_decade_edit,
         )
-        frequency_form.addRow(
+        advanced_grid_layout.addRow(
             "Explizite Frequenzen:",
             self.explicit_frequencies_edit,
         )
-        frequency_form.addRow("Phasendarstellung:", self.phase_combo)
+        self.points_per_decade_edit.setToolTip(
+            "Numerische Rasterauflösung der App; Standardwert 4 genügt meist."
+        )
+        self.explicit_frequencies_edit.setToolTip(
+            "Optional: zusätzliche gewünschte Tabellenfrequenzen."
+        )
 
         self.calculate_button = QPushButton("Frequenzbereich berechnen")
         self.calculate_button.setObjectName("calculateFrequencyDomain")
@@ -202,6 +248,7 @@ class FrequencyDomainWorkspace(QWidget):
 
         input_group = QGroupBox("Frequenzbereichseingabe")
         input_layout = QVBoxLayout(input_group)
+        input_layout.addWidget(help_group)
         input_layout.addLayout(form_switch)
         input_layout.addWidget(self.input_stack)
         base_form = QFormLayout()
@@ -211,6 +258,7 @@ class FrequencyDomainWorkspace(QWidget):
         input_layout.addWidget(self.parameter_table)
         input_layout.addLayout(parameter_actions)
         input_layout.addLayout(frequency_form)
+        input_layout.addWidget(self.advanced_grid_group)
         input_layout.addLayout(input_actions)
 
         self.summary_labels: dict[str, QLabel] = {}
@@ -241,6 +289,17 @@ class FrequencyDomainWorkspace(QWidget):
         self.value_table = QTableWidget(0, len(_TABLE_HEADERS))
         self.value_table.setObjectName("frequencyValueTable")
         self.value_table.setHorizontalHeaderLabels(_TABLE_HEADERS)
+        target_header = self.value_table.horizontalHeaderItem(1)
+        evaluation_header = self.value_table.horizontalHeaderItem(2)
+        assert target_header is not None
+        assert evaluation_header is not None
+        target_header.setToolTip(
+            "Ziel-ω ist der gewünschte logarithmische Rasterwert."
+        )
+        evaluation_header.setToolTip(
+            "Auswertungs-ω ist der zertifizierte rationale Wert, "
+            "an dem tatsächlich gerechnet wurde."
+        )
         self.value_table.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
         )
@@ -257,7 +316,7 @@ class FrequencyDomainWorkspace(QWidget):
         self.diagnostic_table = QTableWidget(0, 3)
         self.diagnostic_table.setObjectName("frequencyDiagnostics")
         self.diagnostic_table.setHorizontalHeaderLabels(
-            ("Severity", "Meldung", "Feld")
+            ("Schweregrad", "Meldung", "Feld")
         )
         self.diagnostic_table.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
@@ -278,15 +337,90 @@ class FrequencyDomainWorkspace(QWidget):
         diagnostics_layout = QVBoxLayout(diagnostics_group)
         diagnostics_layout.addWidget(self.diagnostic_table)
 
+        overview_page = QWidget()
+        overview_layout = QVBoxLayout(overview_page)
+        overview_layout.addWidget(summary_group)
+        overview_layout.addWidget(self.single_group)
+        overview_layout.addStretch(1)
+
+        table_page = QWidget()
+        table_layout = QVBoxLayout(table_page)
+        table_explanation = QLabel(
+            "<b>Ziel-ω:</b> gewünschter logarithmischer Rasterwert. "
+            "<b>Auswertungs-ω:</b> zertifizierter rationaler Rechenwert. "
+            "Der vollständige Wert steht im Tooltip jeder Zelle."
+        )
+        table_explanation.setWordWrap(True)
+        table_layout.addWidget(table_explanation)
+        table_layout.addWidget(self.value_table, 1)
+
+        self.plot_figure = Figure(figsize=(7.0, 5.0), layout="constrained")
+        plot_axes = self.plot_figure.subplots(2, 1)
+        self.magnitude_axes = plot_axes[0]
+        self.phase_axes = plot_axes[1]
+        self.plot_canvas = FigureCanvasQTAgg(  # type: ignore[no-untyped-call]
+            self.plot_figure
+        )
+        self.plot_canvas.setObjectName("frequencyBodeCanvas")
+        self.plot_page = QWidget()
+        plot_layout = QVBoxLayout(self.plot_page)
+        plot_layout.addWidget(self.plot_canvas, 1)
+
+        self.worked_steps_edit = QPlainTextEdit()
+        self.worked_steps_edit.setObjectName("frequencyWorkedSteps")
+        self.worked_steps_edit.setReadOnly(True)
+        self.worked_steps_edit.setPlaceholderText(
+            "Nach einer Berechnung erscheinen hier vorhandene numerische "
+            "Zwischenergebnisse."
+        )
+        worked_page = QWidget()
+        worked_layout = QVBoxLayout(worked_page)
+        worked_heading = QLabel(
+            "<b>Numerischer Rechenweg</b><br>"
+            "Darstellung vorhandener Resultate; keine asymptotische "
+            "Bode-Konstruktion."
+        )
+        worked_heading.setWordWrap(True)
+        worked_layout.addWidget(worked_heading)
+        worked_layout.addWidget(self.worked_steps_edit, 1)
+
+        diagnostics_page = QWidget()
+        diagnostics_page_layout = QVBoxLayout(diagnostics_page)
+        diagnostics_page_layout.addWidget(diagnostics_group)
+
+        self.result_tabs = QTabWidget()
+        self.result_tabs.setObjectName("frequencyResultTabs")
+        self.overview_tab_index = self.result_tabs.addTab(
+            overview_page,
+            "Ergebnisübersicht",
+        )
+        self.table_tab_index = self.result_tabs.addTab(
+            table_page,
+            "Wertetabelle",
+        )
+        self.plot_tab_index = self.result_tabs.addTab(
+            self.plot_page,
+            "Diagramme",
+        )
+        self.worked_tab_index = self.result_tabs.addTab(
+            worked_page,
+            "Numerischer Rechenweg",
+        )
+        self.diagnostics_tab_index = self.result_tabs.addTab(
+            diagnostics_page,
+            "Diagnosen",
+        )
+
         result_widget = QWidget()
         result_layout = QVBoxLayout(result_widget)
-        result_layout.addWidget(summary_group)
-        result_layout.addWidget(self.single_group)
-        result_layout.addWidget(self.value_table, 1)
-        result_layout.addWidget(diagnostics_group)
+        result_layout.addWidget(self.result_tabs, 1)
 
+        input_scroll = QScrollArea()
+        input_scroll.setObjectName("frequencyInputScroll")
+        input_scroll.setWidgetResizable(True)
+        input_scroll.setWidget(input_group)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.splitter.addWidget(input_group)
+        self.splitter.addWidget(input_scroll)
         self.splitter.addWidget(result_widget)
         self.splitter.setSizes((380, 720))
         self.status_label = QLabel("Bereit.")
@@ -307,6 +441,9 @@ class FrequencyDomainWorkspace(QWidget):
         self.calculate_button.clicked.connect(self.calculate)
         self.reset_button.clicked.connect(self.reset_workspace)
         self.presenter.state_changed.connect(self.render_state)
+        self.value_table.currentCellChanged.connect(
+            self._selected_row_changed
+        )
         self._shortcuts = (
             QShortcut(QKeySequence("Ctrl+Return"), self),
             QShortcut(QKeySequence("Ctrl+Enter"), self),
@@ -402,6 +539,7 @@ class FrequencyDomainWorkspace(QWidget):
     def render_state(self, value: object) -> None:
         if type(value) is not FrequencyDomainViewState:
             raise TypeError("value must be FrequencyDomainViewState.")
+        self._rendered_state = value
         running = value.run_status is FrequencyDomainUiRunStatus.RUNNING
         for widget in (
             self.common_radio,
@@ -426,6 +564,9 @@ class FrequencyDomainWorkspace(QWidget):
             self.single_labels[name].setText(getattr(value.single_point, name))
         self.single_group.setVisible(bool(value.single_point.status))
         self._render_rows(value)
+        self.result_tabs.setTabVisible(self.plot_tab_index, value.plot.visible)
+        self._render_plot(value)
+        self._render_worked_steps(value, 0)
         self._render_diagnostics(value)
         self._focus_field(value.focused_field)
 
@@ -433,25 +574,117 @@ class FrequencyDomainWorkspace(QWidget):
         self.value_table.setUpdatesEnabled(False)
         self.value_table.setRowCount(len(state.rows))
         for row_index, row in enumerate(state.rows):
-            for column, name in enumerate(row.__dataclass_fields__):
-                self.value_table.setItem(
-                    row_index,
-                    column,
-                    QTableWidgetItem(getattr(row, name)),
-                )
+            for column, name in enumerate(_TABLE_FIELDS):
+                item = QTableWidgetItem(getattr(row, name))
+                item.setToolTip(row.tooltips[column])
+                self.value_table.setItem(row_index, column, item)
         self.value_table.setUpdatesEnabled(True)
+        if state.rows:
+            self.value_table.setCurrentCell(0, 0)
+
+    def _render_plot(self, state: FrequencyDomainViewState) -> None:
+        self.magnitude_axes.clear()
+        self.phase_axes.clear()
+        for axes, ylabel in (
+            (self.magnitude_axes, "Betrag [dB]"),
+            (self.phase_axes, "Phase [°]"),
+        ):
+            axes.set_xscale("log")
+            axes.set_xlabel("ω [rad/s]")
+            axes.set_ylabel(ylabel)
+            axes.grid(True, which="both", alpha=0.35)
+
+        for segment in state.plot.magnitude_segments:
+            self.magnitude_axes.plot(
+                [float(value) for value in segment.x_values],
+                [float(value) for value in segment.y_values],
+                marker="o",
+                markersize=4,
+            )
+        for segment_index, segment in enumerate(
+            state.plot.principal_phase_segments
+        ):
+            self.phase_axes.plot(
+                [float(value) for value in segment.x_values],
+                [float(value) for value in segment.y_values],
+                marker="o",
+                markersize=4,
+                label="Hauptphase" if segment_index == 0 else None,
+            )
+        for segment_index, segment in enumerate(
+            state.plot.unwrapped_phase_segments
+        ):
+            self.phase_axes.plot(
+                [float(value) for value in segment.x_values],
+                [float(value) for value in segment.y_values],
+                marker="s",
+                markersize=4,
+                linestyle="--",
+                label="Entfaltete Phase" if segment_index == 0 else None,
+            )
+        if state.plot.unwrapped_phase_segments:
+            self.phase_axes.legend()
+        if state.plot.no_data_message:
+            for axes in (self.magnitude_axes, self.phase_axes):
+                axes.text(
+                    0.5,
+                    0.5,
+                    state.plot.no_data_message,
+                    ha="center",
+                    va="center",
+                    transform=axes.transAxes,
+                )
+        self.plot_canvas.draw_idle()  # type: ignore[no-untyped-call]
+
+    def _render_worked_steps(
+        self,
+        state: FrequencyDomainViewState,
+        row_index: int,
+    ) -> None:
+        lines = ["Allgemein", "---------"]
+        lines.extend(
+            f"{label}: {value}"
+            for label, value in state.worked_steps.general_lines
+        )
+        details = state.worked_steps.point_details
+        if details:
+            selected = min(max(row_index, 0), len(details) - 1)
+            detail = details[selected]
+            lines.extend(("", detail.heading, "-" * len(detail.heading)))
+            lines.extend(
+                f"{label}: {value}" for label, value in detail.lines
+            )
+        self.worked_steps_edit.setPlainText("\n".join(lines))
+
+    @Slot(int, int, int, int)
+    def _selected_row_changed(
+        self,
+        current_row: int,
+        _current_column: int,
+        _previous_row: int,
+        _previous_column: int,
+    ) -> None:
+        if hasattr(self, "_rendered_state"):
+            self._render_worked_steps(
+                self._rendered_state,
+                max(current_row, 0),
+            )
 
     def _render_diagnostics(self, state: FrequencyDomainViewState) -> None:
         rows = tuple(
             (
-                diagnostic.severity.upper(),
+                {
+                    "error": "Fehler",
+                    "warning": "Warnung",
+                    "info": "Hinweis",
+                }.get(diagnostic.severity, diagnostic.severity),
                 diagnostic.message,
                 diagnostic.field,
             )
             for diagnostic in state.diagnostics
         ) + tuple(
             (
-                "ERROR",
+                "Fehler",
                 error.message,
                 _FIELD_LABELS.get(error.field, error.field),
             )

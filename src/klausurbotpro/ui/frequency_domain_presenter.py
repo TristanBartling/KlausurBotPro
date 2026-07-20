@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+from typing import Any
+
 from PySide6.QtCore import QObject, Signal, Slot
 
 from klausurbotpro.application import (
@@ -17,6 +20,10 @@ from klausurbotpro.ui.frequency_domain_view_state import (
     FrequencyDomainTableRow,
     FrequencyDomainUiRunStatus,
     FrequencyDomainViewState,
+    FrequencyPointDetailView,
+    PlotSegmentView,
+    PlotView,
+    WorkedStepsView,
 )
 from klausurbotpro.ui.workflow_worker import WorkflowWorkerFailure
 
@@ -30,6 +37,14 @@ _POINT_STATUS_LABELS = {
     "singular": "Singularität",
     "symbolic_undetermined": "Symbolisch unbestimmt",
     "numeric_undetermined": "Numerisch unbestimmt",
+}
+_STATUS_LABELS = {
+    "complete": "Vollständig",
+    "partial": "Teilresultat",
+    "failed": "Fehlgeschlagen",
+    "no_plottable_data": "Keine darstellbaren Daten",
+    "symbolic_undetermined": "Symbolisch unbestimmt",
+    "no_phase_data": "Keine Phasendaten",
 }
 
 
@@ -97,6 +112,8 @@ class FrequencyDomainPresenter(QObject):
                 summary=_summary(value),
                 single_point=_single_point(value),
                 rows=_rows(value),
+                plot=_plot(value),
+                worked_steps=_worked_steps(value),
                 diagnostics=tuple(
                     FrequencyDomainDiagnosticView(
                         diagnostic.severity.value,
@@ -146,6 +163,8 @@ class FrequencyDomainPresenter(QObject):
                 summary=self._state.summary,
                 single_point=self._state.single_point,
                 rows=self._state.rows,
+                plot=self._state.plot,
+                worked_steps=self._state.worked_steps,
                 diagnostics=self._state.diagnostics,
                 request_errors=self._state.request_errors,
                 focused_field=self._state.focused_field,
@@ -160,22 +179,24 @@ class FrequencyDomainPresenter(QObject):
 
 def _summary(result: FrequencyDomainWorkflowResult) -> FrequencyDomainSummaryView:
     if result.request is None:
-        return FrequencyDomainSummaryView(workflow_status=result.status.value)
+        return FrequencyDomainSummaryView(
+            workflow_status=_status_text(result.status.value)
+        )
     response = result.active_frequency_response_result
     frequency_count = 0 if response is None else len(response.points)
     bode = result.bode_data_result
     single = result.single_point_result
     domain_status = (
-        bode.status.value
+        _status_text(bode.status.value)
         if bode is not None
         else (
             ""
             if single is None or not single.points
-            else single.points[0].status.value
+            else _POINT_STATUS_LABELS[single.points[0].status.value]
         )
     )
     return FrequencyDomainSummaryView(
-        workflow_status=result.status.value,
+        workflow_status=_status_text(result.status.value),
         mode=_MODE_LABELS[result.request.mode.value],
         reduced_transfer_function=_reduced_text(result),
         substitutions=_substitutions_text(result),
@@ -236,27 +257,278 @@ def _rows(
             for point in segment.points
         }
     )
-    return tuple(
-        FrequencyDomainTableRow(
-            index=str(index + 1),
-            target_omega=point.target_decimal.decimal_text,
-            evaluation_omega=_rational_text(point.evaluation_frequency),
-            status=_POINT_STATUS_LABELS[
+    rows: list[FrequencyDomainTableRow] = []
+    for index, point in enumerate(bode.points):
+        full_values = (
+            str(index + 1),
+            point.target_decimal.decimal_text,
+            _rational_text(point.evaluation_frequency),
+            _POINT_STATUS_LABELS[
                 point.frequency_response_point.status.value
             ],
-            real_part=_optional(point.frequency_response_point.numerical_real),
-            imaginary_part=_optional(
-                point.frequency_response_point.numerical_imaginary
-            ),
-            magnitude=_optional(
-                point.frequency_response_point.numerical_magnitude
-            ),
-            decibel=_decibel_text(point.numerical_decibel),
-            principal_phase=_optional(point.principal_phase_degrees),
-            unwrapped_phase=unwrapped.get(index, ""),
+            _optional(point.frequency_response_point.numerical_real),
+            _optional(point.frequency_response_point.numerical_imaginary),
+            _optional(point.frequency_response_point.numerical_magnitude),
+            _decibel_text(point.numerical_decibel),
+            _optional(point.principal_phase_degrees),
+            unwrapped.get(index, ""),
         )
-        for index, point in enumerate(bode.points)
+        displayed = (
+            full_values[0],
+            _short_number(full_values[1]),
+            _short_rational(point.evaluation_frequency),
+            full_values[3],
+            _short_number(full_values[4]),
+            _short_number(full_values[5]),
+            _short_number(full_values[6]),
+            _short_number(full_values[7]),
+            _short_number(full_values[8]),
+            _short_number(full_values[9]),
+        )
+        rows.append(FrequencyDomainTableRow(*displayed, full_values))
+    return tuple(rows)
+
+
+def _plot(result: FrequencyDomainWorkflowResult) -> PlotView:
+    request = result.request
+    if request is None or request.mode.value != "bode":
+        return PlotView()
+    bode = result.bode_data_result
+    if bode is None:
+        return PlotView(
+            visible=True,
+            no_data_message="Für diesen Bode-Lauf liegen keine Diagrammdaten vor.",
+        )
+    magnitude_segments = tuple(
+        PlotSegmentView(
+            tuple(point.target_decimal.decimal_text for point in segment.points),
+            tuple(
+                point.numerical_decibel.decimal_value or ""
+                for point in segment.points
+                if point.numerical_decibel is not None
+            ),
+        )
+        for segment in bode.magnitude_segments
     )
+    principal_segments = tuple(
+        PlotSegmentView(
+            tuple(point.target_decimal.decimal_text for point in segment.points),
+            tuple(point.principal_phase_degrees or "" for point in segment.points),
+        )
+        for segment in bode.phase_segments
+    )
+    unwrap = result.phase_unwrap_result
+    unwrapped_segments = (
+        ()
+        if unwrap is None
+        else tuple(
+            PlotSegmentView(
+                tuple(
+                    point.source_point.target_decimal.decimal_text
+                    for point in segment.points
+                ),
+                tuple(
+                    point.unwrapped_phase_degrees for point in segment.points
+                ),
+            )
+            for segment in unwrap.segments
+        )
+    )
+    no_data_message = (
+        ""
+        if magnitude_segments or principal_segments
+        else "Keine darstellbaren Bode-Daten vorhanden."
+    )
+    return PlotView(
+        visible=True,
+        magnitude_segments=magnitude_segments,
+        principal_phase_segments=principal_segments,
+        unwrapped_phase_segments=unwrapped_segments,
+        no_data_message=no_data_message,
+    )
+
+
+def _worked_steps(result: FrequencyDomainWorkflowResult) -> WorkedStepsView:
+    if result.request is None:
+        return WorkedStepsView()
+    general_lines = (
+        ("Übertragungsfunktion (Eingabe)", _input_expression_text(result)),
+        ("Reduzierte Übertragungsfunktion", _reduced_text(result)),
+        ("Ansatz", "s = jω"),
+        ("Parameterbelegungen", _substitutions_text(result)),
+        ("Frequenzdefinition", _frequency_definition_text(result)),
+    )
+    response = result.active_frequency_response_result
+    if response is None:
+        return WorkedStepsView(general_lines=general_lines)
+
+    bode = result.bode_data_result
+    unwrapped_by_grid: dict[int, Any] = {}
+    magnitude_segments: dict[int, int] = {}
+    phase_segments: dict[int, int] = {}
+    if bode is not None:
+        for magnitude_segment in bode.magnitude_segments:
+            for grid_index in range(
+                magnitude_segment.start_grid_index,
+                magnitude_segment.end_grid_index + 1,
+            ):
+                magnitude_segments[grid_index] = (
+                    magnitude_segment.segment_index + 1
+                )
+        for phase_segment in bode.phase_segments:
+            for grid_index in range(
+                phase_segment.start_grid_index,
+                phase_segment.end_grid_index + 1,
+            ):
+                phase_segments[grid_index] = phase_segment.segment_index + 1
+    if result.phase_unwrap_result is not None:
+        unwrapped_by_grid = {
+            point.grid_index: point
+            for segment in result.phase_unwrap_result.segments
+            for point in segment.points
+        }
+
+    details: list[FrequencyPointDetailView] = []
+    for index, point in enumerate(response.points):
+        target = ""
+        if bode is not None:
+            target = bode.points[index].target_decimal.decimal_text
+        lines: list[tuple[str, str]] = [
+            ("ω", f"{_rational_text(point.omega)} rad/s"),
+            (
+                "Spezialisierter Zähler",
+                point.specialized_numerator.canonical_text,
+            ),
+            (
+                "Spezialisierter Nenner",
+                point.specialized_denominator.canonical_text,
+            ),
+            ("G(jω)", _expression_text(point.exact_complex_value)),
+            ("Realteil (exakt)", _expression_text(point.exact_real_part)),
+            ("Realteil (numerisch)", _optional(point.numerical_real)),
+            (
+                "Imaginärteil (exakt)",
+                _expression_text(point.exact_imaginary_part),
+            ),
+            (
+                "Imaginärteil (numerisch)",
+                _optional(point.numerical_imaginary),
+            ),
+            (
+                "Betragsquadrat",
+                _expression_text(point.exact_magnitude_squared),
+            ),
+            ("Betrag", _optional(point.numerical_magnitude)),
+            (
+                "L(ω) = 20 log10(|G(jω)|)",
+                _decibel_text(point.numerical_decibel),
+            ),
+            (
+                "Hauptphase",
+                _degree_text(point.numerical_phase_degrees),
+            ),
+            ("Punktstatus", _POINT_STATUS_LABELS[point.status.value]),
+            (
+                "Diagnosen",
+                "keine"
+                if not point.diagnostics
+                else " | ".join(item.message for item in point.diagnostics),
+            ),
+        ]
+        if bode is not None:
+            lines[0:0] = [
+                ("Ziel-ω", f"{target} rad/s"),
+                (
+                    "Auswertungs-ω",
+                    f"{_rational_text(point.omega)} rad/s",
+                ),
+            ]
+            unwrap_point = unwrapped_by_grid.get(index)
+            lines.extend(
+                (
+                    (
+                        "Entfaltete Phase",
+                        ""
+                        if unwrap_point is None
+                        else _degree_text(
+                            unwrap_point.unwrapped_phase_degrees
+                        ),
+                    ),
+                    (
+                        "360°-Offset",
+                        ""
+                        if unwrap_point is None
+                        else f"{unwrap_point.phase_offset_turns} × 360°",
+                    ),
+                    (
+                        "Plotsegment",
+                        _segment_text(
+                            magnitude_segments.get(index),
+                            phase_segments.get(index),
+                        ),
+                    ),
+                )
+            )
+        details.append(
+            FrequencyPointDetailView(
+                (
+                    "Einzelpunkt"
+                    if bode is None
+                    else f"Bode-Tabellenzeile {index + 1}"
+                ),
+                tuple(lines),
+            )
+        )
+    return WorkedStepsView(general_lines, tuple(details))
+
+
+def _input_expression_text(result: FrequencyDomainWorkflowResult) -> str:
+    assert result.request is not None
+    preparation = result.request.preparation_request
+    if preparation.input_form.value == "common":
+        return preparation.common_expression_text or ""
+    return (
+        f"({preparation.numerator_expression_text}) / "
+        f"({preparation.denominator_expression_text})"
+    )
+
+
+def _frequency_definition_text(result: FrequencyDomainWorkflowResult) -> str:
+    assert result.request is not None
+    request = result.request
+    if request.single_angular_frequency is not None:
+        return f"ω = {_rational_text(request.single_angular_frequency)} rad/s"
+    grid = request.grid_request
+    if grid is None:
+        return ""
+    explicit = (
+        "keine"
+        if not grid.explicit_frequencies
+        else ", ".join(
+            _rational_text(value) for value in grid.explicit_frequencies
+        )
+    )
+    return (
+        f"ω_min={_rational_text(grid.omega_min)} rad/s; "
+        f"ω_max={_rational_text(grid.omega_max)} rad/s; "
+        f"{grid.points_per_decade} Punkte pro Dekade; "
+        f"explizite Frequenzen: {explicit}"
+    )
+
+
+def _segment_text(
+    magnitude_segment: int | None,
+    phase_segment: int | None,
+) -> str:
+    if magnitude_segment is None and phase_segment is None:
+        return "Unterbrechung – kein darstellbares Segment"
+    magnitude = (
+        "Unterbrechung"
+        if magnitude_segment is None
+        else str(magnitude_segment)
+    )
+    phase = "Unterbrechung" if phase_segment is None else str(phase_segment)
+    return f"Betrag: {magnitude}; Phase: {phase}"
 
 
 def _reduced_text(result: FrequencyDomainWorkflowResult) -> str:
@@ -299,6 +571,42 @@ def _decibel_text(value: object | None) -> str:
 
 def _optional(value: str | None) -> str:
     return "" if value is None else value
+
+
+def _degree_text(value: str | None) -> str:
+    return "" if value is None else f"{value}°"
+
+
+def _status_text(value: str) -> str:
+    return _STATUS_LABELS.get(value, _POINT_STATUS_LABELS.get(value, value))
+
+
+def _short_number(value: str) -> str:
+    if not value or value == "−∞":
+        return value
+    try:
+        number = Decimal(value)
+    except ValueError:
+        return value
+    if not number.is_finite() or number.is_zero():
+        return value
+    exponent = number.adjusted()
+    if exponent >= 6 or exponent <= -4:
+        return f"{number:.5E}".replace("E+", "e+").replace("E-", "e-")
+    decimal_places = max(0, 5 - exponent)
+    formatted = f"{number:.{decimal_places}f}"
+    if "." in formatted:
+        formatted = formatted.rstrip("0").rstrip(".")
+    return formatted
+
+
+def _short_rational(value: object) -> str:
+    full = _rational_text(value)
+    if len(full) <= 12:
+        return full
+    numerator = value.numerator  # type: ignore[attr-defined]
+    denominator = value.denominator  # type: ignore[attr-defined]
+    return _short_number(str(Decimal(numerator) / Decimal(denominator)))
 
 
 def _diagnostic_focus(result: FrequencyDomainWorkflowResult) -> str | None:

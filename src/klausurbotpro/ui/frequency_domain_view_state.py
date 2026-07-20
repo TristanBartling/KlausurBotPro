@@ -67,13 +67,100 @@ class FrequencyDomainTableRow:
     decibel: str
     principal_phase: str
     unwrapped_phase: str
+    tooltips: tuple[str, ...]
 
     def __post_init__(self) -> None:
         if any(
             type(getattr(self, field)) is not str
             for field in self.__dataclass_fields__
+            if field != "tooltips"
         ):
             raise TypeError("Frequency table rows may contain only strings.")
+        if (
+            type(self.tooltips) is not tuple
+            or len(self.tooltips) != 10
+            or any(type(value) is not str for value in self.tooltips)
+        ):
+            raise TypeError("Frequency table tooltips must contain ten strings.")
+
+
+@dataclass(frozen=True, slots=True)
+class PlotSegmentView:
+    x_values: tuple[str, ...]
+    y_values: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.x_values) is not tuple
+            or type(self.y_values) is not tuple
+            or not self.x_values
+            or len(self.x_values) != len(self.y_values)
+            or any(type(value) is not str for value in self.x_values)
+            or any(type(value) is not str for value in self.y_values)
+        ):
+            raise TypeError("Plot segments require equally sized string tuples.")
+
+
+@dataclass(frozen=True, slots=True)
+class PlotView:
+    visible: bool = False
+    magnitude_segments: tuple[PlotSegmentView, ...] = ()
+    principal_phase_segments: tuple[PlotSegmentView, ...] = ()
+    unwrapped_phase_segments: tuple[PlotSegmentView, ...] = ()
+    no_data_message: str = ""
+
+    def __post_init__(self) -> None:
+        if type(self.visible) is not bool:
+            raise TypeError("Plot visibility must be a bool.")
+        for name in (
+            "magnitude_segments",
+            "principal_phase_segments",
+            "unwrapped_phase_segments",
+        ):
+            values = getattr(self, name)
+            if type(values) is not tuple or any(
+                type(value) is not PlotSegmentView for value in values
+            ):
+                raise TypeError(f"{name} must contain plot segment views.")
+        if type(self.no_data_message) is not str:
+            raise TypeError("The plot message must be a string.")
+
+
+@dataclass(frozen=True, slots=True)
+class FrequencyPointDetailView:
+    heading: str = ""
+    lines: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        if type(self.heading) is not str or type(self.lines) is not tuple:
+            raise TypeError("Point details require a heading and line tuple.")
+        if any(
+            type(line) is not tuple
+            or len(line) != 2
+            or any(type(value) is not str for value in line)
+            for line in self.lines
+        ):
+            raise TypeError("Point detail lines must be string pairs.")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkedStepsView:
+    general_lines: tuple[tuple[str, str], ...] = ()
+    point_details: tuple[FrequencyPointDetailView, ...] = ()
+
+    def __post_init__(self) -> None:
+        if type(self.general_lines) is not tuple or any(
+            type(line) is not tuple
+            or len(line) != 2
+            or any(type(value) is not str for value in line)
+            for line in self.general_lines
+        ):
+            raise TypeError("Worked-step lines must be string pairs.")
+        if type(self.point_details) is not tuple or any(
+            type(value) is not FrequencyPointDetailView
+            for value in self.point_details
+        ):
+            raise TypeError("Worked steps require point detail views.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +185,8 @@ class FrequencyDomainViewState:
         FrequencyDomainSinglePointView()
     )
     rows: tuple[FrequencyDomainTableRow, ...] = ()
+    plot: PlotView = PlotView()
+    worked_steps: WorkedStepsView = WorkedStepsView()
     diagnostics: tuple[FrequencyDomainDiagnosticView, ...] = ()
     request_errors: tuple[FrequencyDomainRequestFieldError, ...] = ()
     focused_field: str | None = None
@@ -110,6 +199,10 @@ class FrequencyDomainViewState:
             raise TypeError("summary has an invalid type.")
         if type(self.single_point) is not FrequencyDomainSinglePointView:
             raise TypeError("single_point has an invalid type.")
+        if type(self.plot) is not PlotView:
+            raise TypeError("plot has an invalid type.")
+        if type(self.worked_steps) is not WorkedStepsView:
+            raise TypeError("worked_steps has an invalid type.")
         for values, value_type, name in (
             (self.rows, FrequencyDomainTableRow, "rows"),
             (
@@ -136,10 +229,14 @@ class FrequencyDomainViewState:
 
 
 __all__ = [
+    "FrequencyPointDetailView",
     "FrequencyDomainDiagnosticView",
     "FrequencyDomainSummaryView",
     "FrequencyDomainSinglePointView",
     "FrequencyDomainTableRow",
     "FrequencyDomainUiRunStatus",
     "FrequencyDomainViewState",
+    "PlotSegmentView",
+    "PlotView",
+    "WorkedStepsView",
 ]

@@ -214,3 +214,167 @@ def test_diagnostics_are_projected_once_in_original_order() -> None:
     assert tuple(item.message for item in presenter.state.diagnostics) == tuple(
         item.message for item in result.diagnostics
     )
+
+
+def test_visible_statuses_are_german_and_long_values_keep_full_tooltips() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    _execute(
+        presenter,
+        _draft(
+            "1/(s+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/100",
+            omega_max="100",
+            points="4",
+        ),
+    )
+
+    assert presenter.state.summary.workflow_status == "Vollständig"
+    assert presenter.state.summary.domain_status == "Vollständig"
+    assert "complete" not in tuple(
+        getattr(presenter.state.summary, name)
+        for name in presenter.state.summary.__dataclass_fields__
+    )
+    row = presenter.state.rows[1]
+    assert len(row.real_part) <= 12
+    assert row.tooltips[4]
+    assert row.tooltips[4] != row.real_part
+
+
+def test_single_point_worked_steps_use_existing_exact_and_numeric_values() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    _execute(
+        presenter,
+        _draft(
+            "1/(s+1)",
+            mode=FrequencyDomainWorkflowMode.SINGLE_POINT,
+            single="1",
+        ),
+    )
+
+    assert not presenter.state.plot.visible
+    assert len(presenter.state.worked_steps.point_details) == 1
+    general = dict(presenter.state.worked_steps.general_lines)
+    detail = dict(presenter.state.worked_steps.point_details[0].lines)
+    assert general["Ansatz"] == "s = jω"
+    assert general["Reduzierte Übertragungsfunktion"] == "(1) / (s + 1)"
+    assert detail["ω"] == "1 rad/s"
+    assert detail["Spezialisierter Zähler"] == "1"
+    assert detail["Spezialisierter Nenner"] == "1 + I"
+    assert detail["G(jω)"] == "1/2 - I/2"
+    assert detail["Betragsquadrat"] == "1/2"
+    assert detail["L(ω) = 20 log10(|G(jω)|)"]
+    assert detail["Hauptphase"].endswith("°")
+    assert detail["Punktstatus"] == "Definiert"
+
+
+def test_pt1_plot_projection_preserves_principal_domain_segments() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    _execute(
+        presenter,
+        _draft(
+            "1/(s+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/100",
+            omega_max="100",
+            points="4",
+        ),
+    )
+
+    plot = presenter.state.plot
+    assert plot.visible
+    assert len(plot.magnitude_segments) == 1
+    assert len(plot.principal_phase_segments) == 1
+    assert not plot.unwrapped_phase_segments
+    assert plot.magnitude_segments[0].x_values == (
+        plot.principal_phase_segments[0].x_values
+    )
+    assert plot.magnitude_segments[0].x_values == tuple(
+        row.tooltips[1] for row in presenter.state.rows
+    )
+    assert len(plot.magnitude_segments[0].x_values) == len(
+        presenter.state.rows
+    )
+
+
+def test_three_pt1_factors_keep_principal_and_add_unwrapped_phase() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    _execute(
+        presenter,
+        _draft(
+            "1/(s/10+1)^3",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/100",
+            omega_max="1000",
+            points="4",
+            unwrap=True,
+        ),
+    )
+
+    plot = presenter.state.plot
+    assert len(plot.principal_phase_segments) == 1
+    assert len(plot.unwrapped_phase_segments) == 1
+    assert plot.principal_phase_segments[0].x_values == (
+        plot.unwrapped_phase_segments[0].x_values
+    )
+    assert any(
+        dict(detail.lines)["360°-Offset"] != "0 × 360°"
+        for detail in presenter.state.worked_steps.point_details
+    )
+
+
+def test_singularity_keeps_segments_separate_and_marks_interruption() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    _execute(
+        presenter,
+        _draft(
+            "1/(s^2+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/100",
+            omega_max="100",
+            points="4",
+        ),
+    )
+
+    plot = presenter.state.plot
+    assert len(plot.magnitude_segments) == 2
+    assert len(plot.principal_phase_segments) == 2
+    assert all(len(segment.x_values) == 8 for segment in plot.magnitude_segments)
+    singular_index = next(
+        index
+        for index, row in enumerate(presenter.state.rows)
+        if row.status == "Singularität"
+    )
+    detail = dict(
+        presenter.state.worked_steps.point_details[singular_index].lines
+    )
+    assert "Unterbrechung" in detail["Plotsegment"]
+    assert presenter.state.rows[singular_index].target_omega not in {
+        value
+        for segment in plot.magnitude_segments
+        for value in segment.x_values
+    }
+
+
+def test_zero_response_has_stable_empty_plot_without_invented_points() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    _execute(
+        presenter,
+        _draft(
+            "0/(s+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/10",
+            omega_max="10",
+            points="2",
+        ),
+    )
+
+    assert presenter.state.summary.domain_status == (
+        "Keine darstellbaren Daten"
+    )
+    assert presenter.state.plot.visible
+    assert not presenter.state.plot.magnitude_segments
+    assert not presenter.state.plot.principal_phase_segments
+    assert not presenter.state.plot.unwrapped_phase_segments
+    assert presenter.state.plot.no_data_message
+    assert all(row.decibel == "−∞" for row in presenter.state.rows)
