@@ -102,11 +102,27 @@ class PlotSegmentView:
 
 
 @dataclass(frozen=True, slots=True)
+class PlotMarkerView:
+    x_value: str
+    label: str
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.x_value) is not str
+            or not self.x_value
+            or type(self.label) is not str
+            or not self.label
+        ):
+            raise TypeError("Plot markers require non-empty display strings.")
+
+
+@dataclass(frozen=True, slots=True)
 class PlotView:
     visible: bool = False
     magnitude_segments: tuple[PlotSegmentView, ...] = ()
     principal_phase_segments: tuple[PlotSegmentView, ...] = ()
     unwrapped_phase_segments: tuple[PlotSegmentView, ...] = ()
+    interruption_markers: tuple[PlotMarkerView, ...] = ()
     no_data_message: str = ""
 
     def __post_init__(self) -> None:
@@ -122,6 +138,11 @@ class PlotView:
                 type(value) is not PlotSegmentView for value in values
             ):
                 raise TypeError(f"{name} must contain plot segment views.")
+        if type(self.interruption_markers) is not tuple or any(
+            type(value) is not PlotMarkerView
+            for value in self.interruption_markers
+        ):
+            raise TypeError("interruption_markers must contain plot markers.")
         if type(self.no_data_message) is not str:
             raise TypeError("The plot message must be a string.")
 
@@ -147,6 +168,7 @@ class FrequencyPointDetailView:
 class WorkedStepsView:
     general_lines: tuple[tuple[str, str], ...] = ()
     point_details: tuple[FrequencyPointDetailView, ...] = ()
+    short_solutions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.general_lines) is not tuple or any(
@@ -161,6 +183,15 @@ class WorkedStepsView:
             for value in self.point_details
         ):
             raise TypeError("Worked steps require point detail views.")
+        if (
+            type(self.short_solutions) is not tuple
+            or any(type(value) is not str for value in self.short_solutions)
+            or (
+                self.short_solutions
+                and len(self.short_solutions) != len(self.point_details)
+            )
+        ):
+            raise TypeError("Short solutions must align with point details.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +267,7 @@ __all__ = [
     "FrequencyDomainTableRow",
     "FrequencyDomainUiRunStatus",
     "FrequencyDomainViewState",
+    "PlotMarkerView",
     "PlotSegmentView",
     "PlotView",
     "WorkedStepsView",

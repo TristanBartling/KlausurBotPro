@@ -165,11 +165,27 @@ def test_bode_row_selection_updates_numerical_worked_steps() -> None:
     workspace.value_table.setCurrentCell(2, 0)
     _app().processEvents()
     text = workspace.worked_steps_edit.toPlainText()
-    assert "Bode-Tabellenzeile 3" in text
-    assert "Ziel-ω:" in text
-    assert "Auswertungs-ω:" in text
-    assert "Spezialisierter Zähler:" in text
-    assert "Plotsegment:" in text
+    assert "Numerische Kurzlösung" not in text
+    assert "Gegeben:" in text
+    assert "Ziel-ω =" in text
+    assert "Auswertung:" in text
+    assert "Spezialisierter Zähler:" not in text
+    assert "Plotsegment:" not in text
+    assert not workspace.technical_details_checkbox.isChecked()
+
+    workspace.technical_details_checkbox.setChecked(True)
+    _app().processEvents()
+    details = workspace.worked_steps_edit.toPlainText()
+    assert "Technische Details" in details
+    assert "Bode-Tabellenzeile 3" in details
+    assert "Spezialisierter Zähler:" in details
+    assert "Plotsegment:" in details
+
+    workspace.value_table.setCurrentCell(3, 0)
+    _app().processEvents()
+    updated = workspace.worked_steps_edit.toPlainText()
+    assert "Bode-Tabellenzeile 4" in updated
+    assert "Bode-Tabellenzeile 3" not in updated
     workspace.close()
 
 
@@ -190,6 +206,37 @@ def test_plot_canvas_draws_each_singularity_segment_as_a_separate_line() -> None
     assert len(magnitude_lines) == 2
     assert len(phase_lines) == 2
     assert all(len(line.get_xdata()) == 8 for line in magnitude_lines)
+    magnitude_markers = tuple(
+        collection
+        for collection in workspace.magnitude_axes.collections
+        if collection.get_gid() == "frequency-interruption"
+    )
+    phase_markers = tuple(
+        collection
+        for collection in workspace.phase_axes.collections
+        if collection.get_gid() == "frequency-interruption"
+    )
+    assert len(magnitude_markers) == 1
+    assert len(phase_markers) == 1
+    assert all(
+        segment[0][0] == segment[1][0] == 1
+        for collection in magnitude_markers + phase_markers
+        for segment in collection.get_segments()
+    )
+    assert all(
+        1 not in line.get_xdata()
+        for line in magnitude_lines + phase_lines
+    )
+    assert sum(
+        text.get_text() == "Singularität"
+        for text in workspace.magnitude_axes.texts
+    ) == 1
+    assert sum(
+        text.get_text() == "Singularität"
+        for text in workspace.phase_axes.texts
+    ) == 1
+    assert "Rasterauflösung" in workspace.plot_gap_hint_label.text()
+    assert "markierten Frequenz" in workspace.plot_gap_hint_label.text()
     assert workspace.magnitude_axes.get_xscale() == "log"
     assert workspace.phase_axes.get_xscale() == "log"
     workspace.close()

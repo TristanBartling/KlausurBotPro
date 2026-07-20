@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QGroupBox,
@@ -364,7 +365,15 @@ class FrequencyDomainWorkspace(QWidget):
         self.plot_canvas.setObjectName("frequencyBodeCanvas")
         self.plot_page = QWidget()
         plot_layout = QVBoxLayout(self.plot_page)
+        self.plot_gap_hint_label = QLabel(
+            "Die Breite der sichtbaren Lücke hängt von der gewählten "
+            "Rasterauflösung ab. Mathematisch liegt die Singularität nur "
+            "an der markierten Frequenz."
+        )
+        self.plot_gap_hint_label.setObjectName("frequencyPlotGapHint")
+        self.plot_gap_hint_label.setWordWrap(True)
         plot_layout.addWidget(self.plot_canvas, 1)
+        plot_layout.addWidget(self.plot_gap_hint_label)
 
         self.worked_steps_edit = QPlainTextEdit()
         self.worked_steps_edit.setObjectName("frequencyWorkedSteps")
@@ -376,12 +385,20 @@ class FrequencyDomainWorkspace(QWidget):
         worked_page = QWidget()
         worked_layout = QVBoxLayout(worked_page)
         worked_heading = QLabel(
-            "<b>Numerischer Rechenweg</b><br>"
-            "Darstellung vorhandener Resultate; keine asymptotische "
-            "Bode-Konstruktion."
+            "<b>Numerische Kurzlösung</b><br>"
+            "Klausurtaugliche Darstellung vorhandener Resultate; keine "
+            "asymptotische Bode-Konstruktion."
         )
         worked_heading.setWordWrap(True)
+        self.technical_details_checkbox = QCheckBox(
+            "Technische Details anzeigen"
+        )
+        self.technical_details_checkbox.setObjectName(
+            "frequencyTechnicalDetails"
+        )
+        self.technical_details_checkbox.setChecked(False)
         worked_layout.addWidget(worked_heading)
+        worked_layout.addWidget(self.technical_details_checkbox)
         worked_layout.addWidget(self.worked_steps_edit, 1)
 
         diagnostics_page = QWidget()
@@ -404,7 +421,7 @@ class FrequencyDomainWorkspace(QWidget):
         )
         self.worked_tab_index = self.result_tabs.addTab(
             worked_page,
-            "Numerischer Rechenweg",
+            "Numerische Kurzlösung",
         )
         self.diagnostics_tab_index = self.result_tabs.addTab(
             diagnostics_page,
@@ -443,6 +460,9 @@ class FrequencyDomainWorkspace(QWidget):
         self.presenter.state_changed.connect(self.render_state)
         self.value_table.currentCellChanged.connect(
             self._selected_row_changed
+        )
+        self.technical_details_checkbox.toggled.connect(
+            self._technical_details_toggled
         )
         self._shortcuts = (
             QShortcut(QKeySequence("Ctrl+Return"), self),
@@ -624,6 +644,30 @@ class FrequencyDomainWorkspace(QWidget):
             )
         if state.plot.unwrapped_phase_segments:
             self.phase_axes.legend()
+        for marker in state.plot.interruption_markers:
+            frequency = float(marker.x_value)
+            for axes in (self.magnitude_axes, self.phase_axes):
+                lower, upper = axes.get_ylim()
+                collection = axes.vlines(
+                    frequency,
+                    lower,
+                    upper,
+                    colors="#9b2c2c",
+                    linestyles="--",
+                    linewidth=1.2,
+                )
+                collection.set_gid("frequency-interruption")
+                axes.annotate(
+                    marker.label,
+                    xy=(frequency, upper),
+                    xytext=(3, -3),
+                    textcoords="offset points",
+                    rotation=90,
+                    va="top",
+                    ha="left",
+                    color="#9b2c2c",
+                    fontsize=8,
+                )
         if state.plot.no_data_message:
             for axes in (self.magnitude_axes, self.phase_axes):
                 axes.text(
@@ -641,20 +685,34 @@ class FrequencyDomainWorkspace(QWidget):
         state: FrequencyDomainViewState,
         row_index: int,
     ) -> None:
-        lines = ["Allgemein", "---------"]
-        lines.extend(
-            f"{label}: {value}"
-            for label, value in state.worked_steps.general_lines
-        )
         details = state.worked_steps.point_details
-        if details:
-            selected = min(max(row_index, 0), len(details) - 1)
-            detail = details[selected]
-            lines.extend(("", detail.heading, "-" * len(detail.heading)))
-            lines.extend(
-                f"{label}: {value}" for label, value in detail.lines
+        solutions = state.worked_steps.short_solutions
+        if not solutions:
+            self.worked_steps_edit.clear()
+            return
+        selected = min(max(row_index, 0), len(solutions) - 1)
+        text = solutions[selected]
+        if self.technical_details_checkbox.isChecked():
+            technical_lines = [
+                "",
+                "",
+                "Technische Details",
+                "===================",
+            ]
+            technical_lines.extend(
+                f"{label}: {value}"
+                for label, value in state.worked_steps.general_lines
             )
-        self.worked_steps_edit.setPlainText("\n".join(lines))
+            if details:
+                detail = details[selected]
+                technical_lines.extend(
+                    ("", detail.heading, "-" * len(detail.heading))
+                )
+                technical_lines.extend(
+                    f"{label}: {value}" for label, value in detail.lines
+                )
+            text += "\n".join(technical_lines)
+        self.worked_steps_edit.setPlainText(text)
 
     @Slot(int, int, int, int)
     def _selected_row_changed(
@@ -668,6 +726,14 @@ class FrequencyDomainWorkspace(QWidget):
             self._render_worked_steps(
                 self._rendered_state,
                 max(current_row, 0),
+            )
+
+    @Slot(bool)
+    def _technical_details_toggled(self, _checked: bool) -> None:
+        if hasattr(self, "_rendered_state"):
+            self._render_worked_steps(
+                self._rendered_state,
+                max(self.value_table.currentRow(), 0),
             )
 
     def _render_diagnostics(self, state: FrequencyDomainViewState) -> None:

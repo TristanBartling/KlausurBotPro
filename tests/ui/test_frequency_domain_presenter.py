@@ -1,5 +1,6 @@
 """Frequency presenter request and display projections."""
 
+import re
 from dataclasses import FrozenInstanceError
 
 import pytest
@@ -267,6 +268,24 @@ def test_single_point_worked_steps_use_existing_exact_and_numeric_values() -> No
     assert detail["Hauptphase"].endswith("°")
     assert detail["Punktstatus"] == "Definiert"
 
+    short = presenter.state.worked_steps.short_solutions[0]
+    ordered_steps = (
+        "1. Einsetzen von s = jω",
+        "2. Komplexer Wert",
+        "3. Betrag",
+        "4. Dezibelwert",
+        "5. Phase",
+    )
+    assert tuple(short.index(step) for step in ordered_steps) == tuple(
+        sorted(short.index(step) for step in ordered_steps)
+    )
+    assert "1/2 - I/2" in short
+    assert "|G(j)| ≈ 0.707107" in short
+    assert "L(1) ≈ -3.0103 dB" in short
+    assert "φ(1) = -45°" in short
+    assert re.search(r"\d{15}", short) is None
+    assert "0.707106781186547" in detail["Betrag"]
+
 
 def test_pt1_plot_projection_preserves_principal_domain_segments() -> None:
     presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
@@ -354,6 +373,13 @@ def test_singularity_keeps_segments_separate_and_marks_interruption() -> None:
         for segment in plot.magnitude_segments
         for value in segment.x_values
     }
+    assert tuple(
+        (marker.x_value, marker.label)
+        for marker in plot.interruption_markers
+    ) == (("1", "Singularität"),)
+    assert "Singularität bei ω = 1 rad/s" in (
+        presenter.state.worked_steps.short_solutions[singular_index]
+    )
 
 
 def test_zero_response_has_stable_empty_plot_without_invented_points() -> None:

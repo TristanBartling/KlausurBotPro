@@ -21,6 +21,7 @@ from klausurbotpro.ui.frequency_domain_view_state import (
     FrequencyDomainUiRunStatus,
     FrequencyDomainViewState,
     FrequencyPointDetailView,
+    PlotMarkerView,
     PlotSegmentView,
     PlotView,
     WorkedStepsView,
@@ -339,11 +340,25 @@ def _plot(result: FrequencyDomainWorkflowResult) -> PlotView:
         if magnitude_segments or principal_segments
         else "Keine darstellbaren Bode-Daten vorhanden."
     )
+    markers = tuple(
+        PlotMarkerView(
+            point.target_decimal.decimal_text,
+            (
+                "Singularität"
+                if point.frequency_response_point.status.value == "singular"
+                else "nicht darstellbar"
+            ),
+        )
+        for point in bode.points
+        if point.frequency_response_point.status.value
+        not in ("defined", "zero_response")
+    )
     return PlotView(
         visible=True,
         magnitude_segments=magnitude_segments,
         principal_phase_segments=principal_segments,
         unwrapped_phase_segments=unwrapped_segments,
+        interruption_markers=markers,
         no_data_message=no_data_message,
     )
 
@@ -389,6 +404,7 @@ def _worked_steps(result: FrequencyDomainWorkflowResult) -> WorkedStepsView:
         }
 
     details: list[FrequencyPointDetailView] = []
+    short_solutions: list[str] = []
     for index, point in enumerate(response.points):
         target = ""
         if bode is not None:
@@ -479,7 +495,227 @@ def _worked_steps(result: FrequencyDomainWorkflowResult) -> WorkedStepsView:
                 tuple(lines),
             )
         )
-    return WorkedStepsView(general_lines, tuple(details))
+        short_solutions.append(
+            _single_point_short_solution(result, point)
+            if bode is None
+            else _bode_point_short_solution(
+                result,
+                bode.points[index],
+                unwrapped_by_grid.get(index),
+            )
+        )
+    return WorkedStepsView(
+        general_lines,
+        tuple(details),
+        tuple(short_solutions),
+    )
+
+
+def _single_point_short_solution(
+    result: FrequencyDomainWorkflowResult,
+    point: Any,
+) -> str:
+    omega = _short_rational(point.omega)
+    argument = "j" if omega == "1" else f"j·{omega}"
+    complex_value = _short_exact(point.exact_complex_value)
+    real_part = _short_exact(point.exact_real_part, point.numerical_real)
+    imaginary_part = _short_exact(
+        point.exact_imaginary_part,
+        point.numerical_imaginary,
+    )
+    magnitude_squared = _short_exact(point.exact_magnitude_squared)
+    magnitude = _short_number(_optional(point.numerical_magnitude))
+    decibel = _short_decibel(point.numerical_decibel)
+    phase = _short_phase(point.numerical_phase_degrees)
+    diagnostics = (
+        "keine"
+        if not point.diagnostics
+        else " | ".join(item.message for item in point.diagnostics)
+    )
+    numerator = _short_exact(point.specialized_numerator)
+    denominator = _short_exact(point.specialized_denominator)
+    lines = [
+        "Gegeben:",
+        f"G(s) = {_input_expression_text(result)}",
+        f"ω = {omega} rad/s",
+        "",
+        "1. Einsetzen von s = jω",
+        f"G({argument}) = ({numerator}) / ({denominator})",
+        "",
+        "2. Komplexer Wert",
+        f"G({argument}) = {_available(complex_value)}",
+        f"Re{{G({argument})}} = {_available(real_part)}",
+        f"Im{{G({argument})}} = {_available(imaginary_part)}",
+        "",
+        "3. Betrag",
+        f"|G({argument})|² = {_available(magnitude_squared)}",
+        (
+            f"|G({argument})| ≈ {magnitude}"
+            if magnitude
+            else f"|G({argument})|: nicht verfügbar"
+        ),
+        "",
+        "4. Dezibelwert",
+        f"L({omega}) = 20 log10(|G({argument})|)",
+        (
+            f"L({omega}) = {decibel} dB"
+            if decibel == "−∞"
+            else (
+                f"L({omega}) ≈ {decibel} dB"
+                if decibel
+                else f"L({omega}): nicht verfügbar"
+            )
+        ),
+        "",
+        "5. Phase",
+        (
+            f"φ({omega}) = {phase}"
+            if phase
+            else f"φ({omega}): nicht definiert"
+        ),
+        "",
+        f"Status: {_POINT_STATUS_LABELS[point.status.value]}",
+        f"Diagnosen: {diagnostics}",
+    ]
+    return "\n".join(lines)
+
+
+def _bode_point_short_solution(
+    result: FrequencyDomainWorkflowResult,
+    bode_point: Any,
+    unwrap_point: Any | None,
+) -> str:
+    point = bode_point.frequency_response_point
+    target = _short_number(bode_point.target_decimal.decimal_text)
+    evaluation = _short_rational(bode_point.evaluation_frequency)
+    complex_value = _short_exact(point.exact_complex_value)
+    real_part = _short_exact(point.exact_real_part, point.numerical_real)
+    imaginary_part = _short_exact(
+        point.exact_imaginary_part,
+        point.numerical_imaginary,
+    )
+    magnitude = _short_number(_optional(point.numerical_magnitude))
+    decibel = _short_decibel(point.numerical_decibel)
+    phase = _short_phase(point.numerical_phase_degrees)
+    lines = [
+        "Gegeben:",
+        f"G(s) = {_reduced_text(result)}",
+        f"Raster: {_short_frequency_definition_text(result)}",
+        f"Ziel-ω = {target} rad/s",
+    ]
+    relative_error = bode_point.grid_point.maximum_relative_error
+    if relative_error.numerator != 0:
+        lines.append(f"Auswertungs-ω = {evaluation} rad/s")
+    lines.extend(
+        (
+            "",
+            "Auswertung:",
+            f"1. s = j·{evaluation}",
+            f"2. G(jω) = {_available(complex_value)}",
+            (
+                "3. "
+                f"Re{{G(jω)}} = {_available(real_part)}; "
+                f"Im{{G(jω)}} = {_available(imaginary_part)}"
+            ),
+            (
+                f"4. |G(jω)| ≈ {magnitude}"
+                if magnitude
+                else "4. |G(jω)|: nicht verfügbar"
+            ),
+            (
+                f"5. L(ω) = {decibel} dB"
+                if decibel == "−∞"
+                else (
+                    f"5. L(ω) ≈ {decibel} dB"
+                    if decibel
+                    else "5. L(ω): nicht verfügbar"
+                )
+            ),
+            (
+                f"6. Hauptphase: {phase}"
+                if phase
+                else "6. Hauptphase: nicht definiert"
+            ),
+        )
+    )
+    if unwrap_point is not None:
+        lines.append(
+            "7. Entfaltete Phase: "
+            f"{_short_phase(unwrap_point.unwrapped_phase_degrees)}"
+        )
+    lines.append(
+        f"{8 if unwrap_point is not None else 7}. "
+        f"Punktstatus: {_POINT_STATUS_LABELS[point.status.value]}"
+    )
+    interruption = _interruption_text(point.status.value, target)
+    if interruption:
+        lines.append(
+            f"{9 if unwrap_point is not None else 8}. {interruption}"
+        )
+    diagnostics = (
+        "keine"
+        if not point.diagnostics
+        else " | ".join(item.message for item in point.diagnostics)
+    )
+    lines.append(f"Diagnosen: {diagnostics}")
+    return "\n".join(lines)
+
+
+def _short_exact(value: Any | None, numerical: str | None = None) -> str:
+    text = _expression_text(value)
+    if not text:
+        return ""
+    if len(text) <= 24:
+        return text
+    if numerical is not None:
+        return f"≈ {_short_number(numerical)}"
+    return "siehe technische Details"
+
+
+def _short_decibel(value: Any | None) -> str:
+    full = _decibel_text(value)
+    return full if full == "−∞" else _short_number(full)
+
+
+def _short_phase(value: str | None) -> str:
+    short = _short_number(_optional(value))
+    return "" if not short else f"{short}°"
+
+
+def _available(value: str) -> str:
+    return value if value else "nicht verfügbar"
+
+
+def _interruption_text(status: str, target: str) -> str:
+    if status == "singular":
+        return f"Unterbrechung: Singularität bei ω = {target} rad/s"
+    if status not in ("defined", "zero_response"):
+        return f"Unterbrechung bei ω = {target} rad/s: nicht darstellbar"
+    if status == "zero_response":
+        return "Unterbrechung: Nullantwort wird nicht als Plotpunkt erfunden"
+    return ""
+
+
+def _short_frequency_definition_text(
+    result: FrequencyDomainWorkflowResult,
+) -> str:
+    assert result.request is not None
+    grid = result.request.grid_request
+    if grid is None:
+        return ""
+    explicit = (
+        "keine"
+        if not grid.explicit_frequencies
+        else ", ".join(
+            _short_rational(value) for value in grid.explicit_frequencies
+        )
+    )
+    return (
+        f"ω_min={_short_rational(grid.omega_min)} rad/s; "
+        f"ω_max={_short_rational(grid.omega_max)} rad/s; "
+        f"{grid.points_per_decade} Punkte/Dekade; "
+        f"explizit: {explicit}"
+    )
 
 
 def _input_expression_text(result: FrequencyDomainWorkflowResult) -> str:
