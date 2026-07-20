@@ -27,6 +27,7 @@ class FrequencyDomainSummaryView:
     magnitude_segment_count: str = ""
     phase_segment_count: str = ""
     phase_unwrap: str = ""
+    added_frequencies: str = ""
 
     def __post_init__(self) -> None:
         if any(

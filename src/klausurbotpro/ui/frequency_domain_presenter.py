@@ -10,6 +10,9 @@ from PySide6.QtCore import QObject, Signal, Slot
 from klausurbotpro.application import (
     FrequencyDomainInputDraft,
     FrequencyDomainRequestFactory,
+    FrequencyDomainSingularityRefinementPlanner,
+    FrequencyDomainSingularityRefinementReason,
+    FrequencyDomainWorkflowLimits,
     FrequencyDomainWorkflowResult,
     FrequencyDomainWorkflowStatus,
 )
@@ -60,6 +63,13 @@ class FrequencyDomainPresenter(QObject):
         if type(request_factory) is not FrequencyDomainRequestFactory:
             raise TypeError("request_factory has an invalid type.")
         self._request_factory = request_factory
+        self._limits: FrequencyDomainWorkflowLimits = request_factory.limits
+        self._refinement_planner = (
+            FrequencyDomainSingularityRefinementPlanner()
+        )
+        self._refinement_attempted = False
+        self._base_result: FrequencyDomainWorkflowResult | None = None
+        self._added_frequencies: tuple[Any, ...] = ()
         self._state = FrequencyDomainViewState()
 
     @property
@@ -71,6 +81,7 @@ class FrequencyDomainPresenter(QObject):
             raise TypeError("draft must be FrequencyDomainInputDraft.")
         if self._state.run_status is FrequencyDomainUiRunStatus.RUNNING:
             return False
+        self._reset_refinement()
         creation = self._request_factory.create(draft)
         if not creation.succeeded:
             self._set_state(
@@ -96,6 +107,62 @@ class FrequencyDomainPresenter(QObject):
     def accept_result(self, value: object) -> None:
         if type(value) is not FrequencyDomainWorkflowResult:
             raise TypeError("value must be FrequencyDomainWorkflowResult.")
+        if not self._refinement_attempted:
+            plan = self._refinement_planner.plan(value, self._limits)
+            self._refinement_attempted = True
+            if plan.refined_request is not None:
+                self._base_result = value
+                self._added_frequencies = plan.added_frequencies
+                self._set_state(
+                    FrequencyDomainViewState(
+                        run_status=FrequencyDomainUiRunStatus.RUNNING,
+                        general_message=(
+                            "Singularitätsumgebung wird automatisch "
+                            "verfeinert …"
+                        ),
+                    )
+                )
+                self.execution_requested.emit(plan.refined_request)
+                return
+            notice = (
+                ""
+                if plan.reason
+                in (
+                    FrequencyDomainSingularityRefinementReason.NOT_APPLICABLE,
+                    FrequencyDomainSingularityRefinementReason.NO_SINGULARITY,
+                )
+                else f"{plan.message} Das Basisergebnis wird angezeigt."
+            )
+            self._finish_result(value, notice=notice)
+            return
+        if self._base_result is not None and (
+            value.status is not FrequencyDomainWorkflowStatus.COMPLETE
+            or value.bode_data_result is None
+        ):
+            base = self._base_result
+            self._base_result = None
+            self._added_frequencies = ()
+            self._finish_result(
+                base,
+                notice=(
+                    "Die optionale Singularitätsverfeinerung konnte nicht "
+                    "abgeschlossen werden. Das Basisergebnis wird angezeigt."
+                ),
+            )
+            return
+        self._base_result = None
+        self._finish_result(
+            value,
+            added_frequencies=self._added_frequencies,
+        )
+
+    def _finish_result(
+        self,
+        value: FrequencyDomainWorkflowResult,
+        *,
+        added_frequencies: tuple[Any, ...] = (),
+        notice: str = "",
+    ) -> None:
         status = {
             FrequencyDomainWorkflowStatus.COMPLETE: (
                 FrequencyDomainUiRunStatus.COMPLETE
@@ -107,10 +174,26 @@ class FrequencyDomainPresenter(QObject):
                 FrequencyDomainUiRunStatus.FAILED
             ),
         }[value.status]
+        added_text = _added_frequencies_text(added_frequencies)
+        message = {
+            FrequencyDomainUiRunStatus.COMPLETE: (
+                "Frequenzberechnung vollständig abgeschlossen."
+            ),
+            FrequencyDomainUiRunStatus.PARTIAL: (
+                "Frequenzberechnung mit Teilresultat abgeschlossen."
+            ),
+            FrequencyDomainUiRunStatus.FAILED: (
+                "Frequenzberechnung fehlgeschlagen."
+            ),
+        }[status]
+        if added_text:
+            message = f"{message} Automatisch ergänzte Frequenzen: {added_text}."
+        elif notice:
+            message = f"{message} {notice}"
         self._set_state(
             FrequencyDomainViewState(
                 run_status=status,
-                summary=_summary(value),
+                summary=_summary(value, added_text),
                 single_point=_single_point(value),
                 rows=_rows(value),
                 plot=_plot(value),
@@ -124,17 +207,7 @@ class FrequencyDomainPresenter(QObject):
                     for diagnostic in value.diagnostics
                 ),
                 focused_field=_diagnostic_focus(value),
-                general_message={
-                    FrequencyDomainUiRunStatus.COMPLETE: (
-                        "Frequenzberechnung vollständig abgeschlossen."
-                    ),
-                    FrequencyDomainUiRunStatus.PARTIAL: (
-                        "Frequenzberechnung mit Teilresultat abgeschlossen."
-                    ),
-                    FrequencyDomainUiRunStatus.FAILED: (
-                        "Frequenzberechnung fehlgeschlagen."
-                    ),
-                }[status],
+                general_message=message,
             )
         )
 
@@ -142,6 +215,18 @@ class FrequencyDomainPresenter(QObject):
     def accept_failure(self, value: object) -> None:
         if type(value) is not WorkflowWorkerFailure:
             raise TypeError("value must be WorkflowWorkerFailure.")
+        if self._base_result is not None:
+            base = self._base_result
+            self._base_result = None
+            self._added_frequencies = ()
+            self._finish_result(
+                base,
+                notice=(
+                    "Die optionale Singularitätsverfeinerung ist unerwartet "
+                    "fehlgeschlagen. Das Basisergebnis wird angezeigt."
+                ),
+            )
+            return
         self._set_state(
             FrequencyDomainViewState(
                 run_status=FrequencyDomainUiRunStatus.FAILED,
@@ -152,8 +237,14 @@ class FrequencyDomainPresenter(QObject):
     def reset(self) -> bool:
         if self._state.run_status is FrequencyDomainUiRunStatus.RUNNING:
             return False
+        self._reset_refinement()
         self._set_state(FrequencyDomainViewState())
         return True
+
+    def _reset_refinement(self) -> None:
+        self._refinement_attempted = False
+        self._base_result = None
+        self._added_frequencies = ()
 
     def set_general_message(self, message: str) -> None:
         if type(message) is not str or not message:
@@ -178,7 +269,10 @@ class FrequencyDomainPresenter(QObject):
         self.state_changed.emit(state)
 
 
-def _summary(result: FrequencyDomainWorkflowResult) -> FrequencyDomainSummaryView:
+def _summary(
+    result: FrequencyDomainWorkflowResult,
+    added_frequencies: str = "",
+) -> FrequencyDomainSummaryView:
     if result.request is None:
         return FrequencyDomainSummaryView(
             workflow_status=_status_text(result.status.value)
@@ -212,6 +306,7 @@ def _summary(result: FrequencyDomainWorkflowResult) -> FrequencyDomainSummaryVie
         phase_unwrap=(
             "aktiv" if result.phase_unwrap_result is not None else "nicht aktiv"
         ),
+        added_frequencies=added_frequencies,
     )
 
 
@@ -227,18 +322,20 @@ def _single_point(
         omega=_rational_text(point.omega),
         status=_POINT_STATUS_LABELS[point.status.value],
         complex_value=_expression_text(point.exact_complex_value),
-        real_part=_expression_text(point.exact_real_part),
-        imaginary_part=_expression_text(point.exact_imaginary_part),
-        magnitude="" if point.numerical_magnitude is None else point.numerical_magnitude,
-        decibel=_decibel_text(point.numerical_decibel),
+        real_part=_summary_number(
+            point.exact_real_part,
+            point.numerical_real,
+        ),
+        imaginary_part=_summary_number(
+            point.exact_imaginary_part,
+            point.numerical_imaginary,
+        ),
+        magnitude=_short_number(_optional(point.numerical_magnitude)),
+        decibel=_short_decibel(point.numerical_decibel),
         principal_phase=(
             "nicht definiert"
             if zero
-            else (
-                ""
-                if point.numerical_phase_degrees is None
-                else point.numerical_phase_degrees
-            )
+            else _short_number(_optional(point.numerical_phase_degrees))
         ),
     )
 
@@ -672,6 +769,13 @@ def _short_exact(value: Any | None, numerical: str | None = None) -> str:
     return "siehe technische Details"
 
 
+def _summary_number(value: Any | None, numerical: str | None) -> str:
+    exact = _expression_text(value)
+    if exact and len(exact) <= 12:
+        return exact
+    return _short_number(_optional(numerical))
+
+
 def _short_decibel(value: Any | None) -> str:
     full = _decibel_text(value)
     return full if full == "−∞" else _short_number(full)
@@ -843,6 +947,21 @@ def _short_rational(value: object) -> str:
     numerator = value.numerator  # type: ignore[attr-defined]
     denominator = value.denominator  # type: ignore[attr-defined]
     return _short_number(str(Decimal(numerator) / Decimal(denominator)))
+
+
+def _added_frequencies_text(values: tuple[Any, ...]) -> str:
+    if not values:
+        return ""
+    frequencies = "; ".join(
+        _short_number(
+            str(
+                Decimal(value.numerator)
+                / Decimal(value.denominator)
+            )
+        )
+        for value in values
+    )
+    return f"{frequencies} rad/s"
 
 
 def _diagnostic_focus(result: FrequencyDomainWorkflowResult) -> str | None:

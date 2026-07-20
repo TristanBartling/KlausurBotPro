@@ -1,13 +1,14 @@
 """Frequency presenter request and display projections."""
 
 import re
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
 from klausurbotpro.application import (
     FrequencyDomainInputDraft,
     FrequencyDomainRequestFactory,
+    FrequencyDomainWorkflowLimits,
     FrequencyDomainWorkflowMode,
     FrequencyDomainWorkflowRequest,
     FrequencyDomainWorkflowService,
@@ -69,7 +70,41 @@ def _execute(
     request = requests[0]
     assert type(request) is FrequencyDomainWorkflowRequest
     presenter.accept_result(FrequencyDomainWorkflowService().run(request))
-    return request
+    if len(requests) == 2:
+        refined_request = requests[1]
+        assert type(refined_request) is FrequencyDomainWorkflowRequest
+        presenter.accept_result(
+            FrequencyDomainWorkflowService().run(refined_request)
+        )
+    assert len(requests) <= 2
+    final_request = requests[-1]
+    assert type(final_request) is FrequencyDomainWorkflowRequest
+    return final_request
+
+
+def _run_all_requests(
+    presenter: FrequencyDomainPresenter,
+    draft: FrequencyDomainInputDraft,
+    limits: FrequencyDomainWorkflowLimits | None = None,
+) -> tuple[FrequencyDomainWorkflowRequest, ...]:
+    if limits is None:
+        limits = FrequencyDomainWorkflowLimits()
+    dispatched: list[object] = []
+    presenter.execution_requested.connect(dispatched.append)
+    assert presenter.submit(draft)
+    handled = 0
+    while handled < len(dispatched):
+        request = dispatched[handled]
+        assert type(request) is FrequencyDomainWorkflowRequest
+        handled += 1
+        presenter.accept_result(
+            FrequencyDomainWorkflowService(limits).run(request)
+        )
+    requests: list[FrequencyDomainWorkflowRequest] = []
+    for request in dispatched:
+        assert type(request) is FrequencyDomainWorkflowRequest
+        requests.append(request)
+    return tuple(requests)
 
 
 def test_frequency_view_state_is_immutable_widget_free_and_string_only() -> None:
@@ -104,9 +139,9 @@ def test_presenter_dispatches_one_exact_single_point_request() -> None:
     assert presenter.state.single_point.complex_value == "1/2 - I/2"
     assert presenter.state.single_point.real_part == "1/2"
     assert presenter.state.single_point.imaginary_part == "-1/2"
-    assert presenter.state.single_point.magnitude
-    assert presenter.state.single_point.decibel
-    assert presenter.state.single_point.principal_phase
+    assert presenter.state.single_point.magnitude == "0.707107"
+    assert presenter.state.single_point.decibel == "-3.0103"
+    assert presenter.state.single_point.principal_phase == "-45"
 
 
 def test_zero_response_and_singularity_have_no_invented_values() -> None:
@@ -358,7 +393,7 @@ def test_singularity_keeps_segments_separate_and_marks_interruption() -> None:
     plot = presenter.state.plot
     assert len(plot.magnitude_segments) == 2
     assert len(plot.principal_phase_segments) == 2
-    assert all(len(segment.x_values) == 8 for segment in plot.magnitude_segments)
+    assert all(len(segment.x_values) == 9 for segment in plot.magnitude_segments)
     singular_index = next(
         index
         for index, row in enumerate(presenter.state.rows)
@@ -380,6 +415,10 @@ def test_singularity_keeps_segments_separate_and_marks_interruption() -> None:
     assert "Singularität bei ω = 1 rad/s" in (
         presenter.state.worked_steps.short_solutions[singular_index]
     )
+    assert {
+        row.evaluation_omega for row in presenter.state.rows
+    } >= {"99/100", "101/100"}
+    assert presenter.state.summary.added_frequencies == "0.99; 1.01 rad/s"
 
 
 def test_zero_response_has_stable_empty_plot_without_invented_points() -> None:
@@ -404,3 +443,111 @@ def test_zero_response_has_stable_empty_plot_without_invented_points() -> None:
     assert not presenter.state.plot.unwrapped_phase_segments
     assert presenter.state.plot.no_data_message
     assert all(row.decibel == "−∞" for row in presenter.state.rows)
+
+
+def test_regular_bode_and_single_point_each_dispatch_exactly_once() -> None:
+    bode = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    bode_requests = _run_all_requests(
+        bode,
+        _draft(
+            "1/(s+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/10",
+            omega_max="10",
+            points="4",
+        ),
+    )
+    single = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    single_requests = _run_all_requests(
+        single,
+        _draft(
+            "1/(s+1)",
+            mode=FrequencyDomainWorkflowMode.SINGLE_POINT,
+            single="1",
+        ),
+    )
+
+    assert len(bode_requests) == 1
+    assert len(single_requests) == 1
+
+
+def test_singular_bode_dispatches_one_refinement_and_never_a_third_run() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    dispatched: list[object] = []
+    presenter.execution_requested.connect(dispatched.append)
+    assert presenter.submit(
+        _draft(
+            "1/(s^2+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/10",
+            omega_max="10",
+            points="4",
+        )
+    )
+    first = dispatched[0]
+    assert type(first) is FrequencyDomainWorkflowRequest
+    presenter.accept_result(FrequencyDomainWorkflowService().run(first))
+
+    assert len(dispatched) == 2
+    assert presenter.state.run_status is FrequencyDomainUiRunStatus.RUNNING
+    assert "automatisch verfeinert" in presenter.state.general_message
+    second = dispatched[1]
+    assert type(second) is FrequencyDomainWorkflowRequest
+    assert second.grid_request is not None
+    assert tuple(
+        (value.numerator, value.denominator)
+        for value in second.grid_request.explicit_frequencies
+    ) == (
+        (99, 100),
+        (101, 100),
+    )
+    presenter.accept_result(FrequencyDomainWorkflowService().run(second))
+
+    assert len(dispatched) == 2
+    assert presenter.state.run_status.value == (
+        FrequencyDomainUiRunStatus.COMPLETE.value
+    )
+    assert "0.99; 1.01 rad/s" in presenter.state.general_message
+
+
+def test_new_submit_and_reset_each_reenable_one_refinement_round() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+    draft = _draft(
+        "1/(s^2+1)",
+        mode=FrequencyDomainWorkflowMode.BODE,
+        omega_min="1/10",
+        omega_max="10",
+        points="4",
+    )
+
+    assert len(_run_all_requests(presenter, draft)) == 2
+    assert len(_run_all_requests(presenter, draft)) == 2
+    assert presenter.reset()
+    assert len(_run_all_requests(presenter, draft)) == 2
+
+
+def test_refinement_limit_keeps_complete_base_result_with_hint() -> None:
+    defaults = FrequencyDomainWorkflowLimits()
+    limits = replace(
+        defaults,
+        grid=replace(defaults.grid, max_explicit_points=1),
+    )
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory(limits))
+
+    requests = _run_all_requests(
+        presenter,
+        _draft(
+            "1/(s^2+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/10",
+            omega_max="10",
+            points="4",
+        ),
+        limits,
+    )
+
+    assert len(requests) == 1
+    assert presenter.state.run_status is FrequencyDomainUiRunStatus.COMPLETE
+    assert presenter.state.rows
+    assert "Frequenzlimit" in presenter.state.general_message
+    assert "Basisergebnis" in presenter.state.general_message

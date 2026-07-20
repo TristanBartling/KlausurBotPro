@@ -55,6 +55,7 @@ _SUMMARY_FIELDS = (
     ("magnitude_segment_count", "Magnitudensegmente"),
     ("phase_segment_count", "Phasensegmente"),
     ("phase_unwrap", "Phasenentfaltung"),
+    ("added_frequencies", "Automatisch ergänzte Frequenzen"),
 )
 _SINGLE_FIELDS = (
     ("omega", "ω [rad/s]"),

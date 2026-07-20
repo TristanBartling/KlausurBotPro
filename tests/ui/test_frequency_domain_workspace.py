@@ -199,13 +199,19 @@ def test_plot_canvas_draws_each_singularity_segment_as_a_separate_line() -> None
     request = requests[0]
     assert type(request) is FrequencyDomainWorkflowRequest
     workspace.presenter.accept_result(FrequencyDomainWorkflowService().run(request))
+    assert len(requests) == 2
+    refined_request = requests[1]
+    assert type(refined_request) is FrequencyDomainWorkflowRequest
+    workspace.presenter.accept_result(
+        FrequencyDomainWorkflowService().run(refined_request)
+    )
     _app().processEvents()
 
     magnitude_lines = workspace.magnitude_axes.get_lines()
     phase_lines = workspace.phase_axes.get_lines()
     assert len(magnitude_lines) == 2
     assert len(phase_lines) == 2
-    assert all(len(line.get_xdata()) == 8 for line in magnitude_lines)
+    assert all(len(line.get_xdata()) == 9 for line in magnitude_lines)
     magnitude_markers = tuple(
         collection
         for collection in workspace.magnitude_axes.collections
@@ -237,6 +243,15 @@ def test_plot_canvas_draws_each_singularity_segment_as_a_separate_line() -> None
     ) == 1
     assert "Rasterauflösung" in workspace.plot_gap_hint_label.text()
     assert "markierten Frequenz" in workspace.plot_gap_hint_label.text()
+    evaluation_tooltips: set[str] = set()
+    for row in range(workspace.value_table.rowCount()):
+        evaluation_item = workspace.value_table.item(row, 2)
+        assert evaluation_item is not None
+        evaluation_tooltips.add(evaluation_item.toolTip())
+    assert evaluation_tooltips >= {"99/100", "101/100"}
+    assert workspace.summary_labels["added_frequencies"].text() == (
+        "0.99; 1.01 rad/s"
+    )
     assert workspace.magnitude_axes.get_xscale() == "log"
     assert workspace.phase_axes.get_xscale() == "log"
     workspace.close()
