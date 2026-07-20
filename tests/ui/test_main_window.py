@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 
 from klausurbotpro.app import APP_NAME, MainWindow
 from klausurbotpro.ui import (
+    FrequencyDomainUiRunStatus,
     TransferFunctionUiRunStatus,
     WorkflowWorkerFailure,
 )
@@ -32,7 +33,10 @@ def test_main_window_structure_shortcuts_and_idle_shutdown() -> None:
     _app().processEvents()
 
     assert window.windowTitle() == APP_NAME
-    assert window.centralWidget() is window.workspace
+    assert window.centralWidget() is window.workspace_tabs
+    assert window.workspace_tabs.widget(0) is window.workspace
+    assert window.workspace_tabs.widget(1) is window.frequency_workspace
+    assert window.workspace_tabs.tabText(1) == "Frequenzbereich"
     assert window.width() >= 1100
     sequences = {
         shortcut.key().toString()
@@ -122,6 +126,62 @@ def test_close_during_running_is_deferred_then_clean() -> None:
     assert window.worker_thread.isRunning()
     assert "Schließen" in window.presenter.state.general_message
     window.presenter.accept_failure(WorkflowWorkerFailure("Test beendet."))
+    _app().processEvents()
+    _app().processEvents()
+
+    assert not window.worker_thread.isRunning()
+
+
+def test_real_frequency_single_point_end_to_end_offscreen() -> None:
+    application = _app()
+    window = MainWindow()
+    window.show()
+    window.workspace_tabs.setCurrentIndex(1)
+    completed = QSignalSpy(window.frequency_worker.completed)
+    loop = QEventLoop()
+    window.frequency_worker.completed.connect(loop.quit)
+    workspace = window.frequency_workspace
+    workspace.common_expression_edit.setPlainText("1/(s+1)")
+    workspace.single_frequency_edit.setText("1")
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+
+    assert window.frequency_presenter.state.run_status is (
+        FrequencyDomainUiRunStatus.RUNNING
+    )
+    assert not workspace.common_expression_edit.isEnabled()
+    assert not workspace.calculate_button.isEnabled()
+    QTimer.singleShot(15_000, loop.quit)
+    loop.exec()
+    application.processEvents()
+
+    assert completed.count() == 1
+    assert window.frequency_presenter.state.run_status.value == (
+        FrequencyDomainUiRunStatus.COMPLETE.value
+    )
+    assert workspace.single_labels["omega"].text() == "1"
+    assert workspace.single_labels["status"].text() == "Definiert"
+    assert workspace.single_labels["complex_value"].text() == "1/2 - I/2"
+    assert workspace.common_expression_edit.isEnabled()
+    assert window.shutdown()
+    window.close()
+
+
+def test_close_during_frequency_run_is_deferred_then_clean() -> None:
+    _app()
+    window = MainWindow()
+    window.frequency_presenter.execution_requested.disconnect()
+    window.frequency_workspace.common_expression_edit.setPlainText("1/(s+1)")
+    window.frequency_workspace.calculate()
+    assert window.frequency_presenter.state.run_status is (
+        FrequencyDomainUiRunStatus.RUNNING
+    )
+
+    assert not window.shutdown()
+    assert window.worker_thread.isRunning()
+    window.frequency_presenter.accept_failure(
+        WorkflowWorkerFailure("Test beendet.")
+    )
     _app().processEvents()
     _app().processEvents()
 

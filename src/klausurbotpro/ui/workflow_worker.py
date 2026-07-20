@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from PySide6.QtCore import QObject, Signal, Slot
 
 from klausurbotpro.application import (
+    FrequencyDomainWorkflowLimits,
+    FrequencyDomainWorkflowRequest,
+    FrequencyDomainWorkflowService,
     SolutionReportLimits,
     TransferFunctionSolutionReport,
     TransferFunctionSolutionReportBuilder,
@@ -22,6 +25,7 @@ from klausurbotpro.application import (
 _LOGGER = logging.getLogger(__name__)
 _DEFAULT_WORKFLOW_LIMITS = TransferFunctionWorkflowLimits()
 _DEFAULT_REPORT_LIMITS = SolutionReportLimits()
+_DEFAULT_FREQUENCY_LIMITS = FrequencyDomainWorkflowLimits()
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +118,50 @@ class TransferFunctionWorkflowWorker(QObject):
             self._running = False
 
 
+class FrequencyDomainWorkflowWorker(QObject):
+    """Run the existing frequency Application service outside the UI thread."""
+
+    completed = Signal(object)
+    failed = Signal(object)
+
+    def __init__(
+        self,
+        limits: FrequencyDomainWorkflowLimits = _DEFAULT_FREQUENCY_LIMITS,
+    ) -> None:
+        super().__init__()
+        if type(limits) is not FrequencyDomainWorkflowLimits:
+            raise TypeError("limits must be FrequencyDomainWorkflowLimits.")
+        self._limits = limits
+        self._service = FrequencyDomainWorkflowService(limits)
+        self._running = False
+
+    @Slot(object)
+    def execute(self, request: object) -> None:
+        if self._running:
+            return
+        self._running = True
+        try:
+            if type(request) is not FrequencyDomainWorkflowRequest:
+                raise TypeError(
+                    "request must be FrequencyDomainWorkflowRequest."
+                )
+            result = self._service.run(request)
+        except Exception:
+            _LOGGER.exception("Unexpected frequency-domain worker failure.")
+            self.failed.emit(
+                WorkflowWorkerFailure(
+                    "Die Frequenzberechnung ist unerwartet fehlgeschlagen. "
+                    "Technische Details wurden protokolliert."
+                )
+            )
+        else:
+            self.completed.emit(result)
+        finally:
+            self._running = False
+
+
 __all__ = [
+    "FrequencyDomainWorkflowWorker",
     "TransferFunctionWorkflowExecutionResult",
     "TransferFunctionWorkflowWorker",
     "WorkflowWorkerFailure",
