@@ -6,6 +6,11 @@ from klausurbotpro.application.frequency_domain_request_factory import (
     FrequencyDomainRequestFactory,
     FrequencyDomainRequestFieldError,
 )
+from klausurbotpro.application.frequency_domain_singularity_refinement import (
+    FrequencyDomainSingularityRefinementPlan,
+    FrequencyDomainSingularityRefinementPlanner,
+    FrequencyDomainSingularityRefinementReason,
+)
 from klausurbotpro.application.frequency_domain_workflow_contracts import (
     FrequencyDomainWorkflowDiagnosticCode,
     FrequencyDomainWorkflowLimits,
@@ -95,6 +100,9 @@ __all__ = [
     "FrequencyDomainRequestCreationResult",
     "FrequencyDomainRequestFactory",
     "FrequencyDomainRequestFieldError",
+    "FrequencyDomainSingularityRefinementPlan",
+    "FrequencyDomainSingularityRefinementPlanner",
+    "FrequencyDomainSingularityRefinementReason",
     "FrequencyDomainWorkflowLimits",
     "FrequencyDomainWorkflowMode",
     "FrequencyDomainWorkflowRequest",

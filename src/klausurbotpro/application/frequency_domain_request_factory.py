@@ -117,6 +117,12 @@ class FrequencyDomainRequestFactory:
             limits.grid.max_rational_integer_digits,
         )
 
+    @property
+    def limits(self) -> FrequencyDomainWorkflowLimits:
+        """Return the exact limits shared with created workflow requests."""
+
+        return self._limits
+
     def create(
         self,
         draft: FrequencyDomainInputDraft,
