@@ -12,6 +12,7 @@ from klausurbotpro.application import (
     FrequencyDomainWorkflowResult,
     FrequencyDomainWorkflowService,
     FrequencyPhasePresentation,
+    ParameterInputDraft,
     TransferFunctionInputDraft,
     WorkflowInputForm,
     render_frequency_domain_solution_latex,
@@ -32,6 +33,7 @@ def _result(
     points: str = "4",
     explicit: str = "",
     unwrap: bool = False,
+    parameters: tuple[ParameterInputDraft, ...] = (),
 ) -> tuple[FrequencyDomainWorkflowResult, FrequencyDomainWorkflowLimits]:
     limits = FrequencyDomainWorkflowLimits()
     draft = FrequencyDomainInputDraft(
@@ -41,7 +43,7 @@ def _result(
             "",
             "",
             "s",
-            (),
+            parameters,
             "frequency",
         ),
         mode,
@@ -84,6 +86,24 @@ def test_single_point_pt1_is_copyable_compact_and_uses_engineering_j() -> None:
     assert r"\varphi(1)=-45^\circ" not in latex
     assert r"\boxed{" in latex
     assert re.search(r"\d+\.\d{12,}", latex) is None
+
+
+def test_single_point_parameter_assignments_are_visible() -> None:
+    result, limits = _result(
+        "K/(T*s+1)",
+        FrequencyDomainWorkflowMode.SINGLE_POINT,
+        parameters=(
+            ParameterInputDraft("K", "2", "1"),
+            ParameterInputDraft("T", "1", "5"),
+        ),
+    )
+
+    latex = render_frequency_domain_solution_latex(result, limits)
+
+    assert (
+        r"\text{Parameterbelegungen:}\quad "
+        r"\mathtt{K}=2,\quad \mathtt{T}=\frac{1}{5}"
+    ) in latex
 
 
 def test_single_point_singularity_keeps_denominator_and_invents_no_values() -> None:

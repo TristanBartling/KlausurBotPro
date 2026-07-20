@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from klausurbotpro.application.transfer_function_solution_report_contracts import (
     ConditionLine,
     EquationLine,
@@ -474,9 +476,11 @@ def _escape_latex_text(value: str) -> str:
 
 
 def _engineering_complex_latex(value: str) -> str:
-    if value == "i":
-        return r"\mathrm{j}"
-    return value.replace(" i", r" \mathrm{j}")
+    return re.sub(
+        r"(?<![A-Za-z])i(?![A-Za-z])",
+        lambda _match: r"\mathrm{j}",
+        value,
+    )
 
 
 __all__ = [

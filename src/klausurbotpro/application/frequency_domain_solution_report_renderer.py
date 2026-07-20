@@ -85,6 +85,7 @@ def _single_point_report(result: FrequencyDomainWorkflowResult) -> str:
     given = (
         r"\section*{Gegeben}",
         _transfer_function_equation(result, reduced=False),
+        _substitutions_equation(result),
         rf"\[\omega={_rational_latex(point.omega)}\,\mathrm{{rad/s}}\]",
     )
     solution = (

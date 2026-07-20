@@ -440,3 +440,14 @@ def test_complex_poles_use_control_engineering_j_in_latex() -> None:
     assert r"\[p_{1} = -2 - 3 \mathrm{j}" in latex
     assert r"\[p_{2} = -2 + 3 \mathrm{j}" in latex
     assert r"3 i" not in latex
+
+
+def test_fractional_complex_poles_use_control_engineering_j_in_latex() -> None:
+    report = TransferFunctionSolutionReportBuilder().build(
+        _state("1/(4*s^2+1)")
+    )
+
+    latex = render_solution_report_latex(report)
+
+    assert r"\frac{\mathrm{j}}{2}" in latex
+    assert r"\frac{i}{2}" not in latex
