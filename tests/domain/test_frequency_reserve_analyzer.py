@@ -44,6 +44,7 @@ def _analyze(
             explicit,
         ),
         phase_presentation=FrequencyPhasePresentation.PRINCIPAL_AND_UNWRAPPED,
+        include_reserves=True,
     )
     result = FrequencyDomainWorkflowService().run(request)
     assert result.crossover_analysis is not None

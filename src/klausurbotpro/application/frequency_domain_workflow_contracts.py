@@ -18,15 +18,15 @@ from klausurbotpro.domain import (
     BodePhaseUnwrapResult,
     Diagnostic,
     ExactRationalValue,
-    FrequencyResponseLimits,
     FrequencyCrossoverAnalysis,
+    FrequencyResponseLimits,
     LogFrequencyGridLimits,
     LogFrequencyGridRequest,
     LogFrequencyGridResult,
     ParameterSubstitutions,
     ReducedTransferFunction,
-    StandardElementBodeResult,
     StabilityReserveAnalysis,
+    StandardElementBodeResult,
     TransferFunctionBodeDataResult,
     TransferFunctionFrequencyResponseResult,
 )
@@ -95,6 +95,7 @@ class FrequencyDomainWorkflowRequest:
     phase_presentation: FrequencyPhasePresentation = (
         FrequencyPhasePresentation.PRINCIPAL_ONLY
     )
+    include_reserves: bool = False
 
 
 @dataclass(frozen=True, slots=True)

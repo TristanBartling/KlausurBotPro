@@ -40,12 +40,8 @@ _STATUS_LATEX = {
     FrequencyResponsePointStatus.DEFINED: r"\text{definiert}",
     FrequencyResponsePointStatus.ZERO_RESPONSE: r"\text{Nullantwort}",
     FrequencyResponsePointStatus.SINGULAR: r"\text{singulär}",
-    FrequencyResponsePointStatus.SYMBOLIC_UNDETERMINED: (
-        r"\text{symbolisch unbestimmt}"
-    ),
-    FrequencyResponsePointStatus.NUMERIC_UNDETERMINED: (
-        r"\text{numerisch unbestimmt}"
-    ),
+    FrequencyResponsePointStatus.SYMBOLIC_UNDETERMINED: (r"\text{symbolisch unbestimmt}"),
+    FrequencyResponsePointStatus.NUMERIC_UNDETERMINED: (r"\text{numerisch unbestimmt}"),
 }
 
 
@@ -117,9 +113,7 @@ def _bode_report(
         raise ValueError("selected_bode_index exceeds the Bode table.")
     added = frozenset(added_frequencies)
     original_explicit = tuple(
-        value
-        for value in grid_request.explicit_frequencies
-        if value not in added
+        value for value in grid_request.explicit_frequencies if value not in added
     )
     given_lines = (
         r"\section*{Numerische Bode-Auswertung}",
@@ -171,6 +165,7 @@ def _bode_report(
             table,
             *selected,
             *_unwrap_explanation(result, selected_index),
+            *_reserve_section(result),
             *_singularity_lines(result, added_frequencies),
             *_workflow_notices(result),
         )
@@ -188,9 +183,7 @@ def _standard_element_section(
         message = analysis.diagnostics[0].message
         return (
             heading,
-            (
-                "\\[\\text{Standardglieder-MVP: nicht unterst\u00fctzt}\\]"
-            ),
+            ("\\[\\text{Standardglieder-MVP: nicht unterst\u00fctzt}\\]"),
             rf"\[{descriptive_math(f'Grund: {message}').latex}\]",
         )
     assert analysis.gain is not None
@@ -254,15 +247,9 @@ def _transfer_function_equation(
 ) -> str:
     assert result.preparation_result is not None
     value = (
-        result.preparation_result.reduced_value
-        if reduced
-        else result.preparation_result.raw_value
+        result.preparation_result.reduced_value if reduced else result.preparation_result.raw_value
     )
-    label = (
-        r"G_{\mathrm{red}}(s)"
-        if reduced
-        else r"G_{\mathrm{Eingabe}}(s)"
-    )
+    label = r"G_{\mathrm{red}}(s)" if reduced else r"G_{\mathrm{Eingabe}}(s)"
     if value is None:
         return rf"\[{label}=\text{{nicht verfügbar}}\]"
     pair = transfer_pair(
@@ -277,10 +264,7 @@ def _substitutions_equation(result: FrequencyDomainWorkflowResult) -> str:
     if substitutions is None or not substitutions.assignments:
         return r"\[\text{Parameterbelegungen: keine}\]"
     values = r",\quad ".join(
-        (
-            f"{literal_text(assignment.parameter_name).latex}="
-            f"{_rational_latex(assignment.value)}"
-        )
+        (f"{literal_text(assignment.parameter_name).latex}={_rational_latex(assignment.value)}")
         for assignment in substitutions.assignments
     )
     return rf"\[\text{{Parameterbelegungen:}}\quad {values}\]"
@@ -471,9 +455,76 @@ def _unwrap_explanation(
     ]
     offset = offsets.get(selected_index, 0)
     if offset:
-        lines.append(
-            rf"\[k(\omega_{{\mathrm{{ausgewählt}}}})={offset}\]"
+        lines.append(rf"\[k(\omega_{{\mathrm{{ausgewählt}}}})={offset}\]")
+    return tuple(lines)
+
+
+def _reserve_section(
+    result: FrequencyDomainWorkflowResult,
+) -> tuple[str, ...]:
+    crossovers = result.crossover_analysis
+    reserves = result.reserve_analysis
+    if crossovers is None or reserves is None:
+        return ()
+    lines = [
+        r"\section*{Durchtritte und Reserven}",
+        rf"\[\text{{Bandstatus: }}{literal_text(crossovers.completeness.value).latex}\]",
+        r"\[L(\omega_g)=0\,\mathrm{dB},\qquad "
+        r"\mathrm{PM}=180^\circ+\varphi_{\mathrm{entf}}(\omega_g)\]",
+    ]
+    if crossovers.gain_crossovers:
+        table = [
+            r"\[\begin{array}{rllll}",
+            r"\hline",
+            r"\# & \omega_g & \varphi_{\mathrm{entf}}(\omega_g) & L(\omega_g) & \mathrm{PM}\\",
+            r"\hline",
+        ]
+        for index, (item, reserve) in enumerate(
+            zip(crossovers.gain_crossovers, reserves.phase_margins, strict=True), 1
+        ):
+            table.append(
+                rf"{index} & {_table_frequency(str(item.frequency))} & "
+                rf"{item.unwrapped_phase_degrees:.6g}^\circ & {item.decibel:.6g}\,\mathrm{{dB}} & "
+                rf"{reserve.value:.6g}^\circ\\"
+            )
+        table.extend((r"\hline", r"\end{array}\]"))
+        lines.append("\n".join(table))
+    else:
+        lines.append(r"\[\text{Phasenreserve nicht definiert: kein Amplitudendurchtritt.}\]")
+    lines.append(
+        r"\[\varphi_{\mathrm{entf}}(\omega_p)=-180^\circ-360^\circ m,\qquad "
+        r"\mathrm{GM}_{\mathrm{dB}}=-L(\omega_p),\qquad "
+        r"\mathrm{GM}=10^{\mathrm{GM}_{\mathrm{dB}}/20}=1/|G(\mathrm{j}\omega_p)|\]"
+    )
+    if crossovers.phase_crossovers:
+        table = [
+            r"\[\begin{array}{rrllll}",
+            r"\hline",
+            r"\# & m & \omega_p & \varphi_{\mathrm{entf}}(\omega_p) & "
+            r"\mathrm{GM}_{\mathrm{dB}} & \mathrm{GM}\\",
+            r"\hline",
+        ]
+        for index, item in enumerate(crossovers.phase_crossovers, 1):
+            reserve_db = reserves.gain_margins_db[index - 1]
+            factor = reserves.gain_margin_factors[index - 1]
+            table.append(
+                rf"{index} & {item.phase_branch_index} & {_table_frequency(str(item.frequency))} & "
+                rf"{item.unwrapped_phase_degrees:.6g}^\circ & "
+                rf"{reserve_db.value:.6g}\,\mathrm{{dB}} & "
+                rf"{factor.value:.6g}\\"
+            )
+        table.extend((r"\hline", r"\end{array}\]"))
+        lines.append("\n".join(table))
+    else:
+        interpretation = reserves.gain_margins_db[0].interpretation.value
+        text = (
+            "formal unbeschränkt: kein endlicher Phasendurchtritt"
+            if interpretation == "formally_unbounded"
+            else "nicht bestimmt: im untersuchten Band kein Phasendurchtritt"
         )
+        lines.append(rf"\[\text{{Amplitudenreserve {text}.}}\]")
+    if reserves.multiple_crossovers:
+        lines.append(r"\[\text{Mehrere Durchtritte: alle Einzelreserven sind maßgeblich.}\]")
     return tuple(lines)
 
 
@@ -485,17 +536,14 @@ def _singularity_lines(
     singular = tuple(
         point
         for point in result.bode_data_result.points
-        if point.frequency_response_point.status
-        is FrequencyResponsePointStatus.SINGULAR
+        if point.frequency_response_point.status is FrequencyResponsePointStatus.SINGULAR
     )
     if not singular and not added:
         return ()
     lines = [r"\section*{Singularitäten und Stützstellen}"]
     for point in singular:
         omega = _rational_latex(point.evaluation_frequency)
-        denominator = _exact_latex(
-            point.frequency_response_point.specialized_denominator
-        )
+        denominator = _exact_latex(point.frequency_response_point.specialized_denominator)
         lines.extend(
             (
                 rf"\[\omega_s={omega}\,\mathrm{{rad/s}}\]",
@@ -548,10 +596,7 @@ def _frequency_list(
     rendered = (
         r"\text{keine}"
         if not values
-        else r",\quad ".join(
-            rf"{_rational_latex(value)}\,\mathrm{{rad/s}}"
-            for value in values
-        )
+        else r",\quad ".join(rf"{_rational_latex(value)}\,\mathrm{{rad/s}}" for value in values)
     )
     return rf"\[\text{{{label}:}}\quad {rendered}\]"
 
@@ -575,8 +620,7 @@ def _table_magnitude(point: FrequencyResponsePoint) -> str:
 def _table_decibel(point: FrequencyResponsePoint) -> str:
     if (
         point.numerical_decibel is not None
-        and point.numerical_decibel.kind
-        is DecibelValueKind.NEGATIVE_INFINITY
+        and point.numerical_decibel.kind is DecibelValueKind.NEGATIVE_INFINITY
     ):
         return r"-\infty"
     return _decibel_latex(point) or "--"

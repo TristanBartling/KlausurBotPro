@@ -93,6 +93,8 @@ def validate_frequency_domain_request(
         errors.append(("mode", "Ungültiger Frequenzworkflowmodus."))
     if type(request.phase_presentation) is not FrequencyPhasePresentation:
         errors.append(("phase_presentation", "Ungültige Phasendarstellung."))
+    if type(request.include_reserves) is not bool:
+        errors.append(("include_reserves", "Ungültige Reservenanforderung."))
     if request.mode is FrequencyDomainWorkflowMode.SINGLE_POINT:
         if not _is_canonical_rational(request.single_angular_frequency):
             errors.append(
@@ -542,7 +544,32 @@ def _validate_bode_result(
         if result.phase_unwrap_result is not None:
             _fail("A failed Bode result cannot retain an unwrap result.")
         return
+    _validate_reserve_results(result)
     _validate_unwrap_result(result, limits)
+
+
+def _validate_reserve_results(result: FrequencyDomainWorkflowResult) -> None:
+    assert result.request is not None
+    crossovers = result.crossover_analysis
+    reserves = result.reserve_analysis
+    if (crossovers is None) != (reserves is None):
+        _fail("Crossover and reserve results must be retained together.")
+    if not result.request.include_reserves:
+        if crossovers is not None:
+            _fail("An unrequested Bode run cannot retain reserve results.")
+        return
+    if crossovers is None or reserves is None:
+        _fail("A successful requested reserve analysis requires both results.")
+    if crossovers.completeness is not reserves.completeness:
+        _fail("Crossover and reserve completeness must agree.")
+    expected_phase_count = max(1, len(crossovers.gain_crossovers))
+    expected_gain_count = max(1, len(crossovers.phase_crossovers))
+    if (
+        len(reserves.phase_margins) != expected_phase_count
+        or len(reserves.gain_margins_db) != expected_gain_count
+        or len(reserves.gain_margin_factors) != expected_gain_count
+    ):
+        _fail("Reserve lists do not align with their referenced crossovers.")
 
 
 def _validate_unwrap_result(

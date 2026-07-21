@@ -49,7 +49,7 @@ class FrequencyReserveAnalyzer:
         bode: TransferFunctionBodeDataResult,
         unwrapped: BodePhaseUnwrapResult,
         *,
-        field: str = "transfer_function",
+        field: str | None = "transfer_function",
     ) -> tuple[FrequencyCrossoverAnalysis, StabilityReserveAnalysis]:
         if unwrapped.source_bode_data is not bode:
             raise ValueError("Unwrapped phases must belong to the supplied Bode data.")
@@ -197,6 +197,10 @@ class FrequencyReserveAnalyzer:
         results: list[FrequencyCrossover] = []
         for branch in range(m_min, m_max + 1):
             target = -180.0 - 360.0 * branch
+            phase_residuals = tuple(row[2] - target for row in samples)
+            if phase_residuals and max(abs(value) for value in phase_residuals) <= (_PHASE_TOL):
+                # A whole interval on the target line has no isolated crossing.
+                continue
             candidates: list[tuple[float, tuple[float, float], CrossoverDetectionMethod]] = []
             for index, (omega, _, phase) in enumerate(samples):
                 residual = phase - target
@@ -266,7 +270,7 @@ class _Evaluator:
         self,
         transfer_function: ReducedTransferFunction,
         substitutions: ParameterSubstitutions,
-        field: str,
+        field: str | None,
     ) -> None:
         self._transfer_function = transfer_function
         self._substitutions = substitutions

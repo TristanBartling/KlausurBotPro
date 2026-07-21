@@ -34,15 +34,15 @@ from klausurbotpro.domain import (
     BodePhaseUnwrapAnalyzer,
     BodePhaseUnwrapResult,
     Diagnostic,
-    FrequencySampleSet,
-    FrequencyReserveAnalyzer,
     FrequencyCrossoverAnalysis,
+    FrequencyReserveAnalyzer,
+    FrequencySampleSet,
     LogFrequencyGridGenerator,
     LogFrequencyGridResult,
     ParameterSubstitutions,
+    StabilityReserveAnalysis,
     StandardElementBodeAnalyzer,
     StandardElementBodeResult,
-    StabilityReserveAnalysis,
     TransferFunctionBodeDataAnalyzer,
     TransferFunctionBodeDataResult,
     TransferFunctionFrequencyResponseAnalyzer,
@@ -300,12 +300,34 @@ class FrequencyDomainWorkflowService:
             request.phase_presentation
             is FrequencyPhasePresentation.PRINCIPAL_ONLY
         ):
+            reserve_analyses: tuple[
+                FrequencyCrossoverAnalysis | None,
+                StabilityReserveAnalysis | None,
+            ] = (None, None)
+            if request.include_reserves:
+                reserve_unwrap = BodePhaseUnwrapAnalyzer(
+                    self._limits.frequency_response,
+                    self._limits.grid,
+                    self._limits.bode,
+                    self._limits.phase_unwrap,
+                ).analyze(bode, field=request.preparation_request.field)
+                if reserve_unwrap.succeeded:
+                    reserve_analyses = FrequencyReserveAnalyzer().analyze(
+                        reduced,
+                        preparation.request.substitutions
+                        or ParameterSubstitutions(),
+                        bode,
+                        reserve_unwrap,
+                        field=request.preparation_request.field,
+                    )
             return self._finish(
                 request=request,
                 preparation_result=preparation,
                 grid_result=grid,
                 bode_data_result=bode,
                 standard_element_bode_result=standard_elements,
+                crossover_analysis=reserve_analyses[0],
+                reserve_analysis=reserve_analyses[1],
                 records=(
                     *grid_prefix,
                     grid_record,
@@ -369,8 +391,12 @@ class FrequencyDomainWorkflowService:
                     unwrap,
                     field=request.preparation_request.field,
                 )
-            )[0] if unwrap.succeeded else None,
-            reserve_analysis=analyses[1] if unwrap.succeeded else None,
+            )[0] if unwrap.succeeded and request.include_reserves else None,
+            reserve_analysis=(
+                analyses[1]
+                if unwrap.succeeded and request.include_reserves
+                else None
+            ),
             records=(
                 *grid_prefix,
                 grid_record,
