@@ -4,7 +4,7 @@
 **Version:** 1.1 – token- und feedbackoptimierte Umsetzung  
 **Stand:** 20.07.2026  
 **Zweck:** Zusammenführung der vorhandenen Fachspezifikationen in eine gemeinsame technische Roadmap  
-**Wichtig:** Dieses Dokument ersetzt bestehende Roadmaps im Codex-/Repository-Verzeichnis noch nicht. Vor einer Konsolidierung müssen die dort vorhandenen Roadmaps inventarisiert, verglichen und gezielt aktualisiert werden.
+**Wichtig:** Dieses Dokument ist die aktuelle verbindliche Fassung des Architektur- und Implementierungsplans. Frühere Fassungen wurden bewusst ersetzt und begründen keinen Versionskonflikt.
 
 ---
 
@@ -37,7 +37,6 @@ Maßgeblich sind:
 
 Zwei Resets erlauben umfangreiche weitere Implementierung. Sie rechtfertigen aber keine unnötigen Doppelarbeiten, wiederholte Volltests ohne Anlass oder große universelle Abstraktionen ohne unmittelbaren Klausurnutzen.
 
-## 1.2 Werkzeugaufteilung
 
 ## 1.2 Werkzeugaufteilung
 
