@@ -29,12 +29,19 @@ class StandardElementFactorRole(StrEnum):
     POLE = "pole"
 
 
+class StandardElementFactorKind(StrEnum):
+    FIRST_ORDER = "first_order"
+    PT2 = "pt2"
+
+
 @dataclass(frozen=True, slots=True)
 class StandardElementFactor:
     role: StandardElementFactorRole
     root: ExactExpression
     corner_frequency: ExactExpression
     multiplicity: int
+    kind: StandardElementFactorKind = StandardElementFactorKind.FIRST_ORDER
+    damping_ratio: ExactExpression | None = None
 
     def __post_init__(self) -> None:
         if type(self.role) is not StandardElementFactorRole:
@@ -45,6 +52,15 @@ class StandardElementFactor:
             raise TypeError("corner_frequency must be an ExactExpression.")
         if type(self.multiplicity) is not int or self.multiplicity <= 0:
             raise ValueError("multiplicity must be a positive int.")
+        if type(self.kind) is not StandardElementFactorKind:
+            raise TypeError("kind must be StandardElementFactorKind.")
+        if self.kind is StandardElementFactorKind.PT2:
+            if self.role is not StandardElementFactorRole.POLE:
+                raise ValueError("The limited PT2 support accepts denominator factors only.")
+            if type(self.damping_ratio) is not ExactExpression:
+                raise TypeError("A PT2 factor requires an exact damping ratio.")
+        elif self.damping_ratio is not None:
+            raise ValueError("Only PT2 factors have a damping ratio.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +224,7 @@ __all__ = [
     "StandardElementBodeStatus",
     "StandardElementCornerEvent",
     "StandardElementFactor",
+    "StandardElementFactorKind",
     "StandardElementFactorRole",
     "StandardElementUnsupportedReason",
 ]

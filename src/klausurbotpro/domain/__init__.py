@@ -157,8 +157,14 @@ from klausurbotpro.domain.standard_element_bode_contracts import (
     StandardElementBodeStatus,
     StandardElementCornerEvent,
     StandardElementFactor,
+    StandardElementFactorKind,
     StandardElementFactorRole,
     StandardElementUnsupportedReason,
+)
+from klausurbotpro.domain.standard_element_bode_contributions import (
+    BodeSketchMode,
+    StandardElementContribution,
+    standard_element_contributions,
 )
 from klausurbotpro.domain.time_domain_analyzer import (
     classify_reduction_poles,
@@ -352,7 +358,11 @@ __all__ = [
     "StandardElementBodeStatus",
     "StandardElementCornerEvent",
     "StandardElementFactor",
+    "StandardElementFactorKind",
     "StandardElementFactorRole",
+    "StandardElementContribution",
+    "BodeSketchMode",
+    "standard_element_contributions",
     "StandardElementUnsupportedReason",
     "StabilityReserve",
     "StabilityReserveAnalysis",

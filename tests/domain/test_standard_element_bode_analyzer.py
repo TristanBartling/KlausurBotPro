@@ -79,9 +79,9 @@ def test_lhp_pole_and_zero_have_sorted_corner_events() -> None:
     assert result.reconstruction_verified
 
 
-def test_complex_pole_pair_returns_no_partial_decomposition() -> None:
+def test_complex_numerator_pair_returns_no_partial_decomposition() -> None:
     result = StandardElementBodeAnalyzer().analyze(
-        _reduced("1/(s^2+s+1)")
+        _reduced("(s^2+s+1)/(s+1)")
     )
 
     assert result.status is StandardElementBodeStatus.UNSUPPORTED
@@ -95,4 +95,4 @@ def test_complex_pole_pair_returns_no_partial_decomposition() -> None:
     assert result.initial_slope_db_per_decade is None
     assert not result.reconstruction_verified
     assert result.diagnostics[0].code is DiagnosticCode.STANDARD_ELEMENT_BODE_UNSUPPORTED
-    assert "komplexe Polstelle" in result.diagnostics[0].message
+    assert "komplexes Nullstellenpaar" in result.diagnostics[0].message

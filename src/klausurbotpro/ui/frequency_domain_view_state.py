@@ -130,6 +130,30 @@ class PlotMarkerView:
 
 
 @dataclass(frozen=True, slots=True)
+class StandardElementTableRow:
+    number: str
+    element_type: str
+    factor: str
+    gain_share: str
+    time_constant: str
+    corner_frequency: str
+    slope_change: str
+    phase_change: str
+    support: str
+
+
+@dataclass(frozen=True, slots=True)
+class PlotComponentView:
+    label: str
+    exact_magnitude: PlotSegmentView
+    exact_phase: PlotSegmentView
+    asymptotic_magnitude: PlotSegmentView
+    asymptotic_phase: PlotSegmentView
+    rough_magnitude: PlotSegmentView
+    rough_phase: PlotSegmentView
+
+
+@dataclass(frozen=True, slots=True)
 class PlotView:
     visible: bool = False
     magnitude_segments: tuple[PlotSegmentView, ...] = ()
@@ -138,6 +162,10 @@ class PlotView:
     interruption_markers: tuple[PlotMarkerView, ...] = ()
     gain_crossover_markers: tuple[PlotMarkerView, ...] = ()
     phase_crossover_markers: tuple[PlotMarkerView, ...] = ()
+    corner_frequency_markers: tuple[PlotMarkerView, ...] = ()
+    component_curves: tuple[PlotComponentView, ...] = ()
+    standard_element_rows: tuple[StandardElementTableRow, ...] = ()
+    decomposition_message: str = ""
     no_data_message: str = ""
 
     def __post_init__(self) -> None:
@@ -157,12 +185,23 @@ class PlotView:
             type(value) is not PlotMarkerView for value in self.interruption_markers
         ):
             raise TypeError("interruption_markers must contain plot markers.")
-        for name in ("gain_crossover_markers", "phase_crossover_markers"):
+        for name in (
+            "gain_crossover_markers",
+            "phase_crossover_markers",
+            "corner_frequency_markers",
+        ):
             values = getattr(self, name)
             if type(values) is not tuple or any(
                 type(value) is not PlotMarkerView for value in values
             ):
                 raise TypeError(f"{name} must contain plot markers.")
+        if any(type(value) is not PlotComponentView for value in self.component_curves):
+            raise TypeError("component_curves must contain component views.")
+        if any(
+            type(value) is not StandardElementTableRow
+            for value in self.standard_element_rows
+        ):
+            raise TypeError("standard_element_rows must contain table rows.")
         if type(self.no_data_message) is not str:
             raise TypeError("The plot message must be a string.")
 
@@ -317,6 +356,8 @@ __all__ = [
     "FrequencyDomainUiRunStatus",
     "FrequencyDomainViewState",
     "PlotMarkerView",
+    "PlotComponentView",
+    "StandardElementTableRow",
     "NyquistView",
     "PlotSegmentView",
     "PlotView",

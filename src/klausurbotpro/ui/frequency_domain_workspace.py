@@ -6,7 +6,7 @@ from math import isfinite
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from matplotlib.ticker import AutoMinorLocator, LogLocator, MultipleLocator
+from matplotlib.ticker import AutoMinorLocator, FuncFormatter, LogLocator, MultipleLocator
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -47,6 +47,7 @@ from klausurbotpro.ui.frequency_domain_presenter import (
 from klausurbotpro.ui.frequency_domain_view_state import (
     FrequencyDomainUiRunStatus,
     FrequencyDomainViewState,
+    PlotSegmentView,
 )
 
 _SUMMARY_FIELDS = (
@@ -114,6 +115,14 @@ _RESERVE_FIELDS = (
     "decibel",
     "reserve",
     "quality",
+)
+_STANDARD_ELEMENT_HEADERS = (
+    "Nr.", "Gliedtyp", "Faktor", "Verstärkungsanteil", "Zeitkonstante",
+    "Knickfrequenz ω_k", "Steigungsänderung", "Phasenänderung", "Status",
+)
+_STANDARD_ELEMENT_FIELDS = (
+    "number", "element_type", "factor", "gain_share", "time_constant",
+    "corner_frequency", "slope_change", "phase_change", "support",
 )
 _FIELD_LABELS = {
     "common_expression_text": "Gemeinsamer Ausdruck",
@@ -394,6 +403,35 @@ class FrequencyDomainWorkspace(QWidget):
         self.plot_canvas.setObjectName("frequencyBodeCanvas")
         self.plot_page = QWidget()
         plot_layout = QVBoxLayout(self.plot_page)
+        plot_controls = QHBoxLayout()
+        self.bode_display_mode_combo = QComboBox()
+        self.bode_display_mode_combo.setObjectName("bodeDisplayMode")
+        self.bode_display_mode_combo.addItems(
+            ("Exakter Verlauf", "Asymptotische Näherung", "Grobe Klausurskizze")
+        )
+        self.show_component_checkbox = QCheckBox("Einzelbeiträge anzeigen")
+        self.show_component_checkbox.setObjectName("showBodeComponents")
+        self.show_component_checkbox.setChecked(True)
+        self.show_total_checkbox = QCheckBox("Gesamtfunktion anzeigen")
+        self.show_total_checkbox.setObjectName("showBodeTotal")
+        self.show_total_checkbox.setChecked(True)
+        plot_controls.addWidget(QLabel("Darstellung:"))
+        plot_controls.addWidget(self.bode_display_mode_combo)
+        plot_controls.addWidget(self.show_component_checkbox)
+        plot_controls.addWidget(self.show_total_checkbox)
+        plot_controls.addStretch(1)
+        self.bode_mode_notice = QLabel()
+        self.bode_mode_notice.setObjectName("bodeModeNotice")
+        self.bode_decomposition_label = QLabel()
+        self.bode_decomposition_label.setWordWrap(True)
+        self.standard_element_table = QTableWidget(0, len(_STANDARD_ELEMENT_HEADERS))
+        self.standard_element_table.setObjectName("standardElementTable")
+        self.standard_element_table.setHorizontalHeaderLabels(_STANDARD_ELEMENT_HEADERS)
+        self.standard_element_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.standard_element_table.setMaximumHeight(180)
+        self.standard_element_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
         self.plot_gap_hint_label = QLabel(
             "Die Breite der sichtbaren Lücke hängt von der gewählten "
             "Rasterauflösung ab. Mathematisch liegt die Singularität nur "
@@ -401,7 +439,11 @@ class FrequencyDomainWorkspace(QWidget):
         )
         self.plot_gap_hint_label.setObjectName("frequencyPlotGapHint")
         self.plot_gap_hint_label.setWordWrap(True)
+        plot_layout.addLayout(plot_controls)
+        plot_layout.addWidget(self.bode_mode_notice)
+        plot_layout.addWidget(self.bode_decomposition_label)
         plot_layout.addWidget(self.plot_canvas, 1)
+        plot_layout.addWidget(self.standard_element_table)
         plot_layout.addWidget(self.plot_gap_hint_label)
 
         self.nyquist_figure = Figure(figsize=(6.5, 5.0), layout="constrained")
@@ -529,6 +571,11 @@ class FrequencyDomainWorkspace(QWidget):
         self.value_table.currentCellChanged.connect(self._selected_row_changed)
         self.technical_details_checkbox.toggled.connect(self._technical_details_toggled)
         self.copy_latex_button.clicked.connect(self.copy_latex_solution)
+        self.bode_display_mode_combo.currentIndexChanged.connect(
+            self._bode_display_changed
+        )
+        self.show_component_checkbox.toggled.connect(self._bode_display_changed)
+        self.show_total_checkbox.toggled.connect(self._bode_display_changed)
         self._shortcuts = (
             QShortcut(QKeySequence("Ctrl+Return"), self),
             QShortcut(QKeySequence("Ctrl+Enter"), self),
@@ -625,6 +672,9 @@ class FrequencyDomainWorkspace(QWidget):
         self.scalar_gain_checkbox.setChecked(False)
         self.scalar_gain_lower_edit.clear()
         self.scalar_gain_upper_edit.clear()
+        self.bode_display_mode_combo.setCurrentIndex(0)
+        self.show_component_checkbox.setChecked(True)
+        self.show_total_checkbox.setChecked(True)
 
     @Slot(object)
     def render_state(self, value: object) -> None:
@@ -702,6 +752,13 @@ class FrequencyDomainWorkspace(QWidget):
             )
         )
         self.plot_gap_hint_label.setVisible(has_visible_gap)
+        self.bode_decomposition_label.setText(state.plot.decomposition_message)
+        self.standard_element_table.setRowCount(len(state.plot.standard_element_rows))
+        for row_index, row in enumerate(state.plot.standard_element_rows):
+            for column, name in enumerate(_STANDARD_ELEMENT_FIELDS):
+                self.standard_element_table.setItem(
+                    row_index, column, QTableWidgetItem(getattr(row, name))
+                )
         self.magnitude_axes.clear()
         self.phase_axes.clear()
         for axes, ylabel in (
@@ -738,22 +795,74 @@ class FrequencyDomainWorkspace(QWidget):
             linewidth=1.6,
             zorder=1,
         )
-
-        for segment in state.plot.magnitude_segments:
-            self.magnitude_axes.plot(
-                [float(value) for value in segment.x_values],
-                [float(value) for value in segment.y_values],
-                marker="o",
-                markersize=4,
+        mode_index = self.bode_display_mode_combo.currentIndex()
+        notice = (
+            "Exakter Verlauf"
+            if mode_index == 0
+            else "Asymptotische Näherung"
+            if mode_index == 1
+            else "Grobe qualitative Klausurskizze"
+        )
+        self.bode_mode_notice.setText(notice)
+        selected_components = []
+        for component in state.plot.component_curves:
+            if mode_index == 0:
+                selected_components.append((component.exact_magnitude, component.exact_phase))
+            elif mode_index == 1:
+                selected_components.append(
+                    (component.asymptotic_magnitude, component.asymptotic_phase)
+                )
+            else:
+                selected_components.append((component.rough_magnitude, component.rough_phase))
+        if self.show_component_checkbox.isChecked():
+            colors = (
+                "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+                "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
             )
-        for segment_index, segment in enumerate(state.plot.principal_phase_segments):
-            self.phase_axes.plot(
-                [float(value) for value in segment.x_values],
-                [float(value) for value in segment.y_values],
-                marker="o",
-                markersize=4,
-                label="Hauptphase" if segment_index == 0 else None,
-            )
+            for index, (component, segments) in enumerate(
+                zip(state.plot.component_curves, selected_components, strict=True)
+            ):
+                color = colors[index % len(colors)]
+                for axes, segment in zip(
+                    (self.magnitude_axes, self.phase_axes), segments, strict=True
+                ):
+                    axes.plot(
+                        [float(value) for value in segment.x_values],
+                        [float(value) for value in segment.y_values],
+                        color=color,
+                        linewidth=1.25,
+                        label=component.label,
+                    )
+        if self.show_total_checkbox.isChecked():
+            if mode_index == 0 or not selected_components:
+                total_magnitude = state.plot.magnitude_segments
+                total_phase = (
+                    *state.plot.principal_phase_segments,
+                    *state.plot.unwrapped_phase_segments,
+                )
+            else:
+                total_magnitude = (self._sum_component_segments(selected_components, 0),)
+                total_phase = (self._sum_component_segments(selected_components, 1),)
+            for segment in total_magnitude:
+                self.magnitude_axes.plot(
+                    [float(value) for value in segment.x_values],
+                    [float(value) for value in segment.y_values],
+                    color="#171717", linewidth=2.8, label="Gesamtfunktion G(jω)",
+                )
+            principal_count = len(state.plot.principal_phase_segments)
+            for segment_index, segment in enumerate(total_phase):
+                phase_label = "Gesamtfunktion G(jω)"
+                if mode_index == 0 and state.plot.unwrapped_phase_segments:
+                    phase_label += (
+                        " – Hauptphase"
+                        if segment_index < principal_count
+                        else " – Entfaltete Phase"
+                    )
+                self.phase_axes.plot(
+                    [float(value) for value in segment.x_values],
+                    [float(value) for value in segment.y_values],
+                    color="#171717", linewidth=2.8, label=phase_label,
+                )
         for marker in state.plot.gain_crossover_markers:
             frequency = float(marker.x_value)
             self.magnitude_axes.scatter(
@@ -774,17 +883,15 @@ class FrequencyDomainWorkspace(QWidget):
             )
             self.phase_axes.scatter([frequency], [phase], color="#8a4f00", zorder=5)
             self.phase_axes.annotate(marker.label, (frequency, phase))
-        for segment_index, segment in enumerate(state.plot.unwrapped_phase_segments):
-            self.phase_axes.plot(
-                [float(value) for value in segment.x_values],
-                [float(value) for value in segment.y_values],
-                marker="s",
-                markersize=4,
-                linestyle="--",
-                label="Entfaltete Phase" if segment_index == 0 else None,
-            )
-        if state.plot.unwrapped_phase_segments:
-            self.phase_axes.legend()
+        for marker in state.plot.corner_frequency_markers:
+            frequency = float(marker.x_value)
+            for axes in (self.magnitude_axes, self.phase_axes):
+                lower, upper = axes.get_ylim()
+                axes.vlines(
+                    frequency, lower, upper, color="#666666",
+                    linestyle="--", linewidth=0.8,
+                )
+            self.magnitude_axes.annotate(marker.label, (frequency, 0.0), rotation=90)
         for marker in state.plot.interruption_markers:
             frequency = float(marker.x_value)
             for axes in (self.magnitude_axes, self.phase_axes):
@@ -820,8 +927,53 @@ class FrequencyDomainWorkspace(QWidget):
                     transform=axes.transAxes,
                 )
         self.magnitude_axes.margins(y=0.08)
-        self.phase_axes.margins(y=0.08)
+        phase_values = [
+            value
+            for line in self.phase_axes.lines
+            for value in line.get_ydata()
+            if isfinite(float(value))
+        ]
+        phase_min = min((-270.0, *(float(value) for value in phase_values)))
+        phase_max = max((0.0, *(float(value) for value in phase_values)))
+        lower = 45.0 * int((phase_min - 20.0) // 45.0)
+        upper = 45.0 * int(-(-(phase_max + 20.0) // 45.0))
+        self.phase_axes.set_ylim(lower, upper)
+        self.phase_axes.yaxis.set_major_locator(MultipleLocator(45.0))
+        self.phase_axes.yaxis.set_major_formatter(
+            FuncFormatter(lambda value, _position: f"{value:g}°")
+        )
+        self.phase_axes.hlines(
+            0.0, 0.0, 1.0, transform=self.phase_axes.get_yaxis_transform(),
+            color="#202020", linewidth=1.6,
+        )
+        self.phase_axes.hlines(
+            -180.0, 0.0, 1.0, transform=self.phase_axes.get_yaxis_transform(),
+            color="#555555", linewidth=1.0,
+        )
+        if self.magnitude_axes.get_legend_handles_labels()[1]:
+            self.magnitude_axes.legend(loc="best", fontsize=8)
+        if self.phase_axes.get_legend_handles_labels()[1]:
+            self.phase_axes.legend(loc="best", fontsize=8)
         self.plot_canvas.draw_idle()  # type: ignore[no-untyped-call]
+
+    @staticmethod
+    def _sum_component_segments(
+        components: list[tuple[PlotSegmentView, PlotSegmentView]], axis: int
+    ) -> PlotSegmentView:
+        segments = [item[axis] for item in components]
+        first = segments[0]
+        return PlotSegmentView(
+            first.x_values,
+            tuple(
+                f"{sum(float(segment.y_values[index]) for segment in segments):.12g}"
+                for index in range(len(first.x_values))
+            ),
+        )
+
+    @Slot()
+    def _bode_display_changed(self) -> None:
+        if hasattr(self, "_rendered_state"):
+            self._render_plot(self._rendered_state)
 
     def _render_nyquist(self, state: FrequencyDomainViewState) -> None:
         view = state.nyquist
