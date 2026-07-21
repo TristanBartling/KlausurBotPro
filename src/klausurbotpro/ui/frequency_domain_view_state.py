@@ -219,6 +219,8 @@ class FrequencyDomainViewState:
     rows: tuple[FrequencyDomainTableRow, ...] = ()
     plot: PlotView = PlotView()
     worked_steps: WorkedStepsView = WorkedStepsView()
+    latex_report: str = ""
+    selected_bode_index: int = 0
     diagnostics: tuple[FrequencyDomainDiagnosticView, ...] = ()
     request_errors: tuple[FrequencyDomainRequestFieldError, ...] = ()
     focused_field: str | None = None
@@ -235,6 +237,13 @@ class FrequencyDomainViewState:
             raise TypeError("plot has an invalid type.")
         if type(self.worked_steps) is not WorkedStepsView:
             raise TypeError("worked_steps has an invalid type.")
+        if type(self.latex_report) is not str:
+            raise TypeError("latex_report must be a string.")
+        if (
+            type(self.selected_bode_index) is not int
+            or self.selected_bode_index < 0
+        ):
+            raise ValueError("selected_bode_index must be nonnegative.")
         for values, value_type, name in (
             (self.rows, FrequencyDomainTableRow, "rows"),
             (

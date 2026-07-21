@@ -222,7 +222,7 @@ class TransferFunctionSolutionReportBuilder:
                 root.reduced_poles,
                 state.request.variable_name,
                 "N",
-                "s",
+                "p",
             )
             if root is not None and root.reduced_poles is not None
             else ()
@@ -562,6 +562,60 @@ class TransferFunctionSolutionReportBuilder:
             )
             for assignment in assignments
         ]
+        root_result = state.root_analysis_result
+        specialized_numerator = (
+            None
+            if root_result is None or root_result.reduced_zeros is None
+            else root_result.reduced_zeros.source_expression
+        )
+        specialized_denominator = (
+            None
+            if root_result is None or root_result.reduced_poles is None
+            else root_result.reduced_poles.source_expression
+        )
+        if (
+            assignments
+            and specialized_numerator is not None
+            and specialized_denominator is not None
+        ):
+            variable = identifier(state.request.variable_name)
+            assignment_plain = ", ".join(
+                (
+                    f"{assignment.parameter_name}="
+                    f"{exact_rational(assignment.value).plaintext}"
+                )
+                for assignment in assignments
+            )
+            assignment_latex = r",\,".join(
+                (
+                    f"{identifier(assignment.parameter_name).latex}="
+                    f"{exact_rational(assignment.value).latex}"
+                )
+                for assignment in assignments
+            )
+            raw_value = fraction(
+                transfer_pair(
+                    specialized_numerator,
+                    specialized_denominator,
+                )
+            )
+            evaluated_plain = raw_value.plaintext
+            evaluated_latex = raw_value.latex
+            lines.append(
+                EquationLine(
+                    descriptive_math(
+                        f"G({variable.plaintext})|{assignment_plain}",
+                        rf"\left.G({variable.latex})\right|_{{"
+                        rf"{assignment_latex}}}",
+                    ),
+                    "=",
+                    descriptive_math(
+                        evaluated_plain,
+                        evaluated_latex,
+                    ),
+                    "evaluated_parameter_substitution",
+                )
+            )
         assigned = {assignment.parameter_name for assignment in assignments}
         missing = tuple(name for name in used if name not in assigned)
         if missing:
@@ -673,7 +727,7 @@ class TransferFunctionSolutionReportBuilder:
             )
             lines.append(
                 ResultLine(
-                    f"Re(s_{contribution.pole.index + 1})",
+                    f"Re(p_{contribution.pole.index + 1})",
                     value,
                     multiplicity=contribution.multiplicity,
                     source_role=contribution.real_part_sign.value,
@@ -713,8 +767,8 @@ class TransferFunctionSolutionReportBuilder:
                         "all_pole_real_parts",
                         (
                             descriptive_math(
-                                "Re(s_i)",
-                                r"\mathrm{Re}(s_i)",
+                                "für alle i: Re(p_i)",
+                                r"\forall i:\operatorname{Re}(p_i)",
                             ),
                         ),
                     "< 0",
@@ -728,8 +782,8 @@ class TransferFunctionSolutionReportBuilder:
                         "no_right_half_plane_pole",
                         (
                             descriptive_math(
-                                "Re(s_i)",
-                                r"\mathrm{Re}(s_i)",
+                                "für alle i: Re(p_i)",
+                                r"\forall i:\operatorname{Re}(p_i)",
                             ),
                         ),
                         "<= 0",
@@ -738,8 +792,8 @@ class TransferFunctionSolutionReportBuilder:
                         "simple_imaginary_axis_pole",
                         (
                             descriptive_math(
-                                "Re(s_i)",
-                                r"\mathrm{Re}(s_i)",
+                                "es gibt ein i: Re(p_i)",
+                                r"\exists i:\operatorname{Re}(p_i)",
                             ),
                         ),
                         "= 0, multiplicity = 1",
@@ -758,8 +812,8 @@ class TransferFunctionSolutionReportBuilder:
                         "right_half_plane_pole_exists",
                         (
                             descriptive_math(
-                                "Re(s_i)",
-                                r"\mathrm{Re}(s_i)",
+                                "es gibt ein i: Re(p_i)",
+                                r"\exists i:\operatorname{Re}(p_i)",
                             ),
                         ),
                         "> 0",
@@ -785,8 +839,8 @@ class TransferFunctionSolutionReportBuilder:
                     "undetermined_pole_real_parts",
                     (
                         descriptive_math(
-                            "Re(s_i)",
-                            r"\mathrm{Re}(s_i)",
+                            "Re(p_i)",
+                            r"\operatorname{Re}(p_i)",
                         ),
                     ),
                     "not fully decidable",

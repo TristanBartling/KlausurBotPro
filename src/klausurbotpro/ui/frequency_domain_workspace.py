@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QFormLayout,
@@ -402,6 +403,19 @@ class FrequencyDomainWorkspace(QWidget):
         worked_layout.addWidget(self.technical_details_checkbox)
         worked_layout.addWidget(self.worked_steps_edit, 1)
 
+        self.latex_report_edit = QPlainTextEdit()
+        self.latex_report_edit.setObjectName("frequencyLatexSolution")
+        self.latex_report_edit.setReadOnly(True)
+        self.latex_report_edit.setPlaceholderText(
+            "Nach einer Berechnung erscheint hier die LaTeX-Lösung."
+        )
+        self.copy_latex_button = QPushButton("LaTeX kopieren")
+        self.copy_latex_button.setObjectName("copyFrequencyLatex")
+        latex_page = QWidget()
+        latex_layout = QVBoxLayout(latex_page)
+        latex_layout.addWidget(self.latex_report_edit, 1)
+        latex_layout.addWidget(self.copy_latex_button)
+
         diagnostics_page = QWidget()
         diagnostics_page_layout = QVBoxLayout(diagnostics_page)
         diagnostics_page_layout.addWidget(diagnostics_group)
@@ -423,6 +437,10 @@ class FrequencyDomainWorkspace(QWidget):
         self.worked_tab_index = self.result_tabs.addTab(
             worked_page,
             "Numerische Kurzlösung",
+        )
+        self.latex_tab_index = self.result_tabs.addTab(
+            latex_page,
+            "LaTeX-Lösung",
         )
         self.diagnostics_tab_index = self.result_tabs.addTab(
             diagnostics_page,
@@ -465,6 +483,7 @@ class FrequencyDomainWorkspace(QWidget):
         self.technical_details_checkbox.toggled.connect(
             self._technical_details_toggled
         )
+        self.copy_latex_button.clicked.connect(self.copy_latex_solution)
         self._shortcuts = (
             QShortcut(QKeySequence("Ctrl+Return"), self),
             QShortcut(QKeySequence("Ctrl+Enter"), self),
@@ -587,11 +606,16 @@ class FrequencyDomainWorkspace(QWidget):
         self._render_rows(value)
         self.result_tabs.setTabVisible(self.plot_tab_index, value.plot.visible)
         self._render_plot(value)
-        self._render_worked_steps(value, 0)
+        self._render_worked_steps(value, value.selected_bode_index)
+        self.latex_report_edit.setPlainText(value.latex_report)
+        self.copy_latex_button.setEnabled(
+            not running and bool(value.latex_report)
+        )
         self._render_diagnostics(value)
         self._focus_field(value.focused_field)
 
     def _render_rows(self, state: FrequencyDomainViewState) -> None:
+        self.value_table.blockSignals(True)
         self.value_table.setUpdatesEnabled(False)
         self.value_table.setRowCount(len(state.rows))
         for row_index, row in enumerate(state.rows):
@@ -601,7 +625,9 @@ class FrequencyDomainWorkspace(QWidget):
                 self.value_table.setItem(row_index, column, item)
         self.value_table.setUpdatesEnabled(True)
         if state.rows:
-            self.value_table.setCurrentCell(0, 0)
+            selected = min(state.selected_bode_index, len(state.rows) - 1)
+            self.value_table.setCurrentCell(selected, 0)
+        self.value_table.blockSignals(False)
 
     def _render_plot(self, state: FrequencyDomainViewState) -> None:
         self.magnitude_axes.clear()
@@ -724,10 +750,18 @@ class FrequencyDomainWorkspace(QWidget):
         _previous_column: int,
     ) -> None:
         if hasattr(self, "_rendered_state"):
+            selected = max(current_row, 0)
+            self.presenter.select_bode_row(selected)
             self._render_worked_steps(
-                self._rendered_state,
-                max(current_row, 0),
+                self.presenter.state,
+                selected,
             )
+
+    @Slot()
+    def copy_latex_solution(self) -> None:
+        text = self.latex_report_edit.toPlainText()
+        if text:
+            QApplication.clipboard().setText(text)
 
     @Slot(bool)
     def _technical_details_toggled(self, _checked: bool) -> None:

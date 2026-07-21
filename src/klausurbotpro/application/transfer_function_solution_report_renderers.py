@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from klausurbotpro.application.transfer_function_solution_report_contracts import (
     ConditionLine,
     EquationLine,
@@ -244,7 +246,10 @@ def _render_latex_line(
         )
     if type(line) is ResultLine:
         if line.label == "Stabilitätsaussage":
-            return rf"\[\Longrightarrow {line.exact_value.latex}\]"
+            return (
+                rf"\[\Longrightarrow "
+                rf"\boxed{{{line.exact_value.latex}}}\]"
+            )
         if (
             line.label == "Ergebnis"
             and section_kind in (
@@ -263,9 +268,15 @@ def _render_latex_line(
             if line.multiplicity is None
             else rf"\quad\mbox{{Multiplizität {line.multiplicity}}}"
         )
+        exact_latex = line.exact_value.latex
+        if (
+            section_kind is SolutionSectionKind.POLES
+            or line.label.startswith(("s_excluded,", "s_cancelled,"))
+        ):
+            exact_latex = _engineering_complex_latex(exact_latex)
         return (
             rf"\[{_latex_result_label(line.label)} = "
-            rf"{line.exact_value.latex}{approximation}{multiplicity}\]"
+            rf"{exact_latex}{approximation}{multiplicity}\]"
         )
     if type(line) is ConditionLine:
         values = ", ".join(
@@ -345,11 +356,15 @@ def _latex_relation(relation: str) -> str:
 
 
 def _latex_result_label(label: str) -> str:
-    if label.startswith("Re(s_") and label.endswith(")"):
+    if (
+        label.startswith(("Re(s_", "Re(p_"))
+        and label.endswith(")")
+    ):
         index = label[5:-1]
         if index.isdigit():
-            return rf"\mathrm{{Re}}(s_{{{index}}})"
-    for prefix in ("z_", "s_"):
+            symbol = label[3]
+            return rf"\operatorname{{Re}}({symbol}_{{{index}}})"
+    for prefix in ("z_", "s_", "p_"):
         if label.startswith(prefix) and label[len(prefix) :].isdigit():
             return rf"{prefix[0]}_{{{label[len(prefix):]}}}"
     for prefix in ("s_excluded,", "s_cancelled,"):
@@ -458,6 +473,14 @@ def _escape_latex_text(value: str) -> str:
         "\t": r"\textbackslash{}t",
     }
     return "".join(replacements.get(character, character) for character in value)
+
+
+def _engineering_complex_latex(value: str) -> str:
+    return re.sub(
+        r"(?<![A-Za-z])i(?![A-Za-z])",
+        lambda _match: r"\mathrm{j}",
+        value,
+    )
 
 
 __all__ = [

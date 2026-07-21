@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
@@ -15,6 +16,7 @@ from klausurbotpro.application import (
     FrequencyDomainWorkflowLimits,
     FrequencyDomainWorkflowResult,
     FrequencyDomainWorkflowStatus,
+    render_frequency_domain_solution_latex,
 )
 from klausurbotpro.ui.frequency_domain_view_state import (
     FrequencyDomainDiagnosticView,
@@ -70,6 +72,8 @@ class FrequencyDomainPresenter(QObject):
         self._refinement_attempted = False
         self._base_result: FrequencyDomainWorkflowResult | None = None
         self._added_frequencies: tuple[Any, ...] = ()
+        self._displayed_result: FrequencyDomainWorkflowResult | None = None
+        self._displayed_added_frequencies: tuple[Any, ...] = ()
         self._state = FrequencyDomainViewState()
 
     @property
@@ -190,6 +194,13 @@ class FrequencyDomainPresenter(QObject):
             message = f"{message} Automatisch ergänzte Frequenzen: {added_text}."
         elif notice:
             message = f"{message} {notice}"
+        self._displayed_result = value
+        self._displayed_added_frequencies = added_frequencies
+        latex_report = render_frequency_domain_solution_latex(
+            value,
+            self._limits,
+            added_frequencies=added_frequencies,
+        )
         self._set_state(
             FrequencyDomainViewState(
                 run_status=status,
@@ -198,6 +209,7 @@ class FrequencyDomainPresenter(QObject):
                 rows=_rows(value),
                 plot=_plot(value),
                 worked_steps=_worked_steps(value),
+                latex_report=latex_report,
                 diagnostics=tuple(
                     FrequencyDomainDiagnosticView(
                         diagnostic.severity.value,
@@ -245,6 +257,33 @@ class FrequencyDomainPresenter(QObject):
         self._refinement_attempted = False
         self._base_result = None
         self._added_frequencies = ()
+        self._displayed_result = None
+        self._displayed_added_frequencies = ()
+
+    def select_bode_row(self, index: int) -> None:
+        """Synchronize the selected Bode point with the LaTeX solution."""
+
+        if type(index) is not int or index < 0:
+            raise ValueError("index must be a nonnegative int.")
+        if self._displayed_result is None or not self._state.rows:
+            return
+        if index >= len(self._state.rows):
+            raise ValueError("index exceeds the available Bode rows.")
+        if index == self._state.selected_bode_index:
+            return
+        latex_report = render_frequency_domain_solution_latex(
+            self._displayed_result,
+            self._limits,
+            selected_bode_index=index,
+            added_frequencies=self._displayed_added_frequencies,
+        )
+        self._set_state(
+            replace(
+                self._state,
+                latex_report=latex_report,
+                selected_bode_index=index,
+            )
+        )
 
     def set_general_message(self, message: str) -> None:
         if type(message) is not str or not message:
@@ -257,6 +296,8 @@ class FrequencyDomainPresenter(QObject):
                 rows=self._state.rows,
                 plot=self._state.plot,
                 worked_steps=self._state.worked_steps,
+                latex_report=self._state.latex_report,
+                selected_bode_index=self._state.selected_bode_index,
                 diagnostics=self._state.diagnostics,
                 request_errors=self._state.request_errors,
                 focused_field=self._state.focused_field,

@@ -147,7 +147,7 @@ def test_summary_reports_clipboard_tabs_and_reset() -> None:
     assert "Nullstellenbedingung: Z(s) = 0" in visible_summary
     assert "Polgleichung: N(s) = 0" in visible_summary
     assert "⇒ keine Nullstellen" in visible_summary
-    assert "Re(s_1) = -1 < 0" in visible_summary
+    assert "Re(p_1) = -1 < 0" in visible_summary
     assert "Voraussetzungen" not in visible_summary
     for internal_value in (
         "stable",
