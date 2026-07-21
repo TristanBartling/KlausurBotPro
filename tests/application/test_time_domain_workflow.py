@@ -135,6 +135,70 @@ def test_rf08_real_oscillation_and_invalid_end_value() -> None:
     assert solution.verification.end_value is None
 
 
+def test_rf06_display_is_exam_ready_and_hides_internal_terms() -> None:
+    result = run_time_domain_workflow(
+        TimeDomainInputDraft(
+            TimeDomainTaskType.STEP_RESPONSE,
+            system_expression_text="1/(2*s+1)",
+            step_amplitude_text="0.1",
+        )
+    )
+    assert result.presentation.time_function == "y(t) = (1 - exp(-t/2))/10"
+    latex = result.presentation.latex_source
+    assert r"A=\frac{1}{10}" in latex
+    assert r"B=- \frac{1}{10}" in latex
+    assert r"Y_{\mathrm{PBZ}}(s)" in latex
+    assert r"\boxed{y(t)=" in latex
+    normal_output = "\n".join(
+        (
+            result.presentation.short_solution,
+            result.presentation.worked_steps,
+            latex,
+        )
+    )
+    for internal_term in (
+        "step_response",
+        "STRICTLY_PROPER",
+        "PASS",
+        "A_1",
+        "F_roh",
+        "F_red",
+        "**",
+    ):
+        assert internal_term not in normal_output
+
+
+def test_rf07_display_has_complete_repeated_pole_ansatz_and_values() -> None:
+    result = run_time_domain_workflow(
+        TimeDomainInputDraft(
+            TimeDomainTaskType.INVERSE_LAPLACE,
+            image_expression_text="(s+7)/((s+1)^2*(s-2))",
+        )
+    )
+    partial = result.presentation.partial_fractions
+    assert "A/(s + 1)" in partial
+    assert "B/((s + 1)^2)" in partial
+    assert "C/(s - 2)" in partial
+    assert "A = -1, B = -2, C = 1" in partial
+
+
+def test_rf08_display_uses_real_sine_and_explains_end_value_rejection() -> None:
+    result = run_time_domain_workflow(
+        TimeDomainInputDraft(
+            TimeDomainTaskType.STEP_RESPONSE,
+            system_expression_text="s/(s^2+pi/4)",
+            step_amplitude_text="pi/2",
+        )
+    )
+    assert result.presentation.time_function == (
+        "y(t) = sqrt(pi)*sin(sqrt(pi)*t/2)"
+    )
+    assert "Y(s) = (pi/2)/(s^2 + pi/4)" in result.presentation.summary
+    assert "nicht anwendbar" in result.presentation.verifications
+    assert "imaginären Achse" in result.presentation.latex_source
+    assert "END_VALUE_THEOREM_INVALID" not in result.presentation.latex_source
+
+
 def test_rf09_improper_inverse_is_stopped_after_division() -> None:
     result = run_time_domain_workflow(
         TimeDomainInputDraft(
