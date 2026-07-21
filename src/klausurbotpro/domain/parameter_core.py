@@ -46,7 +46,6 @@ def _compatible(value: CharacteristicPolynomialInput) -> bool:
         PolynomialRole.DIRECT_CHARACTERISTIC_POLYNOMIAL: {
             AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC,
             AnalysisTarget.EXTERNAL_BIBO,
-            AnalysisTarget.STATE_ASYMPTOTIC,
         },
         PolynomialRole.RAW_CLOSED_LOOP_CHARACTERISTIC: {
             AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC,
@@ -403,19 +402,36 @@ def _solve_graph_band(
             residual_conditions=tuple(residual or [str(item) for item in relations]),
             diagnostics=("2D-Bedingung liegt nicht vollständig in sicherer Graphbandform vor.",),
         )
-    # The documented MVP references reduce to one dominant lower and upper graph.
-    lower_bound = lower[-1][0] if lower else sp.S.NegativeInfinity
-    upper_bound = upper[-1][0] if upper else sp.S.Infinity
-    for candidate, _ in lower[:-1]:
-        if _dominates(candidate, lower_bound, x_solution, x, greater=True):
-            lower_bound = candidate
-    for candidate, _ in upper[:-1]:
-        if _dominates(candidate, upper_bound, x_solution, x, greater=False):
-            upper_bound = candidate
+    selected_lower = _select_dominant_bound(lower, x_solution, x, greater=True)
+    selected_upper = _select_dominant_bound(upper, x_solution, x, greater=False)
+    if (lower and selected_lower is None) or (upper and selected_upper is None):
+        return ParameterRegion(
+            SolveStatus.PARTIALLY_SOLVED_SAFE,
+            "teilweise gelöst",
+            "\\text{teilweise gelöst}",
+            x_domain=str(x_solution),
+            residual_conditions=tuple(str(item) for item in relations),
+            diagnostics=(
+                "Mehrere 2D-Grenzen besitzen keine bewiesene global dominante Grenze.",
+            ),
+        )
+    lower_bound, lower_strict = (
+        selected_lower if selected_lower is not None else (sp.S.NegativeInfinity, True)
+    )
+    upper_bound, upper_strict = (
+        selected_upper if selected_upper is not None else (sp.S.Infinity, True)
+    )
     gap_solution = (
         sp.true
         if lower_bound is sp.S.NegativeInfinity or upper_bound is sp.S.Infinity
-        else sp.reduce_inequalities((lower_bound < upper_bound,), x)
+        else sp.reduce_inequalities(
+            (
+                lower_bound < upper_bound
+                if lower_strict or upper_strict
+                else lower_bound <= upper_bound,
+            ),
+            x,
+        )
     )
     nonempty_set = x_solution.as_set().intersect(gap_solution.as_set())
     if nonempty_set is sp.S.EmptySet:
@@ -424,9 +440,9 @@ def _solve_graph_band(
     x_text = str(nonempty)
     bounds = []
     if lower_bound is not sp.S.NegativeInfinity:
-        bounds.append(y > lower_bound)
+        bounds.append(y > lower_bound if lower_strict else y >= lower_bound)
     if upper_bound is not sp.S.Infinity:
-        bounds.append(y < upper_bound)
+        bounds.append(y < upper_bound if upper_strict else y <= upper_bound)
     formula = sp.And(nonempty, *bounds)
     point_x = _pick_x(nonempty, x)
     points: tuple[tuple[str, ...], ...] = ()
@@ -445,10 +461,43 @@ def _solve_graph_band(
         x_domain=x_text,
         lower_bound=str(lower_bound),
         upper_bound=str(upper_bound),
-        lower_open=True,
-        upper_open=True,
+        lower_open=lower_strict,
+        upper_open=upper_strict,
         control_points=points,
     )
+
+
+def _select_dominant_bound(
+    bounds: list[tuple[sp.Expr, bool]],
+    domain: sp.Boolean,
+    symbol: sp.Symbol,
+    *,
+    greater: bool,
+) -> tuple[sp.Expr, bool] | None:
+    if not bounds:
+        return None
+    for candidate, candidate_strict in bounds:
+        if not all(
+            _dominates(candidate, other, domain, symbol, greater=greater)
+            for other, _ in bounds
+        ):
+            continue
+        strict = candidate_strict
+        for other, other_strict in bounds:
+            if other == candidate:
+                strict = strict or other_strict
+                continue
+            if not other_strict:
+                continue
+            try:
+                equality = sp.reduce_inequalities((sp.Eq(candidate, other),), symbol)
+                equality_in_domain = equality.as_set().intersect(domain.as_set())
+            except (NotImplementedError, TypeError, ValueError):
+                return None
+            if equality_in_domain is not sp.S.EmptySet:
+                return None
+        return candidate, strict
+    return None
 
 
 def _dominates(
@@ -459,7 +508,7 @@ def _dominates(
     *,
     greater: bool,
 ) -> bool:
-    relation = candidate <= current if greater else candidate >= current
+    relation = candidate < current if greater else candidate > current
     try:
         failure = sp.reduce_inequalities((relation,), symbol).as_set().intersect(domain.as_set())
     except (NotImplementedError, TypeError, ValueError):

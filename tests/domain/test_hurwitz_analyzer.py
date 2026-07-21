@@ -39,6 +39,32 @@ def test_exercise_09_has_strict_open_interval() -> None:
     assert "K_P < 20" in analysis.case_results[0].parameter_region.exact_text
 
 
+def test_even_power_coefficient_keeps_zero_excluded() -> None:
+    analysis = _analysis(
+        StabilityInputDraft(
+            "s^2+K^2*s+1",
+            decision_parameters_text="K",
+        )
+    )
+    region = analysis.case_results[0].parameter_region
+    assert region.status is SolveStatus.SOLVED_EXACT
+    assert "Ne(K, 0)" in region.exact_text
+    assert not bool(sp.sympify(region.exact_text).subs(sp.Symbol("K"), 0))
+
+
+def test_direct_polynomial_cannot_claim_state_stability() -> None:
+    result = run_stability_workflow(
+        StabilityInputDraft(
+            "s^2+2*s+1",
+            analysis_target=AnalysisTarget.STATE_ASYMPTOTIC,
+        )
+    )
+    assert result.analysis is not None
+    assert result.analysis.canonical_polynomial.status is SolveStatus.INVALID_INPUT
+    assert not result.analysis.case_results
+    assert result.analysis.statement == "Analyse ungültig."
+
+
 def test_ss2025_exact_two_parameter_region() -> None:
     analysis = _analysis(
         StabilityInputDraft(
@@ -51,6 +77,18 @@ def test_ss2025_exact_two_parameter_region() -> None:
     assert region.status is SolveStatus.SOLVED_EXACT
     assert sp.simplify(sp.sympify(region.lower_bound) + sp.Rational(20, 9) * a) == 0
     assert sp.simplify(sp.sympify(region.upper_bound) - (a**2 + 9 * a + 20)) == 0
+
+
+def test_degree_drop_combined_region_remains_closed_at_zero() -> None:
+    analysis = _analysis(
+        StabilityInputDraft(
+            "q*s^3+s^2+2*s+1",
+            decision_parameters_text="q",
+            assumptions_text="q>=0",
+        )
+    )
+    assert analysis.combined_region == "(0 <= q) & (q < 2)"
+    assert tuple(item.degree_case.degree for item in analysis.case_results) == (3, 2)
 
 
 def test_quartic_tutorial_and_ws_reduced_role_contract() -> None:

@@ -151,7 +151,7 @@ def _analyze_case(
     )
     active_expressions = _minimal_expressions(case.degree, by_power, determinants)
     assumptions = canonical.input.assumptions
-    positive_symbols = _positive_symbols(assumptions)
+    positive_symbols = _positive_symbols(assumptions, canonical.input.exclusions)
     solver = tuple(
         AtomicParameterCondition(
             _exact(_strip_positive_factors(expression, positive_symbols)),
@@ -220,13 +220,27 @@ def _minimal_expressions(
 
 def _positive_symbols(
     assumptions: tuple[AtomicParameterCondition, ...],
+    exclusions: tuple[AtomicParameterCondition, ...],
 ) -> frozenset[sp.Symbol]:
-    return frozenset(
+    strict = {
         condition.expression._as_sympy()
         for condition in assumptions
         if condition.relation is Relation.GT
         and isinstance(condition.expression._as_sympy(), sp.Symbol)
-    )
+    }
+    nonnegative = {
+        condition.expression._as_sympy()
+        for condition in assumptions
+        if condition.relation is Relation.GE
+        and isinstance(condition.expression._as_sympy(), sp.Symbol)
+    }
+    nonzero = {
+        condition.expression._as_sympy()
+        for condition in (*assumptions, *exclusions)
+        if condition.relation is Relation.NE
+        and isinstance(condition.expression._as_sympy(), sp.Symbol)
+    }
+    return frozenset(strict | (nonnegative & nonzero))
 
 
 def _strip_positive_factors(expression: sp.Expr, positive: frozenset[sp.Symbol]) -> sp.Expr:
@@ -241,8 +255,6 @@ def _strip_positive_factors(expression: sp.Expr, positive: frozenset[sp.Symbol])
         if factor in positive or (
             factor.is_Pow and factor.base in positive and factor.exp.is_integer and factor.exp > 0
         ):
-            continue
-        if power % 2 == 0 and factor.is_real is not False:
             continue
         retained.append(factor**power)
     return sp.factor(sp.Mul(*retained)) if retained else sp.Integer(1)

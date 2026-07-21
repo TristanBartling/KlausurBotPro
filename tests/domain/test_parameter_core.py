@@ -90,3 +90,41 @@ def test_limited_two_dimensional_graph_band() -> None:
     assert sp.simplify(sp.sympify(result.lower_bound) + sp.Rational(20, 9) * a) == 0
     assert sp.simplify(sp.sympify(result.upper_bound) - (a**2 + 9 * a + 20)) == 0
     assert result.lower_open and result.upper_open
+
+
+def test_crossing_two_dimensional_bounds_remain_visible_and_partial() -> None:
+    x, y = sp.symbols("x y")
+    conditions = (
+        _condition(y - x, Relation.GT),
+        _condition(y + x, Relation.GT),
+        _condition(10 - y, Relation.GT),
+    )
+    result = solve_parameter_conditions(ParameterConditionProblem(("x", "y"), conditions))
+    assert result.status is SolveStatus.PARTIALLY_SOLVED_SAFE
+    assert set(result.residual_conditions) == {
+        "-x + y > 0",
+        "x + y > 0",
+        "10 - y > 0",
+    }
+    assert not result.lower_bound
+    assert not result.upper_bound
+
+
+def test_two_dimensional_boundary_strictness_is_preserved() -> None:
+    x, y = sp.symbols("x y")
+    result = solve_parameter_conditions(
+        ParameterConditionProblem(
+            ("x", "y"),
+            (
+                _condition(x, Relation.GT),
+                _condition(y - x, Relation.GE),
+                _condition(10 - y, Relation.GT),
+            ),
+        )
+    )
+    assert result.status is SolveStatus.SOLVED_EXACT
+    assert not result.lower_open
+    assert result.upper_open
+    assert "y >= x" in result.exact_text
+    assert "y < 10" in result.exact_text
+    assert "y \\geq x" in result.latex
