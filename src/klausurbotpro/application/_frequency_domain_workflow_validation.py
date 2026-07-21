@@ -233,6 +233,8 @@ def _validate_invalid_request_result(
         result.bode_data_result,
         result.standard_element_bode_result,
         result.phase_unwrap_result,
+        result.crossover_analysis,
+        result.reserve_analysis,
     )
     if (
         result.status is not FrequencyDomainWorkflowStatus.FAILED

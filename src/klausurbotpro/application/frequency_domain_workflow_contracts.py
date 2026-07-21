@@ -19,12 +19,14 @@ from klausurbotpro.domain import (
     Diagnostic,
     ExactRationalValue,
     FrequencyResponseLimits,
+    FrequencyCrossoverAnalysis,
     LogFrequencyGridLimits,
     LogFrequencyGridRequest,
     LogFrequencyGridResult,
     ParameterSubstitutions,
     ReducedTransferFunction,
     StandardElementBodeResult,
+    StabilityReserveAnalysis,
     TransferFunctionBodeDataResult,
     TransferFunctionFrequencyResponseResult,
 )
@@ -172,6 +174,8 @@ class FrequencyDomainWorkflowResult:
     bode_data_result: TransferFunctionBodeDataResult | None
     standard_element_bode_result: StandardElementBodeResult | None
     phase_unwrap_result: BodePhaseUnwrapResult | None
+    crossover_analysis: FrequencyCrossoverAnalysis | None
+    reserve_analysis: StabilityReserveAnalysis | None
     stage_records: tuple[FrequencyDomainWorkflowStageRecord, ...]
     diagnostics: tuple[Diagnostic, ...]
 
@@ -196,6 +200,8 @@ class FrequencyDomainWorkflowResult:
         bode_data_result: TransferFunctionBodeDataResult | None = None,
         standard_element_bode_result: StandardElementBodeResult | None = None,
         phase_unwrap_result: BodePhaseUnwrapResult | None = None,
+        crossover_analysis: FrequencyCrossoverAnalysis | None = None,
+        reserve_analysis: StabilityReserveAnalysis | None = None,
         stage_records: tuple[FrequencyDomainWorkflowStageRecord, ...] = (),
         diagnostics: tuple[Diagnostic, ...] = (),
     ) -> FrequencyDomainWorkflowResult:
@@ -209,6 +215,8 @@ class FrequencyDomainWorkflowResult:
             ("bode_data_result", bode_data_result),
             ("standard_element_bode_result", standard_element_bode_result),
             ("phase_unwrap_result", phase_unwrap_result),
+            ("crossover_analysis", crossover_analysis),
+            ("reserve_analysis", reserve_analysis),
             ("stage_records", stage_records),
             ("diagnostics", diagnostics),
         ):
@@ -249,6 +257,16 @@ class FrequencyDomainWorkflowResult:
                 self.phase_unwrap_result,
                 BodePhaseUnwrapResult,
                 "phase_unwrap_result",
+            ),
+            (
+                self.crossover_analysis,
+                FrequencyCrossoverAnalysis,
+                "crossover_analysis",
+            ),
+            (
+                self.reserve_analysis,
+                StabilityReserveAnalysis,
+                "reserve_analysis",
             ),
         )
         for value, expected_type, name in optional_contracts:

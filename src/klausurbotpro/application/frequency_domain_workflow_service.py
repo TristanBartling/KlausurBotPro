@@ -35,10 +35,14 @@ from klausurbotpro.domain import (
     BodePhaseUnwrapResult,
     Diagnostic,
     FrequencySampleSet,
+    FrequencyReserveAnalyzer,
+    FrequencyCrossoverAnalysis,
     LogFrequencyGridGenerator,
     LogFrequencyGridResult,
+    ParameterSubstitutions,
     StandardElementBodeAnalyzer,
     StandardElementBodeResult,
+    StabilityReserveAnalysis,
     TransferFunctionBodeDataAnalyzer,
     TransferFunctionBodeDataResult,
     TransferFunctionFrequencyResponseAnalyzer,
@@ -357,6 +361,16 @@ class FrequencyDomainWorkflowService:
             bode_data_result=bode,
             standard_element_bode_result=standard_elements,
             phase_unwrap_result=unwrap,
+            crossover_analysis=(
+                analyses := FrequencyReserveAnalyzer().analyze(
+                    reduced,
+                    preparation.request.substitutions or ParameterSubstitutions(),
+                    bode,
+                    unwrap,
+                    field=request.preparation_request.field,
+                )
+            )[0] if unwrap.succeeded else None,
+            reserve_analysis=analyses[1] if unwrap.succeeded else None,
             records=(
                 *grid_prefix,
                 grid_record,
@@ -432,6 +446,8 @@ class FrequencyDomainWorkflowService:
         bode_data_result: TransferFunctionBodeDataResult | None = None,
         standard_element_bode_result: StandardElementBodeResult | None = None,
         phase_unwrap_result: BodePhaseUnwrapResult | None = None,
+        crossover_analysis: FrequencyCrossoverAnalysis | None = None,
+        reserve_analysis: StabilityReserveAnalysis | None = None,
     ) -> FrequencyDomainWorkflowResult:
         (
             records,
@@ -466,6 +482,8 @@ class FrequencyDomainWorkflowService:
             bode_data_result=bode_data_result,
             standard_element_bode_result=standard_element_bode_result,
             phase_unwrap_result=phase_unwrap_result,
+            crossover_analysis=crossover_analysis,
+            reserve_analysis=reserve_analysis,
             stage_records=records,
             diagnostics=diagnostics,
         )
