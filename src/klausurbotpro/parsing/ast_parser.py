@@ -36,6 +36,8 @@ class SafeExpressionParser:
         self._symbols = {
             name: sp.Symbol(name) for name in sorted(config.allowed_symbols)
         }
+        self._constants: dict[str, sp.Expr] = {"pi": sp.pi}
+        self._functions = {"exp": sp.exp, "sin": sp.sin, "cos": sp.cos}
 
     def parse(
         self,
@@ -121,7 +123,21 @@ class SafeExpressionParser:
             )
 
         if isinstance(node, ast.Name):
+            if node.id in self._config.exact_constants:
+                return self._constants[node.id]
             return self._symbols[node.id]
+
+        if isinstance(node, ast.Call):
+            if (
+                not isinstance(node.func, ast.Name)
+                or node.func.id not in self._config.allowed_functions
+                or len(node.args) != 1
+                or node.keywords
+            ):
+                self._fail_forbidden(node)
+            return self._functions[node.func.id](
+                self._translate(node.args[0], source)
+            )
 
         if isinstance(node, ast.UnaryOp):
             operand = self._translate(node.operand, source)

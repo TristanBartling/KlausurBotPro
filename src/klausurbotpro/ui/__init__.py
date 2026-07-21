@@ -15,6 +15,9 @@ from klausurbotpro.ui.frequency_domain_workspace import (
     FrequencyDomainWorkspace,
 )
 from klausurbotpro.ui.main_window import MainWindow
+from klausurbotpro.ui.time_domain_presenter import TimeDomainPresenter
+from klausurbotpro.ui.time_domain_view_state import TimeDomainViewState
+from klausurbotpro.ui.time_domain_workspace import TimeDomainWorkspace
 from klausurbotpro.ui.transfer_function_presenter import (
     TransferFunctionPresenter,
 )
@@ -44,6 +47,9 @@ __all__ = [
     "FrequencyDomainWorkflowWorker",
     "FrequencyDomainWorkspace",
     "MainWindow",
+    "TimeDomainPresenter",
+    "TimeDomainViewState",
+    "TimeDomainWorkspace",
     "TransferFunctionPresenter",
     "TransferFunctionReportView",
     "TransferFunctionUiRunStatus",

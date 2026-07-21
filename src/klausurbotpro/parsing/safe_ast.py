@@ -21,6 +21,7 @@ ALLOWED_NODE_TYPES = (
     ast.UAdd,
     ast.USub,
     ast.Load,
+    ast.Call,
 )
 
 
@@ -64,20 +65,36 @@ def validate_safe_ast(
                 (("node", type(node).__name__),),
             )
 
-        if isinstance(node, ast.Name):
+        if isinstance(node, ast.Call) and (
+            not isinstance(node.func, ast.Name)
+            or node.func.id not in config.allowed_functions
+            or len(node.args) != 1
+            or node.keywords
+        ):
+            raise SafeAstFailure(
+                DiagnosticCode.PARSE_FORBIDDEN_NODE,
+                "Der Funktionsaufruf ist in diesem Parserprofil nicht erlaubt.",
+                (("function", getattr(node.func, "id", "unknown")),),
+            )
+
+        if isinstance(node, ast.Name) and not _is_call_function(node, tree):
             if node.id.startswith("__") or node.id.endswith("__"):
                 raise SafeAstFailure(
                     DiagnosticCode.PARSE_FORBIDDEN_NODE,
                     "Dunder-Namen sind in mathematischen Ausdrücken verboten.",
                     (("symbol", node.id),),
                 )
-            if node.id not in config.allowed_symbols:
+            if (
+                node.id not in config.allowed_symbols
+                and node.id not in config.exact_constants
+            ):
                 raise SafeAstFailure(
                     DiagnosticCode.PARSE_UNKNOWN_SYMBOL,
                     f"Das Symbol '{node.id}' ist nicht freigegeben.",
                     (("symbol", node.id),),
                 )
-            used_symbols.add(node.id)
+            if node.id in config.allowed_symbols:
+                used_symbols.add(node.id)
 
         if isinstance(node, ast.Constant):
             validate_constant(node)
@@ -209,6 +226,10 @@ def estimate_terms(node: ast.AST, cap: int, exponent_cap: int) -> int:
     """Conservatively estimate expansion size without expanding anything."""
     if isinstance(node, (ast.Constant, ast.Name)):
         return 1
+    if isinstance(node, ast.Call):
+        if len(node.args) != 1:
+            return cap + 1
+        return estimate_terms(node.args[0], cap, exponent_cap)
     if isinstance(node, ast.UnaryOp):
         return estimate_terms(node.operand, cap, exponent_cap)
     if not isinstance(node, ast.BinOp):
@@ -226,6 +247,13 @@ def estimate_terms(node: ast.AST, cap: int, exponent_cap: int) -> int:
             return cap + 1
         return capped_power(left, abs(exponent), cap)
     return cap + 1
+
+
+def _is_call_function(node: ast.Name, tree: ast.Expression) -> bool:
+    return any(
+        isinstance(parent, ast.Call) and parent.func is node
+        for parent in ast.walk(tree)
+    )
 
 
 def capped_add(left: int, right: int, cap: int) -> int:

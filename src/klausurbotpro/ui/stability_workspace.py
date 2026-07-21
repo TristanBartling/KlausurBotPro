@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFormLayout,
     QHBoxLayout,
@@ -73,9 +74,12 @@ class StabilityWorkspace(QWidget):
         self.analyze_button = QPushButton("Hurwitz analysieren")
         self.analyze_button.setObjectName("analyzeHurwitz")
         self.reset_button = QPushButton("Zurücksetzen")
+        self.copy_latex_button = QPushButton("LaTeX kopieren")
+        self.copy_latex_button.setObjectName("copyStabilityLatex")
         actions = QHBoxLayout()
         actions.addWidget(self.analyze_button)
         actions.addWidget(self.reset_button)
+        actions.addWidget(self.copy_latex_button)
         form_widget = QWidget()
         form = QFormLayout(form_widget)
         form.addRow("Polynom:", self.polynomial_edit)
@@ -115,6 +119,7 @@ class StabilityWorkspace(QWidget):
         layout.addWidget(splitter, 1)
         self.analyze_button.clicked.connect(self.analyze)
         self.reset_button.clicked.connect(self.reset)
+        self.copy_latex_button.clicked.connect(self.copy_latex)
 
     @Slot()
     def analyze(self) -> None:
@@ -149,6 +154,12 @@ class StabilityWorkspace(QWidget):
         self.cancellation_edit.clear()
         self.presenter.reset()
 
+    @Slot()
+    def copy_latex(self) -> None:
+        text = self.result_edits["latex"].toPlainText()
+        if text:
+            QApplication.clipboard().setText(text)
+
     @Slot(object)
     def render_state(self, state: object) -> None:
         if type(state) is not StabilityViewState:
@@ -161,6 +172,7 @@ class StabilityWorkspace(QWidget):
         self.result_edits["steps"].setPlainText(state.worked_steps)
         self.result_edits["latex"].setPlainText(state.latex_source)
         self.result_edits["diagnostics"].setPlainText(state.diagnostics)
+        self.copy_latex_button.setEnabled(bool(state.latex_source))
 
 
 def _combo_value(combo: QComboBox) -> str:
