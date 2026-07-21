@@ -37,6 +37,8 @@ from klausurbotpro.domain import (
     FrequencySampleSet,
     LogFrequencyGridGenerator,
     LogFrequencyGridResult,
+    StandardElementBodeAnalyzer,
+    StandardElementBodeResult,
     TransferFunctionBodeDataAnalyzer,
     TransferFunctionBodeDataResult,
     TransferFunctionFrequencyResponseAnalyzer,
@@ -280,6 +282,12 @@ class FrequencyDomainWorkflowService:
                 bode_data_result=bode,
                 records=records,
             )
+        standard_elements = StandardElementBodeAnalyzer(
+            self._limits.preparation.root_analysis
+        ).analyze(
+            reduced,
+            field=request.preparation_request.field,
+        )
         bode_record = self._success_record(
             FrequencyDomainWorkflowStage.BODE_DATA,
             bode_owned,
@@ -293,6 +301,7 @@ class FrequencyDomainWorkflowService:
                 preparation_result=preparation,
                 grid_result=grid,
                 bode_data_result=bode,
+                standard_element_bode_result=standard_elements,
                 records=(
                     *grid_prefix,
                     grid_record,
@@ -320,6 +329,7 @@ class FrequencyDomainWorkflowService:
                 preparation_result=preparation,
                 grid_result=grid,
                 bode_data_result=bode,
+                standard_element_bode_result=standard_elements,
                 prefix=(*grid_prefix, grid_record, bode_record),
             )
         unwrap_owned = (
@@ -345,6 +355,7 @@ class FrequencyDomainWorkflowService:
             preparation_result=preparation,
             grid_result=grid,
             bode_data_result=bode,
+            standard_element_bode_result=standard_elements,
             phase_unwrap_result=unwrap,
             records=(
                 *grid_prefix,
@@ -380,6 +391,7 @@ class FrequencyDomainWorkflowService:
         preparation_result: TransferFunctionPreparationResult | None = None,
         grid_result: LogFrequencyGridResult | None = None,
         bode_data_result: TransferFunctionBodeDataResult | None = None,
+        standard_element_bode_result: StandardElementBodeResult | None = None,
         prefix: tuple[FrequencyDomainWorkflowStageRecord, ...] = (),
     ) -> FrequencyDomainWorkflowResult:
         record = FrequencyDomainWorkflowStageRecord(
@@ -399,6 +411,7 @@ class FrequencyDomainWorkflowService:
             preparation_result=preparation_result,
             grid_result=grid_result,
             bode_data_result=bode_data_result,
+            standard_element_bode_result=standard_element_bode_result,
             records=(
                 *prefix,
                 record,
@@ -417,6 +430,7 @@ class FrequencyDomainWorkflowService:
         ) = None,
         grid_result: LogFrequencyGridResult | None = None,
         bode_data_result: TransferFunctionBodeDataResult | None = None,
+        standard_element_bode_result: StandardElementBodeResult | None = None,
         phase_unwrap_result: BodePhaseUnwrapResult | None = None,
     ) -> FrequencyDomainWorkflowResult:
         (
@@ -425,6 +439,7 @@ class FrequencyDomainWorkflowService:
             single_point_result,
             grid_result,
             bode_data_result,
+            standard_element_bode_result,
             phase_unwrap_result,
         ) = self._enforce_diagnostic_limit(
             request,
@@ -433,6 +448,7 @@ class FrequencyDomainWorkflowService:
             single_point_result,
             grid_result,
             bode_data_result,
+            standard_element_bode_result,
             phase_unwrap_result,
         )
         diagnostics = tuple(
@@ -448,6 +464,7 @@ class FrequencyDomainWorkflowService:
             single_point_result=single_point_result,
             grid_result=grid_result,
             bode_data_result=bode_data_result,
+            standard_element_bode_result=standard_element_bode_result,
             phase_unwrap_result=phase_unwrap_result,
             stage_records=records,
             diagnostics=diagnostics,
@@ -463,6 +480,7 @@ class FrequencyDomainWorkflowService:
         single_point_result: TransferFunctionFrequencyResponseResult | None,
         grid_result: LogFrequencyGridResult | None,
         bode_data_result: TransferFunctionBodeDataResult | None,
+        standard_element_bode_result: StandardElementBodeResult | None,
         phase_unwrap_result: BodePhaseUnwrapResult | None,
     ) -> tuple[
         tuple[FrequencyDomainWorkflowStageRecord, ...],
@@ -470,6 +488,7 @@ class FrequencyDomainWorkflowService:
         TransferFunctionFrequencyResponseResult | None,
         LogFrequencyGridResult | None,
         TransferFunctionBodeDataResult | None,
+        StandardElementBodeResult | None,
         BodePhaseUnwrapResult | None,
     ]:
         if sum(len(item.diagnostics) for item in records) <= (
@@ -481,6 +500,7 @@ class FrequencyDomainWorkflowService:
                 single_point_result,
                 grid_result,
                 bode_data_result,
+                standard_element_bode_result,
                 phase_unwrap_result,
             )
         capacity = self._limits.max_aggregated_diagnostics - 1
@@ -517,6 +537,7 @@ class FrequencyDomainWorkflowService:
                 grid_result = None
             if index <= 3:
                 bode_data_result = None
+                standard_element_bode_result = None
             phase_unwrap_result = None
             return (
                 bounded,
@@ -524,6 +545,7 @@ class FrequencyDomainWorkflowService:
                 single_point_result,
                 grid_result,
                 bode_data_result,
+                standard_element_bode_result,
                 phase_unwrap_result,
             )
         raise AssertionError("A diagnostic overflow must identify a stage.")

@@ -24,6 +24,7 @@ from klausurbotpro.domain import (
     LogFrequencyGridResult,
     ParameterSubstitutions,
     ReducedTransferFunction,
+    StandardElementBodeResult,
     TransferFunctionBodeDataResult,
     TransferFunctionFrequencyResponseResult,
 )
@@ -169,6 +170,7 @@ class FrequencyDomainWorkflowResult:
     single_point_result: TransferFunctionFrequencyResponseResult | None
     grid_result: LogFrequencyGridResult | None
     bode_data_result: TransferFunctionBodeDataResult | None
+    standard_element_bode_result: StandardElementBodeResult | None
     phase_unwrap_result: BodePhaseUnwrapResult | None
     stage_records: tuple[FrequencyDomainWorkflowStageRecord, ...]
     diagnostics: tuple[Diagnostic, ...]
@@ -192,6 +194,7 @@ class FrequencyDomainWorkflowResult:
         ) = None,
         grid_result: LogFrequencyGridResult | None = None,
         bode_data_result: TransferFunctionBodeDataResult | None = None,
+        standard_element_bode_result: StandardElementBodeResult | None = None,
         phase_unwrap_result: BodePhaseUnwrapResult | None = None,
         stage_records: tuple[FrequencyDomainWorkflowStageRecord, ...] = (),
         diagnostics: tuple[Diagnostic, ...] = (),
@@ -204,6 +207,7 @@ class FrequencyDomainWorkflowResult:
             ("single_point_result", single_point_result),
             ("grid_result", grid_result),
             ("bode_data_result", bode_data_result),
+            ("standard_element_bode_result", standard_element_bode_result),
             ("phase_unwrap_result", phase_unwrap_result),
             ("stage_records", stage_records),
             ("diagnostics", diagnostics),
@@ -235,6 +239,11 @@ class FrequencyDomainWorkflowResult:
                 self.bode_data_result,
                 TransferFunctionBodeDataResult,
                 "bode_data_result",
+            ),
+            (
+                self.standard_element_bode_result,
+                StandardElementBodeResult,
+                "standard_element_bode_result",
             ),
             (
                 self.phase_unwrap_result,

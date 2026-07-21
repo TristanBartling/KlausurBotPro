@@ -134,7 +134,7 @@ def test_single_point_zero_response_marks_phase_undefined() -> None:
     assert r"\varphi(\omega)\text{ ist nicht definiert.}" in latex
 
 
-def test_bode_report_contains_every_row_without_asymptotic_claims() -> None:
+def test_bode_report_contains_every_numeric_row_without_table_asymptote() -> None:
     result, limits = _result(
         "1/(s+1)",
         FrequencyDomainWorkflowMode.BODE,
@@ -142,9 +142,13 @@ def test_bode_report_contains_every_row_without_asymptotic_claims() -> None:
     assert result.bode_data_result is not None
 
     latex = render_frequency_domain_solution_latex(result, limits)
+    table = latex.split(r"\section*{Wertetabelle}", maxsplit=1)[1].split(
+        r"\end{array}",
+        maxsplit=1,
+    )[0]
     table_rows = tuple(
         line
-        for line in latex.splitlines()
+        for line in table.splitlines()
         if line.endswith(r"\\")
     )
 
@@ -152,8 +156,66 @@ def test_bode_report_contains_every_row_without_asymptotic_claims() -> None:
     assert r"s=\mathrm{j}\omega" in latex
     assert r"\begin{array}" in latex
     assert len(table_rows) == len(result.bode_data_result.points) + 1
-    assert "asymptot" not in latex.lower()
+    assert "asymptot" not in table.lower()
     assert re.search(r"\d+\.\d{12,}", latex) is None
+
+
+def test_unsupported_standard_elements_keep_readable_latex_reason() -> None:
+    result, limits = _result(
+        "1/(s^2+s+1)",
+        FrequencyDomainWorkflowMode.BODE,
+    )
+
+    latex = render_frequency_domain_solution_latex(result, limits)
+
+    assert (
+        "\\mbox{Grund: Eine komplexe Polstelle wird vom "
+        "Standardglieder-MVP nicht unterst\u00fctzt.}"
+    ) in latex
+    assert "unterst\u00fctzt" in latex
+    assert r"\[K=" not in latex
+    assert r"L_a(\omega)" not in latex
+    assert r"\section*{Wertetabelle}" in latex
+
+
+def test_bode_table_uses_three_significant_decimal_frequencies_only() -> None:
+    result, limits = _result(
+        "1/(s+1)",
+        FrequencyDomainWorkflowMode.BODE,
+        omega_min="1/100",
+        omega_max="10",
+        points="4",
+    )
+    assert result.bode_data_result is not None
+    long_point = next(
+        point
+        for point in result.bode_data_result.points
+        if len(str(point.evaluation_frequency.numerator)) > 20
+        or len(str(point.evaluation_frequency.denominator)) > 20
+    )
+    exact_frequency = (
+        rf"\frac{{{long_point.evaluation_frequency.numerator}}}"
+        rf"{{{long_point.evaluation_frequency.denominator}}}"
+    )
+    selected_index = result.bode_data_result.points.index(long_point)
+
+    latex = render_frequency_domain_solution_latex(
+        result,
+        limits,
+        selected_bode_index=selected_index,
+    )
+    table = latex.split(r"\section*{Wertetabelle}", maxsplit=1)[1].split(
+        r"\end{array}",
+        maxsplit=1,
+    )[0]
+
+    assert "0.0178 &" in table
+    assert exact_frequency not in table
+    assert re.search(r"\\frac\{\d{20,}\}\{\d{20,}\}", table) is None
+    assert exact_frequency in latex
+    assert long_point.evaluation_frequency == (
+        long_point.frequency_response_point.omega
+    )
 
 
 def test_unwrapped_phase_explains_only_a_real_nonzero_selected_offset() -> None:
