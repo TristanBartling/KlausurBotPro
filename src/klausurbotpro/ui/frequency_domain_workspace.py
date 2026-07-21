@@ -322,7 +322,19 @@ class FrequencyDomainWorkspace(QWidget):
         self.reserve_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive
         )
-        self.reserve_table.horizontalHeader().setStretchLastSection(True)
+        self.reserve_table.horizontalHeader().setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.Stretch,
+        )
+        self.reserve_table.horizontalHeader().setSectionResizeMode(
+            6,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+        self.reserve_table.horizontalHeader().setSectionResizeMode(
+            7,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+        self.reserve_table.horizontalHeader().setStretchLastSection(False)
         reserve_page = QWidget()
         reserve_layout = QVBoxLayout(reserve_page)
         reserve_help = QLabel(
@@ -642,6 +654,16 @@ class FrequencyDomainWorkspace(QWidget):
                 self.reserve_table.setItem(row_index, column, QTableWidgetItem(getattr(row, name)))
 
     def _render_plot(self, state: FrequencyDomainViewState) -> None:
+        has_visible_gap = (
+            len(state.plot.magnitude_segments) > 1
+            or len(state.plot.principal_phase_segments) > 1
+            or len(state.plot.unwrapped_phase_segments) > 1
+            or any(
+                marker.label == "SingularitÃ¤t"
+                for marker in state.plot.interruption_markers
+            )
+        )
+        self.plot_gap_hint_label.setVisible(has_visible_gap)
         self.magnitude_axes.clear()
         self.phase_axes.clear()
         for axes, ylabel in (

@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QHeaderView
 
 from klausurbotpro.application import (
     FrequencyDomainRequestFactory,
@@ -47,6 +47,17 @@ def test_mode_controls_only_relevant_fields_and_unwrap() -> None:
     assert not workspace.omega_min_edit.isEnabled()
     assert not workspace.phase_combo.isEnabled()
     assert workspace.phase_combo.currentIndex() == 0
+    reserve_header = workspace.reserve_table.horizontalHeader()
+    assert reserve_header.sectionResizeMode(1) is QHeaderView.ResizeMode.Stretch
+    assert (
+        reserve_header.sectionResizeMode(6)
+        is QHeaderView.ResizeMode.ResizeToContents
+    )
+    assert (
+        reserve_header.sectionResizeMode(7)
+        is QHeaderView.ResizeMode.ResizeToContents
+    )
+    assert not reserve_header.stretchLastSection()
 
     workspace.mode_combo.setCurrentIndex(1)
     _app().processEvents()
@@ -77,6 +88,8 @@ def test_pt1_bode_renders_one_visible_row_per_domain_point() -> None:
     assert workspace.value_table.rowCount() == 0
     workspace.presenter.accept_result(FrequencyDomainWorkflowService().run(request))
     _app().processEvents()
+
+    assert workspace.plot_gap_hint_label.isHidden()
     result = FrequencyDomainWorkflowService().run(request)
     assert result.bode_data_result is not None
     assert workspace.value_table.rowCount() == len(result.bode_data_result.points)
@@ -271,6 +284,7 @@ def test_plot_canvas_draws_each_singularity_segment_as_a_separate_line() -> None
     ) == 1
     assert "Rasterauflösung" in workspace.plot_gap_hint_label.text()
     assert "markierten Frequenz" in workspace.plot_gap_hint_label.text()
+    assert not workspace.plot_gap_hint_label.isHidden()
     evaluation_tooltips: set[str] = set()
     for row in range(workspace.value_table.rowCount()):
         evaluation_item = workspace.value_table.item(row, 2)
