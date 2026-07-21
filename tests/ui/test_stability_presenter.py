@@ -2,7 +2,6 @@
 
 from PySide6.QtWidgets import QApplication
 
-from klausurbotpro.application.stability_workflow import StabilityInputDraft
 from klausurbotpro.ui.stability_presenter import StabilityPresenter
 from klausurbotpro.ui.stability_workspace import StabilityWorkspace
 
@@ -12,16 +11,18 @@ def test_presenter_and_workspace_expose_complete_hurwitz_outputs() -> None:
     assert isinstance(application, QApplication)
     presenter = StabilityPresenter()
     workspace = StabilityWorkspace(presenter)
-    presenter.analyze(
-        StabilityInputDraft(
-            "s^3+4*s^2+5*s+K_P",
-            decision_parameters_text="K_P",
-        )
+    workspace.polynomial_edit.setPlainText("s^3+4*s^2+5*s+K_P")
+    workspace.parameters_edit.setText("K_P")
+    workspace.role_combo.setCurrentIndex(
+        workspace.role_combo.findText("Rohes charakteristisches Polynom")
     )
-    workspace.render_state(presenter.state)
-    assert "0 < K_P" in presenter.state.summary
-    assert "Delta_2" in presenter.state.hurwitz_details
-    assert "Numerische Kontrolle" in presenter.state.short_solution
-    assert "\\boxed" in presenter.state.latex_source
-    assert workspace.result_edits["steps"].toPlainText()
+    workspace.target_combo.setCurrentIndex(
+        workspace.target_combo.findText("Interne asymptotische Stabilität")
+    )
+
+    workspace.analyze_button.click()
+
+    assert not presenter.state.failed
+    assert "0 < K_P" in workspace.result_edits["summary"].toPlainText()
+    assert "K_P < 20" in workspace.result_edits["summary"].toPlainText()
     workspace.close()

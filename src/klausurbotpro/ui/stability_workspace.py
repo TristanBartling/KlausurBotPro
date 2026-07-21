@@ -57,7 +57,7 @@ class StabilityWorkspace(QWidget):
             ("Rohes geschlossenes Polynom", PolynomialRole.RAW_CLOSED_LOOP_CHARACTERISTIC),
             ("Zustandsraum-Charakteristik", PolynomialRole.STATE_CHARACTERISTIC_POLYNOMIAL),
         ):
-            self.role_combo.addItem(label, role_value)
+            self.role_combo.addItem(label, role_value.value)
         self.target_combo = QComboBox()
         self.target_combo.setObjectName("stabilityAnalysisTarget")
         for label, target_value in (
@@ -65,7 +65,7 @@ class StabilityWorkspace(QWidget):
             ("E/A-asymptotische Stabilität", AnalysisTarget.EXTERNAL_BIBO),
             ("Zustandsstabilität", AnalysisTarget.STATE_ASYMPTOTIC),
         ):
-            self.target_combo.addItem(label, target_value)
+            self.target_combo.addItem(label, target_value.value)
         self.provenance_edit = QLineEdit()
         self.provenance_edit.setObjectName("stabilityProvenance")
         self.cancellation_edit = QLineEdit()
@@ -118,14 +118,23 @@ class StabilityWorkspace(QWidget):
 
     @Slot()
     def analyze(self) -> None:
+        try:
+            role = PolynomialRole(_combo_value(self.role_combo))
+            analysis_target = AnalysisTarget(_combo_value(self.target_combo))
+        except (TypeError, ValueError):
+            self.result_edits["summary"].setPlainText("Eingabe ungültig.")
+            self.result_edits["diagnostics"].setPlainText(
+                "Polynomrolle oder Analyseziel fehlt oder ist ungültig."
+            )
+            return
         self.presenter.analyze(
             StabilityInputDraft(
                 polynomial_text=self.polynomial_edit.toPlainText(),
                 variable_name=self.variable_edit.text(),
                 decision_parameters_text=self.parameters_edit.text(),
                 assumptions_text=self.assumptions_edit.toPlainText(),
-                role=self.role_combo.currentData(),
-                analysis_target=self.target_combo.currentData(),
+                role=role,
+                analysis_target=analysis_target,
                 provenance_note=self.provenance_edit.text(),
                 cancellation_note=self.cancellation_edit.text(),
             )
@@ -152,6 +161,13 @@ class StabilityWorkspace(QWidget):
         self.result_edits["steps"].setPlainText(state.worked_steps)
         self.result_edits["latex"].setPlainText(state.latex_source)
         self.result_edits["diagnostics"].setPlainText(state.diagnostics)
+
+
+def _combo_value(combo: QComboBox) -> str:
+    value = combo.currentData()
+    if type(value) is not str or not value:
+        raise ValueError("ComboBox data must be a non-empty enum value.")
+    return value
 
 
 __all__ = ["StabilityWorkspace"]
