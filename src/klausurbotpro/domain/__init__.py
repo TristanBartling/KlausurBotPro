@@ -37,6 +37,20 @@ from klausurbotpro.domain.diagnostics import (
     DiagnosticSeverity,
 )
 from klausurbotpro.domain.expression import ExactExpression
+from klausurbotpro.domain.frequency_reserve_analyzer import FrequencyReserveAnalyzer
+from klausurbotpro.domain.frequency_reserve_contracts import (
+    BandCompletenessStatus,
+    CrossoverDetectionMethod,
+    CrossoverDirection,
+    FrequencyCrossover,
+    FrequencyCrossoverAnalysis,
+    FrequencyCrossoverType,
+    NumericalQuality,
+    ReserveInterpretationStatus,
+    StabilityReserve,
+    StabilityReserveAnalysis,
+    StabilityReserveType,
+)
 from klausurbotpro.domain.frequency_response_contracts import (
     DecibelValueKind,
     FrequencyResponseLimits,
@@ -157,6 +171,7 @@ from klausurbotpro.domain.transfer_function_stability_analyzer import (
 )
 
 __all__ = [
+    "BandCompletenessStatus",
     "BodeAxisMetadata",
     "BodeDataLimits",
     "BodeDataStatus",
@@ -187,11 +202,17 @@ __all__ = [
     "DiagnosticCode",
     "DiagnosticSeverity",
     "DecibelValueKind",
+    "CrossoverDetectionMethod",
+    "CrossoverDirection",
     "ExactExpression",
     "ExactRationalValue",
     "ExactRootValue",
     "ExplicitExactRootValue",
     "FrequencyResponseLimits",
+    "FrequencyCrossover",
+    "FrequencyCrossoverAnalysis",
+    "FrequencyCrossoverType",
+    "FrequencyReserveAnalyzer",
     "FrequencyResponsePoint",
     "FrequencyResponsePointStatus",
     "FrequencySampleSet",
@@ -204,6 +225,7 @@ __all__ = [
     "LogFrequencyPointOrigin",
     "ConjugateStatus",
     "NumericalRootEstimate",
+    "NumericalQuality",
     "NumericalRootWarning",
     "NumericalDecibelValue",
     "ParameterAssignment",
@@ -225,6 +247,7 @@ __all__ = [
     "RawTransferFunctionFactory",
     "RawTransferFunctionLimits",
     "ReducedTransferFunction",
+    "ReserveInterpretationStatus",
     "RealPartSign",
     "RootAnalysisGroup",
     "RootAnalysisLimits",
@@ -246,6 +269,9 @@ __all__ = [
     "StandardElementFactor",
     "StandardElementFactorRole",
     "StandardElementUnsupportedReason",
+    "StabilityReserve",
+    "StabilityReserveAnalysis",
+    "StabilityReserveType",
     "TransferFunctionDomainExclusion",
     "TransferFunctionBodeDataAnalyzer",
     "TransferFunctionBodeDataResult",

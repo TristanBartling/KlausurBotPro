@@ -696,6 +696,16 @@ Grund reduziert; Unit-Tests enthalten keine zeitabhängigen Laufzeitgrenzen.
 
 ## Implementierter Frequenzbereichs-Application-Workflow (Phase 3E.1b)
 
+Der Bode-Pfad kann zusätzlich die eigenständigen unveränderlichen
+`FrequencyCrossoverAnalysis`- und `StabilityReserveAnalysis`-Ergebnisse
+erzeugen. Die Analyse arbeitet je vorhandenem stetigem Bode-/Phasensegment,
+verfeinert Kandidaten lokal und prüft jeden Treffer erneut mit dem bestehenden
+punktweisen Frequenzganganalyzer. Phasenreserven verwenden ausschließlich die
+segmentweise entfaltete Phase; negative Werte werden nicht modulo 360 Grad
+umgedeutet. Die Verträge enthalten Frequenzgangwert, Segment, Astindex,
+Erkennungsart, Richtung, Residuum, Qualität und Provenienz und sind ohne
+Kopplung an spätere Nyquist-P/N/Z-Verträge konsumierbar.
+
 `FrequencyDomainWorkflowService` orchestriert vorhandene Domainanalysen ohne
 UI-, Bericht- oder Plotabhängigkeit. Der verschachtelte
 `TransferFunctionWorkflowRequest` wird unverändert durch genau einen

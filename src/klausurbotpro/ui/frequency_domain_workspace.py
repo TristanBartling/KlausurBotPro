@@ -92,6 +92,26 @@ _TABLE_FIELDS = (
     "principal_phase",
     "unwrapped_phase",
 )
+_RESERVE_HEADERS = (
+    "Nr.",
+    "Durchtritt",
+    "ω [rad/s]",
+    "Phasenast",
+    "Entfaltete Phase",
+    "L(ω)",
+    "Reserve",
+    "Qualität",
+)
+_RESERVE_FIELDS = (
+    "index",
+    "crossover",
+    "omega",
+    "phase_branch",
+    "unwrapped_phase",
+    "decibel",
+    "reserve",
+    "quality",
+)
 _FIELD_LABELS = {
     "common_expression_text": "Gemeinsamer Ausdruck",
     "numerator_expression_text": "Zähler",
@@ -162,12 +182,8 @@ class FrequencyDomainWorkspace(QWidget):
 
         self.parameter_table = QTableWidget(0, 3)
         self.parameter_table.setObjectName("frequencyParameterTable")
-        self.parameter_table.setHorizontalHeaderLabels(
-            ("Parameter", "Zähler", "Nenner")
-        )
-        self.parameter_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
+        self.parameter_table.setHorizontalHeaderLabels(("Parameter", "Zähler", "Nenner"))
+        self.parameter_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.parameter_table.setMinimumHeight(100)
         self.add_parameter_button = QPushButton("Parameterzeile hinzufügen")
         self.remove_parameter_button = QPushButton("Parameterzeile entfernen")
@@ -188,14 +204,10 @@ class FrequencyDomainWorkspace(QWidget):
         self.points_per_decade_edit.setObjectName("bodePointsPerDecade")
         self.explicit_frequencies_edit = QLineEdit()
         self.explicit_frequencies_edit.setObjectName("bodeExplicitFrequencies")
-        self.explicit_frequencies_edit.setPlaceholderText(
-            "optional, z. B. 1/2, 1, 2"
-        )
+        self.explicit_frequencies_edit.setPlaceholderText("optional, z. B. 1/2, 1, 2")
         self.phase_combo = QComboBox()
         self.phase_combo.setObjectName("frequencyPhasePresentation")
-        self.phase_combo.addItems(
-            ("Hauptphase", "Hauptphase und entfaltete Phase")
-        )
+        self.phase_combo.addItems(("Hauptphase", "Hauptphase und entfaltete Phase"))
 
         self.input_help_label = QLabel(
             "<b>Übertragungsfunktion:</b> aus Aufgabenstellung oder "
@@ -223,9 +235,7 @@ class FrequencyDomainWorkspace(QWidget):
         frequency_form.addRow("ω_min:", self.omega_min_edit)
         frequency_form.addRow("ω_max:", self.omega_max_edit)
         frequency_form.addRow("Phasendarstellung:", self.phase_combo)
-        self.advanced_grid_group = QGroupBox(
-            "Erweiterte Rastereinstellungen"
-        )
+        self.advanced_grid_group = QGroupBox("Erweiterte Rastereinstellungen")
         advanced_grid_layout = QFormLayout(self.advanced_grid_group)
         advanced_grid_layout.addRow(
             "Punkte pro Dekade:",
@@ -270,9 +280,7 @@ class FrequencyDomainWorkspace(QWidget):
         for name, label in _SUMMARY_FIELDS:
             value = QLabel()
             value.setObjectName(f"frequencySummary_{name}")
-            value.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse
-            )
+            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             value.setWordWrap(True)
             self.summary_labels[name] = value
             summary_layout.addRow(f"{label}:", value)
@@ -283,9 +291,7 @@ class FrequencyDomainWorkspace(QWidget):
         for name, label in _SINGLE_FIELDS:
             value = QLabel()
             value.setObjectName(f"singlePoint_{name}")
-            value.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse
-            )
+            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             self.single_labels[name] = value
             single_layout.addRow(f"{label}:", value)
 
@@ -296,34 +302,53 @@ class FrequencyDomainWorkspace(QWidget):
         evaluation_header = self.value_table.horizontalHeaderItem(2)
         assert target_header is not None
         assert evaluation_header is not None
-        target_header.setToolTip(
-            "Ziel-ω ist der gewünschte logarithmische Rasterwert."
-        )
+        target_header.setToolTip("Ziel-ω ist der gewünschte logarithmische Rasterwert.")
         evaluation_header.setToolTip(
             "Auswertungs-ω ist der zertifizierte rationale Wert, "
             "an dem tatsächlich gerechnet wurde."
         )
-        self.value_table.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
-        self.value_table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
+        self.value_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.value_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.value_table.setSortingEnabled(False)
-        self.value_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Interactive
-        )
+        self.value_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.value_table.horizontalHeader().setStretchLastSection(True)
         self.value_table.setMinimumHeight(220)
 
+        self.reserve_table = QTableWidget(0, len(_RESERVE_HEADERS))
+        self.reserve_table.setObjectName("frequencyReserveTable")
+        self.reserve_table.setHorizontalHeaderLabels(_RESERVE_HEADERS)
+        self.reserve_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.reserve_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.reserve_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive
+        )
+        self.reserve_table.horizontalHeader().setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.Stretch,
+        )
+        self.reserve_table.horizontalHeader().setSectionResizeMode(
+            6,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+        self.reserve_table.horizontalHeader().setSectionResizeMode(
+            7,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+        self.reserve_table.horizontalHeader().setStretchLastSection(False)
+        reserve_page = QWidget()
+        reserve_layout = QVBoxLayout(reserve_page)
+        reserve_help = QLabel(
+            "Alle Amplituden- und Phasendurchtritte werden nummeriert; "
+            "negative Reserven bleiben negativ."
+        )
+        reserve_help.setWordWrap(True)
+        reserve_layout.addWidget(reserve_help)
+        reserve_layout.addWidget(self.reserve_table, 1)
+
         self.diagnostic_table = QTableWidget(0, 3)
         self.diagnostic_table.setObjectName("frequencyDiagnostics")
-        self.diagnostic_table.setHorizontalHeaderLabels(
-            ("Schweregrad", "Meldung", "Feld")
-        )
-        self.diagnostic_table.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
+        self.diagnostic_table.setHorizontalHeaderLabels(("Schweregrad", "Meldung", "Feld"))
+        self.diagnostic_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.diagnostic_table.horizontalHeader().setSectionResizeMode(
             0,
             QHeaderView.ResizeMode.ResizeToContents,
@@ -381,8 +406,7 @@ class FrequencyDomainWorkspace(QWidget):
         self.worked_steps_edit.setObjectName("frequencyWorkedSteps")
         self.worked_steps_edit.setReadOnly(True)
         self.worked_steps_edit.setPlaceholderText(
-            "Nach einer Berechnung erscheinen hier vorhandene numerische "
-            "Zwischenergebnisse."
+            "Nach einer Berechnung erscheinen hier vorhandene numerische Zwischenergebnisse."
         )
         worked_page = QWidget()
         worked_layout = QVBoxLayout(worked_page)
@@ -392,12 +416,8 @@ class FrequencyDomainWorkspace(QWidget):
             "asymptotische Bode-Konstruktion."
         )
         worked_heading.setWordWrap(True)
-        self.technical_details_checkbox = QCheckBox(
-            "Technische Details anzeigen"
-        )
-        self.technical_details_checkbox.setObjectName(
-            "frequencyTechnicalDetails"
-        )
+        self.technical_details_checkbox = QCheckBox("Technische Details anzeigen")
+        self.technical_details_checkbox.setObjectName("frequencyTechnicalDetails")
         self.technical_details_checkbox.setChecked(False)
         worked_layout.addWidget(worked_heading)
         worked_layout.addWidget(self.technical_details_checkbox)
@@ -433,6 +453,10 @@ class FrequencyDomainWorkspace(QWidget):
         self.plot_tab_index = self.result_tabs.addTab(
             self.plot_page,
             "Diagramme",
+        )
+        self.reserve_tab_index = self.result_tabs.addTab(
+            reserve_page,
+            "Durchtritte und Reserven",
         )
         self.worked_tab_index = self.result_tabs.addTab(
             worked_page,
@@ -471,18 +495,12 @@ class FrequencyDomainWorkspace(QWidget):
         self.common_radio.toggled.connect(self._switch_input_form)
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
         self.add_parameter_button.clicked.connect(self.add_parameter_row)
-        self.remove_parameter_button.clicked.connect(
-            self.remove_selected_parameter_row
-        )
+        self.remove_parameter_button.clicked.connect(self.remove_selected_parameter_row)
         self.calculate_button.clicked.connect(self.calculate)
         self.reset_button.clicked.connect(self.reset_workspace)
         self.presenter.state_changed.connect(self.render_state)
-        self.value_table.currentCellChanged.connect(
-            self._selected_row_changed
-        )
-        self.technical_details_checkbox.toggled.connect(
-            self._technical_details_toggled
-        )
+        self.value_table.currentCellChanged.connect(self._selected_row_changed)
+        self.technical_details_checkbox.toggled.connect(self._technical_details_toggled)
         self.copy_latex_button.clicked.connect(self.copy_latex_solution)
         self._shortcuts = (
             QShortcut(QKeySequence("Ctrl+Return"), self),
@@ -604,13 +622,13 @@ class FrequencyDomainWorkspace(QWidget):
             self.single_labels[name].setText(getattr(value.single_point, name))
         self.single_group.setVisible(bool(value.single_point.status))
         self._render_rows(value)
+        self._render_reserve_rows(value)
+        self.result_tabs.setTabVisible(self.reserve_tab_index, bool(value.reserve_rows))
         self.result_tabs.setTabVisible(self.plot_tab_index, value.plot.visible)
         self._render_plot(value)
         self._render_worked_steps(value, value.selected_bode_index)
         self.latex_report_edit.setPlainText(value.latex_report)
-        self.copy_latex_button.setEnabled(
-            not running and bool(value.latex_report)
-        )
+        self.copy_latex_button.setEnabled(not running and bool(value.latex_report))
         self._render_diagnostics(value)
         self._focus_field(value.focused_field)
 
@@ -629,7 +647,23 @@ class FrequencyDomainWorkspace(QWidget):
             self.value_table.setCurrentCell(selected, 0)
         self.value_table.blockSignals(False)
 
+    def _render_reserve_rows(self, state: FrequencyDomainViewState) -> None:
+        self.reserve_table.setRowCount(len(state.reserve_rows))
+        for row_index, row in enumerate(state.reserve_rows):
+            for column, name in enumerate(_RESERVE_FIELDS):
+                self.reserve_table.setItem(row_index, column, QTableWidgetItem(getattr(row, name)))
+
     def _render_plot(self, state: FrequencyDomainViewState) -> None:
+        has_visible_gap = (
+            len(state.plot.magnitude_segments) > 1
+            or len(state.plot.principal_phase_segments) > 1
+            or len(state.plot.unwrapped_phase_segments) > 1
+            or any(
+                marker.label == "SingularitÃ¤t"
+                for marker in state.plot.interruption_markers
+            )
+        )
+        self.plot_gap_hint_label.setVisible(has_visible_gap)
         self.magnitude_axes.clear()
         self.phase_axes.clear()
         for axes, ylabel in (
@@ -648,9 +682,7 @@ class FrequencyDomainWorkspace(QWidget):
                 marker="o",
                 markersize=4,
             )
-        for segment_index, segment in enumerate(
-            state.plot.principal_phase_segments
-        ):
+        for segment_index, segment in enumerate(state.plot.principal_phase_segments):
             self.phase_axes.plot(
                 [float(value) for value in segment.x_values],
                 [float(value) for value in segment.y_values],
@@ -658,9 +690,27 @@ class FrequencyDomainWorkspace(QWidget):
                 markersize=4,
                 label="Hauptphase" if segment_index == 0 else None,
             )
-        for segment_index, segment in enumerate(
-            state.plot.unwrapped_phase_segments
-        ):
+        for marker in state.plot.gain_crossover_markers:
+            frequency = float(marker.x_value)
+            self.magnitude_axes.scatter(
+                [frequency], [float(marker.y_value)], color="#146c94", zorder=5
+            )
+            self.magnitude_axes.annotate(marker.label, (frequency, 0.0))
+        for marker in state.plot.phase_crossover_markers:
+            frequency = float(marker.x_value)
+            phase = float(marker.y_value)
+            lower, upper = self.phase_axes.get_xlim()
+            self.phase_axes.hlines(
+                phase,
+                lower,
+                upper,
+                color="#8a4f00",
+                linestyle=":",
+                linewidth=0.8,
+            )
+            self.phase_axes.scatter([frequency], [phase], color="#8a4f00", zorder=5)
+            self.phase_axes.annotate(marker.label, (frequency, phase))
+        for segment_index, segment in enumerate(state.plot.unwrapped_phase_segments):
             self.phase_axes.plot(
                 [float(value) for value in segment.x_values],
                 [float(value) for value in segment.y_values],
@@ -727,17 +777,12 @@ class FrequencyDomainWorkspace(QWidget):
                 "===================",
             ]
             technical_lines.extend(
-                f"{label}: {value}"
-                for label, value in state.worked_steps.general_lines
+                f"{label}: {value}" for label, value in state.worked_steps.general_lines
             )
             if details:
                 detail = details[selected]
-                technical_lines.extend(
-                    ("", detail.heading, "-" * len(detail.heading))
-                )
-                technical_lines.extend(
-                    f"{label}: {value}" for label, value in detail.lines
-                )
+                technical_lines.extend(("", detail.heading, "-" * len(detail.heading)))
+                technical_lines.extend(f"{label}: {value}" for label, value in detail.lines)
             text += "\n".join(technical_lines)
         self.worked_steps_edit.setPlainText(text)
 

@@ -8,6 +8,15 @@ Grenzfälle. Exakte symbolische Ergebnisse werden möglichst exakt verglichen;
 numerische Resultate mit fachlich begründeten absoluten und relativen
 Toleranzen.
 
+### Durchtritte und Reserven (F1A)
+
+Gezielte Domainregressionen prüfen Rastertreffer, Vorzeichenwechsel,
+tangentiale Berührungen und Scheinkandidaten, Phasenäste, Segmentgrenzen,
+Mehrfach- und Fehlendfälle sowie negative Reserven. R1 bis R6 sichern die
+bekannten analytischen Werte einschließlich `90.573°` statt `270°`. Ergänzend
+prüfen Workflow-, Presenter-, GUI- und LaTeX-Smokes die vollständigen Listen,
+lesbare Nicht-anwendbar-Status und kompakte Frequenzdarstellung.
+
 ## Integrationstests
 
 Integrationstests prüfen das Zusammenspiel von Parser, Domain-Modellen,

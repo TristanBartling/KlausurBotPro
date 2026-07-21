@@ -97,6 +97,14 @@ Produktionsabhängigkeiten müssen hier vor ihrer Aufnahme begründet werden.
 Sie implementieren keine Produktfunktion. Versionsuntergrenzen werden bei
 Einrichtung von CI und unterstützten Python-Versionen erneut geprüft.
 
+## Operative Aufteilung F1A/F1B
+
+Der Frequenzsäulenblock wird aus Ressourcengründen in zwei mergebare vertikale
+PRs geteilt. F1A liefert Durchtritte und Reserven als eigenständige
+Domainergebnisse. F1B konsumiert diese später für Nyquist, ohne dass F1A
+Winding-, P/N/Z- oder Stabilitätsverträge vorwegnimmt. Es wurde keine neue
+Produktionsabhängigkeit aufgenommen.
+
 ## Geprüfte Produktionsabhängigkeiten
 
 - `PySide6`: minimale Windows-Desktopoberfläche

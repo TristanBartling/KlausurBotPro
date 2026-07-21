@@ -30,10 +30,7 @@ class FrequencyDomainSummaryView:
     added_frequencies: str = ""
 
     def __post_init__(self) -> None:
-        if any(
-            type(getattr(self, field)) is not str
-            for field in self.__dataclass_fields__
-        ):
+        if any(type(getattr(self, field)) is not str for field in self.__dataclass_fields__):
             raise TypeError("Frequency summaries may contain only strings.")
 
 
@@ -49,10 +46,7 @@ class FrequencyDomainSinglePointView:
     principal_phase: str = ""
 
     def __post_init__(self) -> None:
-        if any(
-            type(getattr(self, field)) is not str
-            for field in self.__dataclass_fields__
-        ):
+        if any(type(getattr(self, field)) is not str for field in self.__dataclass_fields__):
             raise TypeError("Single-point views may contain only strings.")
 
 
@@ -86,6 +80,22 @@ class FrequencyDomainTableRow:
 
 
 @dataclass(frozen=True, slots=True)
+class FrequencyReserveTableRow:
+    index: str
+    crossover: str
+    omega: str
+    phase_branch: str
+    unwrapped_phase: str
+    decibel: str
+    reserve: str
+    quality: str
+
+    def __post_init__(self) -> None:
+        if any(type(getattr(self, field)) is not str for field in self.__dataclass_fields__):
+            raise TypeError("Reserve table rows may contain only strings.")
+
+
+@dataclass(frozen=True, slots=True)
 class PlotSegmentView:
     x_values: tuple[str, ...]
     y_values: tuple[str, ...]
@@ -106,6 +116,7 @@ class PlotSegmentView:
 class PlotMarkerView:
     x_value: str
     label: str
+    y_value: str = ""
 
     def __post_init__(self) -> None:
         if (
@@ -113,6 +124,7 @@ class PlotMarkerView:
             or not self.x_value
             or type(self.label) is not str
             or not self.label
+            or type(self.y_value) is not str
         ):
             raise TypeError("Plot markers require non-empty display strings.")
 
@@ -124,6 +136,8 @@ class PlotView:
     principal_phase_segments: tuple[PlotSegmentView, ...] = ()
     unwrapped_phase_segments: tuple[PlotSegmentView, ...] = ()
     interruption_markers: tuple[PlotMarkerView, ...] = ()
+    gain_crossover_markers: tuple[PlotMarkerView, ...] = ()
+    phase_crossover_markers: tuple[PlotMarkerView, ...] = ()
     no_data_message: str = ""
 
     def __post_init__(self) -> None:
@@ -140,10 +154,15 @@ class PlotView:
             ):
                 raise TypeError(f"{name} must contain plot segment views.")
         if type(self.interruption_markers) is not tuple or any(
-            type(value) is not PlotMarkerView
-            for value in self.interruption_markers
+            type(value) is not PlotMarkerView for value in self.interruption_markers
         ):
             raise TypeError("interruption_markers must contain plot markers.")
+        for name in ("gain_crossover_markers", "phase_crossover_markers"):
+            values = getattr(self, name)
+            if type(values) is not tuple or any(
+                type(value) is not PlotMarkerView for value in values
+            ):
+                raise TypeError(f"{name} must contain plot markers.")
         if type(self.no_data_message) is not str:
             raise TypeError("The plot message must be a string.")
 
@@ -180,17 +199,13 @@ class WorkedStepsView:
         ):
             raise TypeError("Worked-step lines must be string pairs.")
         if type(self.point_details) is not tuple or any(
-            type(value) is not FrequencyPointDetailView
-            for value in self.point_details
+            type(value) is not FrequencyPointDetailView for value in self.point_details
         ):
             raise TypeError("Worked steps require point detail views.")
         if (
             type(self.short_solutions) is not tuple
             or any(type(value) is not str for value in self.short_solutions)
-            or (
-                self.short_solutions
-                and len(self.short_solutions) != len(self.point_details)
-            )
+            or (self.short_solutions and len(self.short_solutions) != len(self.point_details))
         ):
             raise TypeError("Short solutions must align with point details.")
 
@@ -202,10 +217,7 @@ class FrequencyDomainDiagnosticView:
     field: str
 
     def __post_init__(self) -> None:
-        if any(
-            type(getattr(self, name)) is not str
-            for name in ("severity", "message", "field")
-        ):
+        if any(type(getattr(self, name)) is not str for name in ("severity", "message", "field")):
             raise TypeError("Diagnostic views may contain only strings.")
 
 
@@ -213,10 +225,9 @@ class FrequencyDomainDiagnosticView:
 class FrequencyDomainViewState:
     run_status: FrequencyDomainUiRunStatus = FrequencyDomainUiRunStatus.IDLE
     summary: FrequencyDomainSummaryView = FrequencyDomainSummaryView()
-    single_point: FrequencyDomainSinglePointView = (
-        FrequencyDomainSinglePointView()
-    )
+    single_point: FrequencyDomainSinglePointView = FrequencyDomainSinglePointView()
     rows: tuple[FrequencyDomainTableRow, ...] = ()
+    reserve_rows: tuple[FrequencyReserveTableRow, ...] = ()
     plot: PlotView = PlotView()
     worked_steps: WorkedStepsView = WorkedStepsView()
     latex_report: str = ""
@@ -239,13 +250,11 @@ class FrequencyDomainViewState:
             raise TypeError("worked_steps has an invalid type.")
         if type(self.latex_report) is not str:
             raise TypeError("latex_report must be a string.")
-        if (
-            type(self.selected_bode_index) is not int
-            or self.selected_bode_index < 0
-        ):
+        if type(self.selected_bode_index) is not int or self.selected_bode_index < 0:
             raise ValueError("selected_bode_index must be nonnegative.")
         for values, value_type, name in (
             (self.rows, FrequencyDomainTableRow, "rows"),
+            (self.reserve_rows, FrequencyReserveTableRow, "reserve_rows"),
             (
                 self.diagnostics,
                 FrequencyDomainDiagnosticView,
@@ -257,13 +266,9 @@ class FrequencyDomainViewState:
                 "request_errors",
             ),
         ):
-            if type(values) is not tuple or any(
-                type(value) is not value_type for value in values
-            ):
+            if type(values) is not tuple or any(type(value) is not value_type for value in values):
                 raise TypeError(f"{name} have an invalid type.")
-        if self.focused_field is not None and (
-            type(self.focused_field) is not str
-        ):
+        if self.focused_field is not None and (type(self.focused_field) is not str):
             raise TypeError("focused_field must be str or None.")
         if type(self.general_message) is not str:
             raise TypeError("general_message must be a string.")
@@ -275,6 +280,7 @@ __all__ = [
     "FrequencyDomainSummaryView",
     "FrequencyDomainSinglePointView",
     "FrequencyDomainTableRow",
+    "FrequencyReserveTableRow",
     "FrequencyDomainUiRunStatus",
     "FrequencyDomainViewState",
     "PlotMarkerView",

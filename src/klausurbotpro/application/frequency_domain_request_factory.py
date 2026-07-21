@@ -217,6 +217,7 @@ class FrequencyDomainRequestFactory:
                 single_angular_frequency=single_frequency,
                 grid_request=grid_request,
                 phase_presentation=draft.phase_presentation,
+                include_reserves=draft.mode is FrequencyDomainWorkflowMode.BODE,
             )
         )
 

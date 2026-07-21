@@ -160,6 +160,7 @@ class FrequencyDomainSingularityRefinementPlanner:
             single_angular_frequency=request.single_angular_frequency,
             grid_request=refined_grid,
             phase_presentation=request.phase_presentation,
+            include_reserves=request.include_reserves,
         )
         return FrequencyDomainSingularityRefinementPlan(
             refined_request,

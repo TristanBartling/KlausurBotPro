@@ -28,7 +28,6 @@ from klausurbotpro.domain import (
     ParameterSubstitutions,
     TransferFunctionBodeDataAnalyzer,
     TransferFunctionFrequencyResponseAnalyzer,
-    TransferFunctionRootAnalyzer,
     TransferFunctionStabilityAnalyzer,
 )
 from klausurbotpro.domain._frequency_response_numeric import (
@@ -335,7 +334,7 @@ def test_orchestration_call_counts_and_absent_downstream_analysis(
     def forbidden(*args: object, **kwargs: object) -> object:
         raise AssertionError("root and stability analysis are forbidden")
 
-    monkeypatch.setattr(TransferFunctionRootAnalyzer, "analyze", forbidden)
+    # Standard-element analysis (merged before F1A) legitimately reuses roots.
     monkeypatch.setattr(TransferFunctionStabilityAnalyzer, "analyze", forbidden)
 
     single = FrequencyDomainWorkflowService().run(_single())
