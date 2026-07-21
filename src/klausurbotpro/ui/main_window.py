@@ -23,6 +23,8 @@ from klausurbotpro.ui.frequency_domain_view_state import (
 from klausurbotpro.ui.frequency_domain_workspace import (
     FrequencyDomainWorkspace,
 )
+from klausurbotpro.ui.stability_presenter import StabilityPresenter
+from klausurbotpro.ui.stability_workspace import StabilityWorkspace
 from klausurbotpro.ui.transfer_function_presenter import (
     TransferFunctionPresenter,
 )
@@ -75,6 +77,8 @@ class MainWindow(QMainWindow):
         self.frequency_workspace = FrequencyDomainWorkspace(
             self.frequency_presenter
         )
+        self.stability_presenter = StabilityPresenter()
+        self.stability_workspace = StabilityWorkspace(self.stability_presenter)
         self.workspace_tabs = QTabWidget()
         self.workspace_tabs.setObjectName("mainWorkspaceTabs")
         self.workspace_tabs.addTab(self.workspace, "Transferfunktion")
@@ -82,6 +86,7 @@ class MainWindow(QMainWindow):
             self.frequency_workspace,
             "Frequenzbereich",
         )
+        self.workspace_tabs.addTab(self.stability_workspace, "Stabilität")
         self.setCentralWidget(self.workspace_tabs)
 
         self.worker_thread = QThread(self)
