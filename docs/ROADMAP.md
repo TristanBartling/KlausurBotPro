@@ -138,6 +138,17 @@ Implementierungsressource, nicht der Reihenfolge der Vorlesung.
 
 ## 6. F1 – Durchtrittsfrequenzen, Reserven und Nyquist
 
+### Umsetzungsstand F1A/F1B
+
+F1A „Durchtrittsfrequenzen und Stabilitätsreserven“ ist implementiert: alle
+sicher ermittelbaren Amplituden- und Phasendurchtritte im geprüften Band,
+segmentlokale Verfeinerung, Phasen- und Amplitudenreserven, Bode-Markierungen,
+GUI, Worked Steps und LaTeX. Mehrere und fehlende Durchtritte sowie begrenzte
+oder unterbrochene Bänder besitzen explizite Statuswerte.
+
+F1B „Nyquist“ folgt separat. F1A enthält keine Nyquist-Kurve, keine
+Umschlingungszählung und keine P/N/Z- oder geschlossene Stabilitätslogik.
+
 ### Ziel
 
 Den vorhandenen Frequenzworkflow um eine gemeinsame Auswertungs- und
