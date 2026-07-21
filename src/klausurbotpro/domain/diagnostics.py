@@ -232,6 +232,28 @@ class DiagnosticCode(StrEnum):
     )
     NYQUIST_WINDING_METHODS_DISAGREE = "nyquist.winding_methods_disagree"
     NYQUIST_CRITICAL_POINT_HIT = "nyquist.critical_point_hit"
+    TIME_IMAGE_VARIABLE_MIXED = "time_domain.variable_mixed"
+    UNSUPPORTED_TIME_FUNCTION = "time_domain.unsupported_time_function"
+    NON_RATIONAL_IMAGE_EXPRESSION = "time_domain.non_rational_image_expression"
+    DISTRIBUTIONAL_INVERSE_UNSUPPORTED = (
+        "time_domain.distributional_inverse_unsupported"
+    )
+    FACTORIZATION_INCOMPLETE = "time_domain.factorization_incomplete"
+    PARAMETER_ASSUMPTIONS_INSUFFICIENT = (
+        "time_domain.parameter_assumptions_insufficient"
+    )
+    PBZ_COEFFICIENT_SYSTEM_SINGULAR = (
+        "time_domain.pbz_coefficient_system_singular"
+    )
+    PBZ_RECOMPOSITION_FAILED = "time_domain.pbz_recomposition_failed"
+    FORWARD_TRANSFORM_CHECK_FAILED = (
+        "time_domain.forward_transform_check_failed"
+    )
+    END_VALUE_THEOREM_INVALID = "time_domain.end_value_theorem_invalid"
+    CANCELLED_COMMON_FACTOR = "time_domain.cancelled_common_factor"
+    HIDDEN_MODE_POSSIBLE = "time_domain.hidden_mode_possible"
+    UNSTABLE_SYSTEM_POLE = "time_domain.unstable_system_pole"
+    IMAGINARY_AXIS_SYSTEM_POLE = "time_domain.imaginary_axis_system_pole"
 
 
 @dataclass(frozen=True, slots=True)

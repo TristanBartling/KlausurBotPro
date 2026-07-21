@@ -1,6 +1,7 @@
 """Immutable configuration and result contracts for safe parsers."""
 
 from dataclasses import dataclass
+from enum import StrEnum
 from keyword import iskeyword
 
 from klausurbotpro.domain.diagnostics import Diagnostic, DiagnosticSeverity
@@ -25,15 +26,29 @@ class ParserLimits:
                 raise ValueError(f"{name} must be greater than zero.")
 
 
+class ParserProfile(StrEnum):
+    """Small, explicit languages used by mathematical input workflows."""
+
+    IMAGE_S = "image_s"
+    TIME_T = "time_t"
+
+
+_DEFAULT_PARSER_LIMITS = ParserLimits()
+
+
 @dataclass(frozen=True, slots=True)
 class ParserConfig:
     """Allowed symbol names and resource limits for one parser."""
 
     allowed_symbols: frozenset[str]
     limits: ParserLimits = ParserLimits()
+    allowed_functions: frozenset[str] = frozenset()
+    exact_constants: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         symbols = frozenset(self.allowed_symbols)
+        functions = frozenset(self.allowed_functions)
+        constants = frozenset(self.exact_constants)
         if len(symbols) > self.limits.max_symbols:
             raise ValueError(
                 "allowed_symbols exceeds limits.max_symbols."
@@ -46,7 +61,40 @@ class ParserConfig:
                 or name.endswith("__")
             ):
                 raise ValueError(f"Invalid allowed symbol name: {name!r}")
+        if functions - {"exp", "sin", "cos"}:
+            raise ValueError("Only exp, sin and cos may be enabled.")
+        if constants - {"pi"}:
+            raise ValueError("Only pi may be enabled as an exact constant.")
+        if (functions | constants) & symbols:
+            raise ValueError("Functions/constants cannot also be symbols.")
         object.__setattr__(self, "allowed_symbols", symbols)
+        object.__setattr__(self, "allowed_functions", functions)
+        object.__setattr__(self, "exact_constants", constants)
+
+    @classmethod
+    def for_profile(
+        cls,
+        profile: ParserProfile,
+        *,
+        parameter_names: frozenset[str] = frozenset(),
+        limits: ParserLimits = _DEFAULT_PARSER_LIMITS,
+    ) -> "ParserConfig":
+        """Build one of the bounded time/image parser profiles."""
+        if type(profile) is not ParserProfile:
+            raise TypeError("profile must be a ParserProfile.")
+        if {"s", "t", "pi", "exp", "sin", "cos"} & parameter_names:
+            raise ValueError("A reserved profile name cannot be a parameter.")
+        main = "s" if profile is ParserProfile.IMAGE_S else "t"
+        return cls(
+            allowed_symbols=frozenset((main, *parameter_names)),
+            allowed_functions=(
+                frozenset({"exp", "sin", "cos"})
+                if profile is ParserProfile.TIME_T
+                else frozenset()
+            ),
+            exact_constants=frozenset({"pi"}),
+            limits=limits,
+        )
 
 
 @dataclass(frozen=True, slots=True)
