@@ -98,6 +98,37 @@ def test_pt1_bode_renders_one_visible_row_per_domain_point() -> None:
     workspace.close()
 
 
+def test_f2_real_click_path_switches_modes_and_uses_exam_phase_ticks() -> None:
+    workspace, requests = _workspace()
+    workspace.common_expression_edit.setPlainText("100/(s*(10*s+1))")
+    workspace.mode_combo.setCurrentIndex(1)
+    workspace.phase_combo.setCurrentIndex(1)
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    request = requests[0]
+    assert type(request) is FrequencyDomainWorkflowRequest
+    workspace.presenter.accept_result(FrequencyDomainWorkflowService().run(request))
+    _app().processEvents()
+
+    assert workspace.standard_element_table.rowCount() == 3
+    corner_texts = [
+        workspace.standard_element_table.item(row, 5).text()
+        for row in range(workspace.standard_element_table.rowCount())
+    ]
+    assert any("ω_k = 1/10" in text for text in corner_texts)
+    workspace.bode_display_mode_combo.setCurrentIndex(1)
+    _app().processEvents()
+    assert workspace.bode_mode_notice.text() == "Asymptotische Näherung"
+    workspace.bode_display_mode_combo.setCurrentIndex(2)
+    _app().processEvents()
+    assert workspace.bode_mode_notice.text() == "Grobe qualitative Klausurskizze"
+    ticks = {round(value) for value in workspace.phase_axes.get_yticks()}
+    assert {0, -45, -90, -180, -270} <= ticks
+    assert workspace.show_component_checkbox.isChecked()
+    assert workspace.show_total_checkbox.isChecked()
+    workspace.close()
+
+
 def test_invalid_rational_is_visible_focused_and_does_not_dispatch() -> None:
     workspace, requests = _workspace()
     workspace.common_expression_edit.setPlainText("1/(s+1)")
@@ -310,10 +341,19 @@ def test_unwrapped_plot_is_additional_and_single_point_hides_diagrams() -> None:
     _app().processEvents()
 
     assert workspace.result_tabs.isTabVisible(workspace.plot_tab_index)
-    assert len(workspace.phase_axes.get_lines()) == 2
+    assert len(workspace.phase_axes.get_lines()) == 4
+    labels = {line.get_label() for line in workspace.phase_axes.get_lines()}
+    assert "PT1: ω_k = 10 rad/s × 3" in labels
+    assert "Gesamtfunktion G(jω) – Hauptphase" in labels
+    assert "Gesamtfunktion G(jω) – Entfaltete Phase" in labels
     assert {
         line.get_label() for line in workspace.phase_axes.get_lines()
-    } == {"Hauptphase", "Entfaltete Phase"}
+    } == {
+        "K = 1",
+        "PT1: ω_k = 10 rad/s × 3",
+        "Gesamtfunktion G(jω) – Hauptphase",
+        "Gesamtfunktion G(jω) – Entfaltete Phase",
+    }
     assert workspace.phase_axes.get_legend() is not None
     workspace.close()
 

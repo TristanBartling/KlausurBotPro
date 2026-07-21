@@ -21,6 +21,7 @@ from klausurbotpro.application import (
     standard_element_decomposition_plain,
     standard_element_events_plain,
 )
+from klausurbotpro.domain import BodeSketchMode, standard_element_contributions
 from klausurbotpro.ui.frequency_domain_view_state import (
     FrequencyDomainDiagnosticView,
     FrequencyDomainSinglePointView,
@@ -31,9 +32,11 @@ from klausurbotpro.ui.frequency_domain_view_state import (
     FrequencyPointDetailView,
     FrequencyReserveTableRow,
     NyquistView,
+    PlotComponentView,
     PlotMarkerView,
     PlotSegmentView,
     PlotView,
+    StandardElementTableRow,
     WorkedStepsView,
 )
 from klausurbotpro.ui.workflow_worker import WorkflowWorkerFailure
@@ -483,7 +486,11 @@ def _plot(result: FrequencyDomainWorkflowResult) -> PlotView:
         ()
         if crossovers is None
         else tuple(
-            PlotMarkerView(f"{item.frequency:.12g}", f"ωg{index}", "0")
+            PlotMarkerView(
+                f"{item.frequency:.12g}",
+                f"ω_{{g,{index}}} – Amplitudendurchtritt",
+                "0",
+            )
             for index, item in enumerate(crossovers.gain_crossovers, 1)
         )
     )
@@ -493,13 +500,72 @@ def _plot(result: FrequencyDomainWorkflowResult) -> PlotView:
         else tuple(
             PlotMarkerView(
                 f"{item.frequency:.12g}",
-                f"ωp{index}",
+                f"ω_{{p,{index}}} – Phasendurchtritt",
                 f"{item.phase_target_degrees:.12g}",
             )
             for index, item in enumerate(crossovers.phase_crossovers, 1)
             if item.phase_target_degrees is not None
         )
     )
+    analysis = result.standard_element_bode_result
+    component_curves: tuple[PlotComponentView, ...] = ()
+    standard_rows: tuple[StandardElementTableRow, ...] = ()
+    corner_markers: tuple[PlotMarkerView, ...] = ()
+    decomposition_message = ""
+    if analysis is not None and analysis.supported:
+        frequencies = tuple(
+            float(point.target_decimal.decimal_text)
+            for point in bode.points
+            if point.frequency_response_point.status.value in ("defined", "zero_response")
+        )
+        x_values = tuple(f"{value:.12g}" for value in frequencies)
+        by_mode = {
+            mode: standard_element_contributions(analysis, frequencies, mode)
+            for mode in BodeSketchMode
+        }
+        exact_rows = by_mode[BodeSketchMode.EXACT]
+        component_curves = tuple(
+            _component_view(x_values, index, by_mode)
+            for index in range(len(exact_rows))
+        )
+        standard_rows = tuple(
+            StandardElementTableRow(
+                str(index),
+                row.element_type,
+                row.factor,
+                row.gain_share,
+                row.time_constant,
+                row.corner_frequency,
+                row.slope_change,
+                row.phase_change,
+                "exakt / näherungsweise",
+            )
+            for index, row in enumerate(exact_rows, 1)
+        )
+        corner_markers = tuple(
+            PlotMarkerView(
+                f"{float(event.corner_frequency._as_sympy()):.12g}",
+                f"ω_{{k,{index}}} – Knickfrequenz",
+            )
+            for index, event in enumerate(analysis.corner_events, 1)
+        )
+        consistency = _component_consistency(result, exact_rows)
+        if consistency:
+            decomposition_message = (
+                standard_element_decomposition_plain(analysis)
+                + " — Kontrollen bestätigt: Rekonstruktion, Betragssumme, "
+                "Phasensumme und Hochfrequenzsteigung."
+            )
+        else:
+            component_curves = ()
+            standard_rows = ()
+            decomposition_message = (
+                "Einzelzerlegung wegen fehlgeschlagener Summenkontrolle nicht angezeigt."
+            )
+    elif analysis is not None:
+        decomposition_message = (
+            "Einzelzerlegung nicht unterstützt: " + analysis.diagnostics[0].message
+        )
     return PlotView(
         visible=True,
         magnitude_segments=magnitude_segments,
@@ -508,8 +574,86 @@ def _plot(result: FrequencyDomainWorkflowResult) -> PlotView:
         interruption_markers=markers,
         gain_crossover_markers=gain_markers,
         phase_crossover_markers=phase_markers,
+        corner_frequency_markers=corner_markers,
+        component_curves=component_curves,
+        standard_element_rows=standard_rows,
+        decomposition_message=decomposition_message,
         no_data_message=no_data_message,
     )
+
+
+def _component_view(
+    x_values: tuple[str, ...],
+    index: int,
+    by_mode: dict[BodeSketchMode, tuple[Any, ...]],
+) -> PlotComponentView:
+    def segment(mode: BodeSketchMode, *, phase: bool) -> PlotSegmentView:
+        row = by_mode[mode][index]
+        values = row.phases_degrees if phase else row.magnitudes_db
+        return PlotSegmentView(x_values, tuple(f"{value:.12g}" for value in values))
+
+    return PlotComponentView(
+        by_mode[BodeSketchMode.EXACT][index].label,
+        segment(BodeSketchMode.EXACT, phase=False),
+        segment(BodeSketchMode.EXACT, phase=True),
+        segment(BodeSketchMode.ASYMPTOTIC, phase=False),
+        segment(BodeSketchMode.ASYMPTOTIC, phase=True),
+        segment(BodeSketchMode.ROUGH_EXAM, phase=False),
+        segment(BodeSketchMode.ROUGH_EXAM, phase=True),
+    )
+
+
+def _component_consistency(
+    result: FrequencyDomainWorkflowResult,
+    rows: tuple[Any, ...],
+) -> bool:
+    bode = result.bode_data_result
+    if bode is None or not rows:
+        return False
+    defined = tuple(
+        point
+        for point in bode.points
+        if point.frequency_response_point.status.value in ("defined", "zero_response")
+    )
+    if not defined or any(point.numerical_decibel is None for point in defined):
+        return False
+    magnitude_sums = tuple(
+        sum(row.magnitudes_db[index] for row in rows)
+        for index in range(len(defined))
+    )
+    magnitude_values = tuple(
+        float(str(point.numerical_decibel.decimal_value))  # type: ignore[union-attr]
+        for point in defined
+    )
+    magnitude_ok = all(
+        abs(left - right) <= 1e-7
+        for left, right in zip(magnitude_sums, magnitude_values, strict=True)
+    )
+    phase_sums = tuple(
+        sum(row.phases_degrees[index] for row in rows)
+        for index in range(len(defined))
+    )
+    unwrap = result.phase_unwrap_result
+    if unwrap is not None:
+        phase_values = tuple(
+            float(point.unwrapped_phase_degrees)
+            for segment in unwrap.segments
+            for point in segment.points
+        )
+        if len(phase_values) != len(phase_sums):
+            return False
+        branch_offset = 360.0 * round((phase_values[0] - phase_sums[0]) / 360.0)
+        phase_ok = all(
+            abs(left + branch_offset - right) <= 1e-7
+            for left, right in zip(phase_sums, phase_values, strict=True)
+        )
+    else:
+        phase_values = tuple(float(point.principal_phase_degrees or 0) for point in defined)
+        phase_ok = all(
+            abs((left - right + 180.0) % 360.0 - 180.0) <= 1e-7
+            for left, right in zip(phase_sums, phase_values, strict=True)
+        )
+    return magnitude_ok and phase_ok
 
 
 def _worked_steps(result: FrequencyDomainWorkflowResult) -> WorkedStepsView:

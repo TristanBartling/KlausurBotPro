@@ -21,6 +21,7 @@ from klausurbotpro.domain.standard_element_bode_contracts import (
     StandardElementBodeStatus,
     StandardElementCornerEvent,
     StandardElementFactor,
+    StandardElementFactorKind,
     StandardElementFactorRole,
     StandardElementUnsupportedReason,
 )
@@ -49,7 +50,7 @@ class _EventAccumulator:
 
 
 class StandardElementBodeAnalyzer:
-    """Recognize only origin and exact real LHP first-order factors."""
+    """Recognize primitive real factors and safe stable denominator PT2 factors."""
 
     def __init__(self, limits: RootAnalysisLimits = _DEFAULT_LIMITS) -> None:
         if type(limits) is not RootAnalysisLimits:
@@ -131,9 +132,15 @@ class StandardElementBodeAnalyzer:
                 1 + variable / factor.corner_frequency._as_sympy()
             ) ** factor.multiplicity
         for factor in pole_factors:
-            normalized /= (
-                1 + variable / factor.corner_frequency._as_sympy()
-            ) ** factor.multiplicity
+            omega = factor.corner_frequency._as_sympy()
+            if factor.kind is StandardElementFactorKind.PT2:
+                assert factor.damping_ratio is not None
+                damping = factor.damping_ratio._as_sympy()
+                normalized /= (
+                    1 + 2 * damping * variable / omega + (variable / omega) ** 2
+                ) ** factor.multiplicity
+            else:
+                normalized /= (1 + variable / omega) ** factor.multiplicity
         gain = sp.cancel(source / normalized)
         if variable in gain.free_symbols or gain.is_real is not True or gain.is_zero is True:
             raise _UnsupportedDecomposition(
@@ -148,6 +155,20 @@ class StandardElementBodeAnalyzer:
             )
         initial_slope = 20 * (origin_zeros - origin_poles)
         events = self._corner_events(zero_factors, pole_factors, initial_slope)
+        final_slope = initial_slope + sum(
+            event.slope_change_db_per_decade for event in events
+        )
+        numerator_degree = reduced.numerator.degree_info.generic_degree
+        denominator_degree = reduced.denominator.degree_info.generic_degree
+        if (
+            numerator_degree is None
+            or denominator_degree is None
+            or final_slope != 20 * (numerator_degree - denominator_degree)
+        ):
+            raise _UnsupportedDecomposition(
+                StandardElementUnsupportedReason.INCOMPLETE_RECONSTRUCTION,
+                "Die Hochfrequenzsteigung widerspricht dem Relativgrad.",
+            )
         return StandardElementBodeResult._create(
             reduced_transfer_function=reduced,
             status=StandardElementBodeStatus.SUPPORTED,
@@ -176,14 +197,61 @@ class StandardElementBodeAnalyzer:
             )
         origin_multiplicity = 0
         factors: list[StandardElementFactor] = []
-        for occurrence in analysis.roots:
+        occurrences = list(analysis.roots)
+        consumed: set[int] = set()
+        for index, occurrence in enumerate(occurrences):
+            if index in consumed:
+                continue
             root = exact_root_as_sympy(occurrence.value)
             if root.is_real is False:
-                kind = "Nullstelle" if role is StandardElementFactorRole.ZERO else "Polstelle"
-                raise _UnsupportedDecomposition(
-                    StandardElementUnsupportedReason.COMPLEX_ROOT,
-                    f"Eine komplexe {kind} wird vom Standardglieder-MVP nicht unterst\u00fctzt.",
+                if role is StandardElementFactorRole.ZERO:
+                    raise _UnsupportedDecomposition(
+                        StandardElementUnsupportedReason.COMPLEX_ROOT,
+                        "Ein komplexes Nullstellenpaar wird nicht unterstützt.",
+                    )
+                partner_index = next(
+                    (
+                        other_index
+                        for other_index, other in enumerate(occurrences)
+                        if other_index != index
+                        and other_index not in consumed
+                        and other.multiplicity == occurrence.multiplicity
+                        and cls._exactly_equal(
+                            exact_root_as_sympy(other.value), sp.conjugate(root)
+                        )
+                    ),
+                    None,
                 )
+                if partner_index is None:
+                    raise _UnsupportedDecomposition(
+                        StandardElementUnsupportedReason.COMPLEX_ROOT,
+                        "Das komplexe Polpaar ist nicht sicher konjugiert klassifizierbar.",
+                    )
+                real_part = sp.re(root)
+                omega = sp.sqrt(sp.simplify(root * sp.conjugate(root)))
+                damping = sp.simplify(-real_part / omega)
+                if (
+                    real_part.is_negative is not True
+                    or omega.is_positive is not True
+                    or damping.is_positive is not True
+                    or damping.is_real is not True
+                ):
+                    raise _UnsupportedDecomposition(
+                        StandardElementUnsupportedReason.RIGHT_HALF_PLANE_ROOT,
+                        "Das quadratische Polpaar ist kein sicher stabiles PT2-Glied.",
+                    )
+                consumed.add(partner_index)
+                factors.append(
+                    StandardElementFactor(
+                        role,
+                        ExactExpression._from_sympy(root),
+                        ExactExpression._from_sympy(omega),
+                        occurrence.multiplicity,
+                        StandardElementFactorKind.PT2,
+                        ExactExpression._from_sympy(damping),
+                    )
+                )
+                continue
             if root.is_real is not True:
                 raise _UnsupportedDecomposition(
                     StandardElementUnsupportedReason.SYMBOLIC_OR_UNCLASSIFIABLE_ROOT,
@@ -247,7 +315,8 @@ class StandardElementBodeAnalyzer:
             if factor.role is StandardElementFactorRole.ZERO:
                 accumulator.zero_multiplicity += factor.multiplicity
             else:
-                accumulator.pole_multiplicity += factor.multiplicity
+                order = 2 if factor.kind is StandardElementFactorKind.PT2 else 1
+                accumulator.pole_multiplicity += order * factor.multiplicity
         accumulators.sort(
             key=cmp_to_key(
                 lambda left, right: cls._compare_frequencies(

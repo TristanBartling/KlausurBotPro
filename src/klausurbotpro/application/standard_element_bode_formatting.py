@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from klausurbotpro.application._solution_report_formatting import exact_expression
-from klausurbotpro.domain import StandardElementBodeResult, StandardElementFactor
+from klausurbotpro.domain import (
+    StandardElementBodeResult,
+    StandardElementFactor,
+    StandardElementFactorKind,
+)
 
 
 def standard_element_decomposition_plain(result: StandardElementBodeResult) -> str:
@@ -82,23 +86,40 @@ def standard_element_events_plain(result: StandardElementBodeResult) -> str:
 
 def _factor_plain(factor: StandardElementFactor) -> str:
     omega = factor.corner_frequency.canonical_text
+    if factor.kind is StandardElementFactorKind.PT2:
+        assert factor.damping_ratio is not None
+        damping = factor.damping_ratio.canonical_text
+        return _power(
+            f"(1 + 2*({damping})*s/({omega}) + (s/({omega}))^2)",
+            factor.multiplicity,
+        )
     return _power(f"(1 + s/({omega}))", factor.multiplicity)
 
 
 def _factor_latex(factor: StandardElementFactor) -> str:
     omega = exact_expression(factor.corner_frequency).latex
+    if factor.kind is StandardElementFactorKind.PT2:
+        assert factor.damping_ratio is not None
+        damping = exact_expression(factor.damping_ratio).latex
+        body = (
+            rf"\left(1+2\,{damping}\frac{{s}}{{{omega}}}"
+            rf"+\left(\frac{{s}}{{{omega}}}\right)^2\right)"
+        )
+        return _power_latex(body, factor.multiplicity)
     body = rf"\left(1+\frac{{s}}{{{omega}}}\right)"
     return _power_latex(body, factor.multiplicity)
 
 
 def _asymptote_term_plain(factor: StandardElementFactor, *, sign: int) -> str:
-    coefficient = sign * 20 * factor.multiplicity
+    order = 2 if factor.kind is StandardElementFactorKind.PT2 else 1
+    coefficient = sign * 20 * order * factor.multiplicity
     omega = factor.corner_frequency.canonical_text
     return f"{coefficient:+d}*log10(max(1, omega/({omega})))"
 
 
 def _asymptote_term_latex(factor: StandardElementFactor, *, sign: int) -> str:
-    coefficient = sign * 20 * factor.multiplicity
+    order = 2 if factor.kind is StandardElementFactorKind.PT2 else 1
+    coefficient = sign * 20 * order * factor.multiplicity
     omega = exact_expression(factor.corner_frequency).latex
     return (
         rf"{_signed(coefficient)}\log_{{10}}\!\left("
