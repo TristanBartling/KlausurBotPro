@@ -1,5 +1,6 @@
 """Focused T2 ODE workflow reference and signal tests."""
 
+import pytest
 import sympy as sp
 
 from klausurbotpro.application import TimeDomainInputDraft, run_time_domain_workflow
@@ -81,6 +82,55 @@ def test_rf04_transfer_function_preserves_negative_sign() -> None:
         result.presentation.latex_source
     )
     _assert_no_internal_origin_names(result)
+
+
+@pytest.mark.parametrize("minus", ("-", "−", "–"))
+def test_rf04_accepts_supported_minus_variants_in_numeric_and_symbolic_fields(
+    minus: str,
+) -> None:
+    result = run_time_domain_workflow(
+        TimeDomainInputDraft(
+            task_type=TimeDomainTaskType.TRANSFER_FUNCTION_FROM_ODE,
+            output_name="phi_G",
+            input_name="F_A",
+            output_order=2,
+            input_order=0,
+            output_coefficient_texts=(
+                "g*(m_K+m_G)",
+                f"{minus}d_K",
+                "m_K*l",
+            ),
+            input_coefficient_texts=(f"{minus}1",),
+            assumptions_text="m_K > 0; l > 0",
+            zero_state_confirmed=True,
+        )
+    )
+
+    assert result.solution is not None
+    assert result.solution.ode_transfer_function is not None
+    assert "G(s) = -1/" in result.presentation.summary
+
+
+def test_rf04_rejection_latex_requests_transfer_function_without_pseudo_solution() -> None:
+    result = run_time_domain_workflow(
+        TimeDomainInputDraft(
+            task_type=TimeDomainTaskType.TRANSFER_FUNCTION_FROM_ODE,
+            output_name="phi_G",
+            input_name="F_A",
+            output_order=1,
+            input_order=0,
+            output_coefficient_texts=("1", "1"),
+            input_coefficient_texts=("1",),
+            zero_state_confirmed=False,
+        )
+    )
+
+    assert result.solution is not None
+    assert result.solution.ode_transfer_function is None
+    assert r"G_S(s)=\frac{\Phi_G(s)}{F_{A}(s)}" in result.presentation.latex_source
+    assert "y(t)" not in result.presentation.latex_source
+    assert r"\textbf{Lösung}" not in result.presentation.latex_source
+    assert result.presentation.short_solution == ""
 
 
 def test_rf05_missing_initial_value_stops_before_y_of_s() -> None:

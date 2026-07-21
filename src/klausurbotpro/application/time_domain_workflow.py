@@ -140,7 +140,7 @@ def run_time_domain_workflow(draft: TimeDomainInputDraft) -> TimeDomainWorkflowR
     except (TypeError, ValueError, ArithmeticError) as error:
         message = str(error) or "Die Eingabe konnte nicht verarbeitet werden."
         return TimeDomainWorkflowResult(None, _error_presentation(message), (message,))
-    return TimeDomainWorkflowResult(solution, _present(solution))
+    return TimeDomainWorkflowResult(solution, _present(solution, draft))
 
 
 def format_ode_preview(
@@ -744,6 +744,7 @@ def _apply_cancellation_provenance(
 
 
 def _parse_time(text: str) -> ExactExpression:
+    text = _normalize_minus_signs(text)
     _reject_mixed_variables(text, expected="t")
     parameters = _parameter_names(text)
     parser = SafeExpressionParser(
@@ -756,6 +757,7 @@ def _parse_time(text: str) -> ExactExpression:
 
 
 def _parse_coefficient(text: str) -> ExactExpression:
+    text = _normalize_minus_signs(text)
     _reject_mixed_variables(text, expected=None)
     parameters = _parameter_names(text)
     parser = SafeExpressionParser(
@@ -771,6 +773,7 @@ def _parse_coefficient(text: str) -> ExactExpression:
 
 
 def _parse_reduction(text: str) -> TransferFunctionReductionResult:
+    text = _normalize_minus_signs(text)
     _reject_mixed_variables(text, expected="s")
     parameters = _parameter_names(text)
     allowed = frozenset(("s", "pi", *parameters))
@@ -786,6 +789,10 @@ def _parse_reduction(text: str) -> TransferFunctionReductionResult:
     if created.value is None:
         raise ValueError("\n".join(item.message for item in created.diagnostics))
     return TransferFunctionReducer().reduce(created.value, field="image")
+
+
+def _normalize_minus_signs(text: str) -> str:
+    return text.replace("−", "-").replace("–", "-")
 
 
 def _reduced_expression(reduction: TransferFunctionReductionResult) -> ExactExpression:
@@ -810,11 +817,15 @@ def _reject_mixed_variables(text: str, *, expected: str | None) -> None:
         raise ValueError("Gemischte Verwendung von s und t ist nicht erlaubt.")
 
 
-def _present(solution: TimeDomainSolution) -> TimeDomainPresentation:
+def _present(
+    solution: TimeDomainSolution, draft: TimeDomainInputDraft
+) -> TimeDomainPresentation:
     if solution.ode_solution is not None:
         return _present_ode_solution(solution)
     if solution.ode_transfer_function is not None:
         return _present_ode_transfer(solution)
+    if solution.task_type is TimeDomainTaskType.TRANSFER_FUNCTION_FROM_ODE:
+        return _present_ode_transfer_failure(solution, draft)
     time_form = _rendered_time_form(solution)
     image_symbol, time_symbol = _result_symbols(solution.task_type)
     summary_lines = [f"Aufgabe: {_task_label(solution.task_type)}"]
@@ -1091,6 +1102,41 @@ def _present_ode_transfer(solution: TimeDomainSolution) -> TimeDomainPresentatio
             f"({_plain_exact(data.numerator)}) U(s)"
         ),
         free_and_forced="",
+    )
+
+
+def _present_ode_transfer_failure(
+    solution: TimeDomainSolution, draft: TimeDomainInputDraft
+) -> TimeDomainPresentation:
+    diagnostics = "\n".join(
+        f"{item.severity.value.upper()} {item.code.value}: {item.message}"
+        for item in solution.diagnostics
+    )
+    message = " ".join(item.message for item in solution.diagnostics)
+    output_image = f"{_laplace_name_latex(draft.output_name.strip() or 'y')}(s)"
+    input_image = f"{_laplace_name_latex(draft.input_name.strip() or 'u')}(s)"
+    return TimeDomainPresentation(
+        summary="Aufgabe: Übertragungsfunktion aus DGL\nBerechnung abgelehnt.",
+        rational_analysis="",
+        partial_fractions="",
+        time_function="",
+        verifications="",
+        short_solution="",
+        worked_steps=(
+            "Gesucht\nG_S(s) = "
+            + f"{draft.output_name.strip() or 'y'}(s)/"
+            + f"{draft.input_name.strip() or 'u'}(s)\n\nHinweis\n"
+            + message
+        ),
+        latex_source="\n".join(
+            (
+                r"\textbf{Gesucht}",
+                rf"\[G_S(s)=\frac{{{output_image}}}{{{input_image}}}\]",
+                r"\textbf{Hinweis}",
+                rf"\[\text{{{_latex_escape(message)}}}\]",
+            )
+        ),
+        diagnostics=diagnostics,
     )
 
 

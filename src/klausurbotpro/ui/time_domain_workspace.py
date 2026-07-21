@@ -245,6 +245,11 @@ class TimeDomainWorkspace(QWidget):
                 )
             )
             return
+        self._clear_results()
+        solves_ode = task_type is TimeDomainTaskType.SOLVE_ODE
+        derives_transfer_function = (
+            task_type is TimeDomainTaskType.TRANSFER_FUNCTION_FROM_ODE
+        )
         self.presenter.calculate(
             TimeDomainInputDraft(
                 task_type=task_type,
@@ -272,17 +277,25 @@ class TimeDomainWorkspace(QWidget):
                         : int(self.input_order_combo.currentData()) + 1
                     ]
                 ),
-                output_initial_texts=tuple(
-                    edit.text()
-                    for edit in self.output_initial_edits[
-                        : int(self.output_order_combo.currentData())
-                    ]
+                output_initial_texts=(
+                    tuple(
+                        edit.text()
+                        for edit in self.output_initial_edits[
+                            : int(self.output_order_combo.currentData())
+                        ]
+                    )
+                    if solves_ode
+                    else ()
                 ),
-                input_initial_texts=tuple(
-                    edit.text()
-                    for edit in self.input_initial_edits[
-                        : int(self.input_order_combo.currentData())
-                    ]
+                input_initial_texts=(
+                    tuple(
+                        edit.text()
+                        for edit in self.input_initial_edits[
+                            : int(self.input_order_combo.currentData())
+                        ]
+                    )
+                    if solves_ode
+                    else ()
                 ),
                 ode_input_signal_type=InputSignalType(_combo_value(self.ode_signal_combo)),
                 ode_signal_amplitude_text=self.ode_amplitude_edit.text(),
@@ -290,10 +303,20 @@ class TimeDomainWorkspace(QWidget):
                 polynomial_coefficient_texts=tuple(
                     edit.text() for edit in self.polynomial_coefficient_edits
                 ),
-                missing_initials_are_zero=self.zero_missing_checkbox.isChecked(),
-                zero_state_confirmed=self.zero_state_checkbox.isChecked(),
+                missing_initials_are_zero=(
+                    solves_ode and self.zero_missing_checkbox.isChecked()
+                ),
+                zero_state_confirmed=(
+                    derives_transfer_function
+                    and self.zero_state_checkbox.isChecked()
+                ),
             )
         )
+
+    def _clear_results(self) -> None:
+        for result_edit in self.result_edits.values():
+            result_edit.clear()
+        self.copy_latex_button.setEnabled(False)
 
     @Slot()
     def reset(self) -> None:
