@@ -21,12 +21,17 @@ from klausurbotpro.application.frequency_domain_workflow_contracts import (
     FrequencyDomainWorkflowResult,
     FrequencyPhasePresentation,
 )
+from klausurbotpro.application.standard_element_bode_formatting import (
+    standard_element_asymptote_latex,
+    standard_element_decomposition_latex,
+)
 from klausurbotpro.domain import (
     DecibelValueKind,
     ExactExpression,
     ExactRationalValue,
     FrequencyResponsePoint,
     FrequencyResponsePointStatus,
+    StandardElementBodeResult,
 )
 
 _STATUS_LATEX = {
@@ -159,6 +164,7 @@ def _bode_report(
     return "\n\n".join(
         (
             *given_lines,
+            *_standard_element_section(result),
             r"\section*{Wertetabelle}",
             table,
             *selected,
@@ -167,6 +173,76 @@ def _bode_report(
             *_workflow_notices(result),
         )
     )
+
+
+def _standard_element_section(
+    result: FrequencyDomainWorkflowResult,
+) -> tuple[str, ...]:
+    analysis = result.standard_element_bode_result
+    if analysis is None:
+        return ()
+    heading = r"\section*{Standardglieder und asymptotischer Betrag}"
+    if not analysis.supported:
+        message = analysis.diagnostics[0].message
+        return (
+            heading,
+            (
+                "\\[\\text{Standardglieder-MVP: nicht unterst\u00fctzt}\\]"
+            ),
+            rf"\[\text{{Grund:}}\quad {literal_text(message).latex}\]",
+        )
+    assert analysis.gain is not None
+    assert analysis.initial_slope_db_per_decade is not None
+    gain = exact_expression(analysis.gain).latex
+    lines = [
+        heading,
+        rf"\[{standard_element_decomposition_latex(analysis)}\]",
+        rf"\[K={gain}\]",
+        (
+            r"\[n_{z0}="
+            f"{analysis.origin_zero_multiplicity}"
+            r",\quad n_{p0}="
+            f"{analysis.origin_pole_multiplicity}"
+            r"\]"
+        ),
+        (
+            r"\[m_{\mathrm{Start}}="
+            f"{analysis.initial_slope_db_per_decade}"
+            r"\,\mathrm{dB/Dekade}\]"
+        ),
+        *_standard_element_event_table(analysis),
+        rf"\[{standard_element_asymptote_latex(analysis)}\]",
+        "\\[\\text{Exakte Rekonstruktion: best\u00e4tigt}\\]",
+    ]
+    return tuple(lines)
+
+
+def _standard_element_event_table(
+    analysis: StandardElementBodeResult,
+) -> tuple[str, ...]:
+    if not analysis.corner_events:
+        return (r"\[\text{Knickereignisse: keine}\]",)
+    rows = [
+        r"\[",
+        r"\begin{array}{r r r r r}",
+        (
+            r"\omega_k\,[\mathrm{rad/s}] & m_z & m_p & "
+            r"\Delta m\,[\mathrm{dB/Dekade}] & "
+            r"m_{\mathrm{danach}}\,[\mathrm{dB/Dekade}]\\"
+        ),
+        r"\hline",
+    ]
+    rows.extend(
+        (
+            f"{exact_expression(event.corner_frequency).latex} & "
+            f"{event.zero_multiplicity} & {event.pole_multiplicity} & "
+            f"{event.slope_change_db_per_decade} & "
+            f"{event.slope_after_db_per_decade}\\\\"
+        )
+        for event in analysis.corner_events
+    )
+    rows.extend((r"\end{array}", r"\]"))
+    return ("\n".join(rows),)
 
 
 def _transfer_function_equation(

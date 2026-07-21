@@ -17,6 +17,9 @@ from klausurbotpro.application import (
     FrequencyDomainWorkflowResult,
     FrequencyDomainWorkflowStatus,
     render_frequency_domain_solution_latex,
+    standard_element_asymptote_plain,
+    standard_element_decomposition_plain,
+    standard_element_events_plain,
 )
 from klausurbotpro.ui.frequency_domain_view_state import (
     FrequencyDomainDiagnosticView,
@@ -216,7 +219,14 @@ class FrequencyDomainPresenter(QObject):
                         diagnostic.message,
                         "" if diagnostic.field is None else diagnostic.field,
                     )
-                    for diagnostic in value.diagnostics
+                    for diagnostic in (
+                        *value.diagnostics,
+                        *(
+                            ()
+                            if value.standard_element_bode_result is None
+                            else value.standard_element_bode_result.diagnostics
+                        ),
+                    )
                 ),
                 focused_field=_diagnostic_focus(value),
                 general_message=message,
@@ -510,6 +520,7 @@ def _worked_steps(result: FrequencyDomainWorkflowResult) -> WorkedStepsView:
         ("Ansatz", "s = jω"),
         ("Parameterbelegungen", _substitutions_text(result)),
         ("Frequenzdefinition", _frequency_definition_text(result)),
+        *_standard_element_worked_lines(result),
     )
     response = result.active_frequency_response_result
     if response is None:
@@ -646,6 +657,35 @@ def _worked_steps(result: FrequencyDomainWorkflowResult) -> WorkedStepsView:
         general_lines,
         tuple(details),
         tuple(short_solutions),
+    )
+
+
+def _standard_element_worked_lines(
+    result: FrequencyDomainWorkflowResult,
+) -> tuple[tuple[str, str], ...]:
+    analysis = result.standard_element_bode_result
+    if analysis is None:
+        return ()
+    if not analysis.supported:
+        return (("Standardgliederanalyse", analysis.diagnostics[0].message),)
+    assert analysis.gain is not None
+    assert analysis.initial_slope_db_per_decade is not None
+    return (
+        (
+            "Standardgliederzerlegung",
+            standard_element_decomposition_plain(analysis),
+        ),
+        ("Gesamtfaktor K", analysis.gain.canonical_text),
+        (
+            "Anfangssteigung",
+            f"{analysis.initial_slope_db_per_decade:+d} dB/Dekade",
+        ),
+        ("Knickereignisse", standard_element_events_plain(analysis)),
+        (
+            "Globale Betragsasymptote",
+            standard_element_asymptote_plain(analysis),
+        ),
+        ("Exakte Rekonstruktion", "best\u00e4tigt"),
     )
 
 

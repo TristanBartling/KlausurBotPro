@@ -221,6 +221,9 @@ class DiagnosticCode(StrEnum):
     BODE_PHASE_UNWRAP_RESOURCE_LIMIT_EXCEEDED = (
         "bode_phase_unwrap.resource_limit_exceeded"
     )
+    STANDARD_ELEMENT_BODE_UNSUPPORTED = (
+        "standard_element_bode.unsupported"
+    )
 
 
 @dataclass(frozen=True, slots=True)

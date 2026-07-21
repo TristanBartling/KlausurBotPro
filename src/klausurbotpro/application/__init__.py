@@ -29,6 +29,11 @@ from klausurbotpro.application.frequency_domain_workflow_contracts import (
 from klausurbotpro.application.frequency_domain_workflow_service import (
     FrequencyDomainWorkflowService,
 )
+from klausurbotpro.application.standard_element_bode_formatting import (
+    standard_element_asymptote_plain,
+    standard_element_decomposition_plain,
+    standard_element_events_plain,
+)
 from klausurbotpro.application.transfer_function_preparation_contracts import (
     TransferFunctionPreparationResult,
     TransferFunctionPreparationStage,
@@ -133,6 +138,9 @@ __all__ = [
     "SolutionSectionKind",
     "SolutionSectionStatus",
     "SourceReferenceLine",
+    "standard_element_asymptote_plain",
+    "standard_element_decomposition_plain",
+    "standard_element_events_plain",
     "TransferFunctionExpressionPair",
     "TransferFunctionInputDraft",
     "TransferFunctionPreparationResult",

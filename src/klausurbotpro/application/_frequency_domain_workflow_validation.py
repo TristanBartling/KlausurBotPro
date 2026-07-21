@@ -231,6 +231,7 @@ def _validate_invalid_request_result(
         result.single_point_result,
         result.grid_result,
         result.bode_data_result,
+        result.standard_element_bode_result,
         result.phase_unwrap_result,
     )
     if (
@@ -378,6 +379,7 @@ def _validate_single_point(
     if (
         result.grid_result is not None
         or result.bode_data_result is not None
+        or result.standard_element_bode_result is not None
         or result.phase_unwrap_result is not None
     ):
         _fail("SINGLE_POINT cannot retain Bode-path values.")
@@ -433,6 +435,7 @@ def _validate_bode_path(
             for value in (
                 grid,
                 result.bode_data_result,
+                result.standard_element_bode_result,
                 result.phase_unwrap_result,
             )
         ):
@@ -463,6 +466,7 @@ def _validate_bode_path(
         )
         if (
             result.bode_data_result is not None
+            or result.standard_element_bode_result is not None
             or result.phase_unwrap_result is not None
         ):
             _fail("A failed grid cannot retain downstream results.")
@@ -478,11 +482,18 @@ def _validate_bode_result(
     assert result.request is not None
     record = result.stage_records[3]
     bode = result.bode_data_result
+    standard_elements = result.standard_element_bode_result
     if record.status is FrequencyDomainWorkflowStageStatus.BLOCKED:
-        if bode is not None or result.phase_unwrap_result is not None:
+        if (
+            bode is not None
+            or standard_elements is not None
+            or result.phase_unwrap_result is not None
+        ):
             _fail("A blocked Bode stage cannot retain downstream values.")
         return
     if bode is None:
+        if standard_elements is not None:
+            _fail("A missing Bode result cannot retain standard elements.")
         _validate_missing_failure(record)
         return
     validate_bode_data_result(
@@ -504,6 +515,11 @@ def _validate_bode_result(
             != preparation.request.substitutions
         ):
             _fail("The Bode handoff contains foreign context.")
+        if standard_elements is None:
+            _fail("A successful Bode result requires standard-element analysis.")
+        standard_elements._validate_local()
+        if standard_elements.reduced_transfer_function is not preparation.reduced_value:
+            _fail("The standard-element result references foreign context.")
         expected = owned_diagnostics(
             bode.diagnostics,
             result.grid_result.diagnostics,  # type: ignore[union-attr]
@@ -514,6 +530,8 @@ def _validate_bode_result(
         ):
             _fail("Bode diagnostic ownership is inconsistent.")
     else:
+        if standard_elements is not None:
+            _fail("A failed Bode result cannot retain standard elements.")
         _validate_failed_record(
             record,
             bode.diagnostics,
