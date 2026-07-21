@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+from decimal import ROUND_HALF_EVEN, Decimal
 
 from klausurbotpro.application._frequency_domain_workflow_validation import (
     validate_frequency_domain_workflow_result,
 )
 from klausurbotpro.application._solution_report_formatting import (
     compact_decimal_text,
+    descriptive_math,
     exact_expression,
     exact_rational,
     fraction,
@@ -189,7 +191,7 @@ def _standard_element_section(
             (
                 "\\[\\text{Standardglieder-MVP: nicht unterst\u00fctzt}\\]"
             ),
-            rf"\[\text{{Grund:}}\quad {literal_text(message).latex}\]",
+            rf"\[{descriptive_math(f'Grund: {message}').latex}\]",
         )
     assert analysis.gain is not None
     assert analysis.initial_slope_db_per_decade is not None
@@ -410,7 +412,7 @@ def _bode_table(result: FrequencyDomainWorkflowResult) -> str:
     for index, bode_point in enumerate(result.bode_data_result.points):
         point = bode_point.frequency_response_point
         values = (
-            _rational_latex(bode_point.evaluation_frequency),
+            _table_frequency(bode_point.target_decimal.decimal_text),
             _STATUS_LATEX[point.status],
             _table_magnitude(point),
             _table_decibel(point),
@@ -422,6 +424,25 @@ def _bode_table(result: FrequencyDomainWorkflowResult) -> str:
         rows.append(row + r"\\")
     rows.extend((r"\hline", r"\end{array}", r"\]"))
     return "\n".join(rows)
+
+
+def _table_frequency(decimal_text: str) -> str:
+    """Render one Bode-table target frequency with three significant digits."""
+
+    number = Decimal(decimal_text)
+    exponent = number.adjusted()
+    quantum = Decimal(1).scaleb(exponent - 2)
+    rounded = number.quantize(quantum, rounding=ROUND_HALF_EVEN)
+    display_exponent = rounded.adjusted()
+    if display_exponent >= 6 or display_exponent <= -4:
+        mantissa, scientific_exponent = f"{rounded:.2E}".split("E")
+        mantissa = mantissa.rstrip("0").rstrip(".")
+        return rf"{mantissa}\cdot 10^{{{int(scientific_exponent)}}}"
+    decimal_places = max(0, 2 - display_exponent)
+    rendered = f"{rounded:.{decimal_places}f}"
+    if "." in rendered:
+        rendered = rendered.rstrip("0").rstrip(".")
+    return rendered
 
 
 def _unwrap_explanation(
