@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 
 from klausurbotpro.domain.expression import ExactExpression
 from klausurbotpro.domain.parameter_core_contracts import (
@@ -13,12 +12,7 @@ from klausurbotpro.domain.parameter_core_contracts import (
     PolynomialDegreeCase,
     SolveStatus,
 )
-
-
-class NumericalCheckStatus(StrEnum):
-    CONSISTENT = "consistent"
-    INCONSISTENT = "inconsistent"
-    NUMERICALLY_INCONCLUSIVE = "numerically_inconclusive"
+from klausurbotpro.domain.stability_contracts import NumericalCheckStatus, NumericalPoleCheck
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,14 +20,6 @@ class HurwitzDeterminant:
     order: int
     expression: ExactExpression
     factored_expression: ExactExpression
-
-
-@dataclass(frozen=True, slots=True)
-class NumericalPoleCheck:
-    status: NumericalCheckStatus
-    parameter_point: tuple[tuple[str, str], ...]
-    poles: tuple[str, ...]
-    maximum_real_part: str
 
 
 @dataclass(frozen=True, slots=True)

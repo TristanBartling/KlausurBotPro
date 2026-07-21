@@ -24,6 +24,7 @@ from klausurbotpro.domain.parameter_core_contracts import (
     Relation,
     SolveStatus,
 )
+from klausurbotpro.domain.stability_numeric import check_numeric_poles
 
 
 def _exact(value: sp.Expr) -> ExactExpression:
@@ -278,38 +279,12 @@ def _numeric_check(
             (),
             "",
         )
-    substitutions: dict[sp.Symbol, sp.Expr] = {}
     point_pairs: tuple[tuple[str, str], ...] = ()
     if parameters:
         values = region.control_points[0]
-        substitutions = {
-            sp.Symbol(name): sp.sympify(value)
-            for name, value in zip(parameters, values, strict=True)
-        }
         point_pairs = tuple((name, value) for name, value in zip(parameters, values, strict=True))
-    variable = next(iter(case.polynomial._as_sympy().free_symbols - set(substitutions)), None)
-    if variable is None:
-        return None
-    try:
-        polynomial = sp.Poly(case.polynomial._as_sympy().subs(substitutions), variable)
-        roots = tuple(complex(value) for value in sp.nroots(polynomial, n=30, maxsteps=100))
-    except (sp.PolynomialError, ValueError, TypeError):
-        return NumericalPoleCheck(
-            NumericalCheckStatus.NUMERICALLY_INCONCLUSIVE,
-            point_pairs,
-            (),
-            "",
-        )
-    maximum = max(value.real for value in roots)
-    status = (
-        NumericalCheckStatus.CONSISTENT if maximum < -1e-9 else NumericalCheckStatus.INCONSISTENT
-    )
-    return NumericalPoleCheck(
-        status,
-        point_pairs,
-        tuple(f"{value.real:.10g}{value.imag:+.10g}j" for value in roots),
-        f"{maximum:.10g}",
-    )
+    check, _ = check_numeric_poles(case, point_pairs, expected_rhp_roots=0)
+    return check
 
 
 def _concept(canonical: CanonicalCharacteristicPolynomial) -> str:

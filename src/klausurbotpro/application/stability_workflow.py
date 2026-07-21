@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from enum import StrEnum
 
 import sympy as sp
 
@@ -22,6 +23,8 @@ from klausurbotpro.domain.parameter_core_contracts import (
     Relation,
     SourceProvenance,
 )
+from klausurbotpro.domain.routh_analyzer import analyze_routh
+from klausurbotpro.domain.routh_contracts import RouthAnalysisResult
 from klausurbotpro.parsing import ParserConfig, SafeExpressionParser
 
 _RELATION_PATTERN = re.compile(r"(<=|>=|!=|=|<|>)")
@@ -35,6 +38,11 @@ _RELATIONS = {
 }
 
 
+class StabilityMethod(StrEnum):
+    HURWITZ = "hurwitz"
+    ROUTH = "routh"
+
+
 @dataclass(frozen=True, slots=True)
 class StabilityInputDraft:
     polynomial_text: str
@@ -45,11 +53,12 @@ class StabilityInputDraft:
     analysis_target: AnalysisTarget = AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC
     provenance_note: str = ""
     cancellation_note: str = ""
+    method: StabilityMethod = StabilityMethod.HURWITZ
 
 
 @dataclass(frozen=True, slots=True)
 class StabilityWorkflowResult:
-    analysis: HurwitzAnalysisResult | None
+    analysis: HurwitzAnalysisResult | RouthAnalysisResult | None
     errors: tuple[str, ...] = ()
 
 
@@ -99,7 +108,12 @@ def run_stability_workflow(draft: StabilityInputDraft) -> StabilityWorkflowResul
         cancellation,
     )
     canonical = canonicalize_characteristic_polynomial(value)
-    return StabilityWorkflowResult(analyze_hurwitz(canonical))
+    analysis = (
+        analyze_hurwitz(canonical)
+        if draft.method is StabilityMethod.HURWITZ
+        else analyze_routh(canonical)
+    )
+    return StabilityWorkflowResult(analysis)
 
 
 def _parse_assumptions(
@@ -144,6 +158,7 @@ def _parse_assumptions(
 __all__ = [
     "AnalysisTarget",
     "PolynomialRole",
+    "StabilityMethod",
     "StabilityInputDraft",
     "StabilityWorkflowResult",
     "run_stability_workflow",
