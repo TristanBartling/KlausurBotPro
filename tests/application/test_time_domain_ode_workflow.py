@@ -81,6 +81,29 @@ def test_rf04_transfer_function_preserves_negative_sign() -> None:
     assert r"G_S(s)=\frac{\Phi_G(s)}{F_{A}(s)}=- \frac{1}" in (
         result.presentation.latex_source
     )
+    visible_derivation = "\n".join(
+        (
+            result.presentation.laplace_transformation,
+            result.presentation.image_equation,
+            result.presentation.worked_steps,
+            result.presentation.latex_source,
+        )
+    )
+    assert "Phi_G(s)" in visible_derivation
+    assert "F_A(s)" in visible_derivation
+    assert "phi_G(0+)" in visible_derivation
+    assert "Y(s)" not in visible_derivation
+    assert "U(s)" not in visible_derivation
+    assert (
+        result.presentation.image_equation
+        == "[l*m_K*s^2 - d_K*s + g*(m_G + m_K)]*Phi_G(s) = -F_A(s)"
+    )
+    assert result.presentation.short_solution.startswith(
+        "G_S(s) = Phi_G(s)/F_A(s) = -1/"
+    )
+    denominator = result.presentation.short_solution.split("/", maxsplit=2)[-1]
+    assert denominator.index("s^2") < denominator.index("- d_K*s")
+    assert "g*(m_G + m_K)" in denominator
     _assert_no_internal_origin_names(result)
 
 
@@ -108,7 +131,7 @@ def test_rf04_accepts_supported_minus_variants_in_numeric_and_symbolic_fields(
 
     assert result.solution is not None
     assert result.solution.ode_transfer_function is not None
-    assert "G(s) = -1/" in result.presentation.summary
+    assert "G_S(s) = Phi_G(s)/F_A(s) = -1/" in result.presentation.summary
 
 
 def test_rf04_rejection_latex_requests_transfer_function_without_pseudo_solution() -> None:

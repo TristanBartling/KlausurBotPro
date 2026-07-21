@@ -131,7 +131,9 @@ def test_rf04_real_checkbox_click_replaces_error_with_transfer_function() -> Non
     assert presenter.last_draft.zero_state_confirmed is True
     assert presenter.last_draft.output_initial_texts == ()
     assert not presenter.state.failed
-    assert "G(s) = -1/" in workspace.result_edits["summary"].toPlainText()
+    assert "G_S(s) = Phi_G(s)/F_A(s) = -1/" in workspace.result_edits[
+        "summary"
+    ].toPlainText()
     assert "sichtbare Bestätigung" not in workspace.result_edits[
         "diagnostics"
     ].toPlainText()
