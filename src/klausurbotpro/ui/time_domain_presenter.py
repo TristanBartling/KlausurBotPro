@@ -4,6 +4,7 @@ from PySide6.QtCore import QObject, Signal
 
 from klausurbotpro.application.time_domain_workflow import (
     TimeDomainInputDraft,
+    format_ode_preview,
     run_time_domain_workflow,
 )
 from klausurbotpro.ui.time_domain_view_state import TimeDomainViewState
@@ -30,6 +31,10 @@ class TimeDomainPresenter(QObject):
                 worked_steps=presentation.worked_steps,
                 latex_source=presentation.latex_source,
                 diagnostics=presentation.diagnostics,
+                ode_and_initials=presentation.ode_and_initials,
+                laplace_transformation=presentation.laplace_transformation,
+                image_equation=presentation.image_equation,
+                free_and_forced=presentation.free_and_forced,
                 failed=result.solution is None
                 or result.solution.status.value in {"FAILED", "UNSUPPORTED"},
             )
@@ -37,6 +42,20 @@ class TimeDomainPresenter(QObject):
 
     def reset(self) -> None:
         self._set_state(TimeDomainViewState())
+
+    def ode_preview(
+        self,
+        output_name: str,
+        input_name: str,
+        output_coefficients: tuple[str, ...],
+        input_coefficients: tuple[str, ...],
+    ) -> str:
+        return format_ode_preview(
+            output_name,
+            input_name,
+            output_coefficients,
+            input_coefficients,
+        )
 
     def _set_state(self, state: TimeDomainViewState) -> None:
         self.state = state

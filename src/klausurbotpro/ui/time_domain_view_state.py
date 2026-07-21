@@ -14,6 +14,10 @@ class TimeDomainViewState:
     worked_steps: str = ""
     latex_source: str = ""
     diagnostics: str = ""
+    ode_and_initials: str = ""
+    laplace_transformation: str = ""
+    image_equation: str = ""
+    free_and_forced: str = ""
     failed: bool = False
 
 
