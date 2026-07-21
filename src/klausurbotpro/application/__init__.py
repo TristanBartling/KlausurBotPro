@@ -105,7 +105,7 @@ from klausurbotpro.application.transfer_function_workflow_contracts import (
 from klausurbotpro.application.transfer_function_workflow_service import (
     TransferFunctionWorkflowService,
 )
-from klausurbotpro.domain.time_domain_contracts import TimeDomainTaskType
+from klausurbotpro.domain.time_domain_contracts import InputSignalType, TimeDomainTaskType
 
 __all__ = [
     "ConditionLine",
@@ -176,6 +176,7 @@ __all__ = [
     "WorkflowValueOrigin",
     "TransformationLine",
     "TimeDomainInputDraft",
+    "InputSignalType",
     "TimeDomainPresentation",
     "TimeDomainTaskType",
     "TimeDomainWorkflowResult",

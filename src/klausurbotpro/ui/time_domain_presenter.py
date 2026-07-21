@@ -30,6 +30,10 @@ class TimeDomainPresenter(QObject):
                 worked_steps=presentation.worked_steps,
                 latex_source=presentation.latex_source,
                 diagnostics=presentation.diagnostics,
+                ode_and_initials=presentation.ode_and_initials,
+                laplace_transformation=presentation.laplace_transformation,
+                image_equation=presentation.image_equation,
+                free_and_forced=presentation.free_and_forced,
                 failed=result.solution is None
                 or result.solution.status.value in {"FAILED", "UNSUPPORTED"},
             )

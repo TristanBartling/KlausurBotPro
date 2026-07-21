@@ -15,6 +15,24 @@ class TimeDomainTaskType(StrEnum):
     STEP_RESPONSE = "step_response"
     GENERAL_RESPONSE = "general_response"
     EXPONENTIAL_INPUT = "exponential_input"
+    SOLVE_ODE = "solve_ode"
+    TRANSFER_FUNCTION_FROM_ODE = "transfer_function_from_ode"
+
+
+class InitialConditionOrigin(StrEnum):
+    USER_PROVIDED = "USER_PROVIDED"
+    EXPLICIT_ZERO_POLICY = "EXPLICIT_ZERO_POLICY"
+    DERIVED = "DERIVED"
+
+
+class InputSignalType(StrEnum):
+    ZERO = "zero"
+    STEP = "step"
+    EXPONENTIAL = "exponential"
+    POLYNOMIAL = "polynomial"
+    SINUS = "sinus"
+    COSINUS = "cosinus"
+    IMAGE_EXPRESSION = "image_expression"
 
 
 class RationalClassificationKind(StrEnum):
@@ -162,6 +180,107 @@ class ExponentialInputSignal:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedInputSignal:
+    signal_type: InputSignalType
+    parameters: tuple[ExactExpression, ...]
+    time_function: TimeFunction | None
+    laplace_expression: ExactExpression
+    transform_rule: str
+    raw_input: str
+
+
+@dataclass(frozen=True, slots=True)
+class InitialConditionValue:
+    derivative_order: int
+    value: ExactExpression
+    origin: InitialConditionOrigin
+
+
+@dataclass(frozen=True, slots=True)
+class InitialConditionSet:
+    variable: str
+    required_orders: tuple[int, ...]
+    values: tuple[InitialConditionValue, ...]
+    complete: bool
+    missing_orders: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class LinearOdeInput:
+    output_name: str
+    input_name: str | None
+    output_terms: tuple[tuple[int, ExactExpression], ...]
+    input_terms: tuple[tuple[int, ExactExpression], ...]
+    output_order: int
+    input_order: int
+    parameter_assumptions: tuple[str, ...]
+    raw_provenance: str
+    normalized_ode: str
+    leading_coefficient: ExactExpression
+    valid: bool
+    diagnostics: tuple[Diagnostic, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class TransformedOdeTerm:
+    side: str
+    derivative_order: int
+    coefficient: ExactExpression
+    transformed_expression: ExactExpression
+    initial_value_part: ExactExpression
+    display_rule: str
+
+
+@dataclass(frozen=True, slots=True)
+class OdeImageEquation:
+    a_polynomial: ExactExpression
+    b_polynomial: ExactExpression
+    output_initial_part: ExactExpression
+    input_initial_part: ExactExpression
+    left_expression: ExactExpression
+    right_expression: ExactExpression
+    display_equation: str
+
+
+@dataclass(frozen=True, slots=True)
+class OdeVerificationReport:
+    image_equation_residual: ExactExpression
+    decomposition_residual: ExactExpression
+    forward_transform_residual: ExactExpression
+    initial_condition_residuals: tuple[tuple[int, ExactExpression], ...]
+    ode_residual: ExactExpression
+    trusted: bool
+
+
+@dataclass(frozen=True, slots=True)
+class OdeSolutionData:
+    ode: LinearOdeInput
+    output_initial_conditions: InitialConditionSet
+    input_initial_conditions: InitialConditionSet | None
+    input_signal: TypedInputSignal
+    transformed_terms: tuple[TransformedOdeTerm, ...]
+    image_equation: OdeImageEquation
+    free_laplace: ExactExpression
+    forced_laplace: ExactExpression
+    total_laplace: ExactExpression
+    free_time: TimeFunction
+    forced_time: TimeFunction
+    total_time: TimeFunction
+    verification: OdeVerificationReport
+
+
+@dataclass(frozen=True, slots=True)
+class OdeTransferFunctionResult:
+    ode: LinearOdeInput
+    zero_state_confirmed: bool
+    raw_transfer_function: ExactExpression
+    reduced_transfer_function: ExactExpression
+    numerator: ExactExpression
+    denominator: ExactExpression
+    multiplication_residual: ExactExpression
+
+
+@dataclass(frozen=True, slots=True)
 class PoleRecord:
     value: ExactExpression
     multiplicity: int
@@ -216,7 +335,9 @@ class TimeDomainSolution:
     poles: tuple[PoleRecord, ...]
     verification: VerificationReport
     diagnostics: tuple[Diagnostic, ...]
-    input_signal: ExponentialInputSignal | None = None
+    input_signal: ExponentialInputSignal | TypedInputSignal | None = None
+    ode_solution: OdeSolutionData | None = None
+    ode_transfer_function: OdeTransferFunctionResult | None = None
 
 
 __all__ = [
@@ -224,6 +345,15 @@ __all__ = [
     "DirectLaplaceRule",
     "EndValueStatus",
     "ExponentialInputSignal",
+    "InitialConditionOrigin",
+    "InitialConditionSet",
+    "InitialConditionValue",
+    "InputSignalType",
+    "LinearOdeInput",
+    "OdeImageEquation",
+    "OdeSolutionData",
+    "OdeTransferFunctionResult",
+    "OdeVerificationReport",
     "FactorType",
     "InverseLaplaceMapping",
     "PartialFractionResult",
@@ -241,6 +371,8 @@ __all__ = [
     "TimeDomainSolution",
     "TimeDomainTaskType",
     "TimeFunction",
+    "TransformedOdeTerm",
+    "TypedInputSignal",
     "VerificationItem",
     "VerificationReport",
     "VerificationStatus",

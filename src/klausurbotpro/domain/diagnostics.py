@@ -254,6 +254,25 @@ class DiagnosticCode(StrEnum):
     HIDDEN_MODE_POSSIBLE = "time_domain.hidden_mode_possible"
     UNSTABLE_SYSTEM_POLE = "time_domain.unstable_system_pole"
     IMAGINARY_AXIS_SYSTEM_POLE = "time_domain.imaginary_axis_system_pole"
+    MISSING_INITIAL_CONDITION = "time_domain.missing_initial_condition"
+    TRANSFER_FUNCTION_REQUIRES_ZERO_INITIAL_STATE = (
+        "time_domain.transfer_function_requires_zero_initial_state"
+    )
+    TIME_VARYING_COEFFICIENT_UNSUPPORTED = (
+        "time_domain.time_varying_coefficient_unsupported"
+    )
+    NONLINEAR_ODE_UNSUPPORTED = "time_domain.nonlinear_ode_unsupported"
+    ODE_ORDER_UNSUPPORTED = "time_domain.ode_order_unsupported"
+    ODE_LEADING_COEFFICIENT_INVALID = (
+        "time_domain.ode_leading_coefficient_invalid"
+    )
+    INPUT_INITIAL_CONDITION_MISSING = (
+        "time_domain.input_initial_condition_missing"
+    )
+    ODE_RESIDUAL_FAILED = "time_domain.ode_residual_failed"
+    INITIAL_CONDITION_CHECK_FAILED = (
+        "time_domain.initial_condition_check_failed"
+    )
 
 
 @dataclass(frozen=True, slots=True)

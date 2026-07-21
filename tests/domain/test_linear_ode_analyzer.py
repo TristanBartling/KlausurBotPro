@@ -1,0 +1,92 @@
+"""Focused exact tests for the structured unilateral-Laplace ODE core."""
+
+import sympy as sp
+
+from klausurbotpro.domain.linear_ode_analyzer import (
+    build_initial_conditions,
+    build_linear_ode,
+    transform_ode,
+)
+from klausurbotpro.domain.time_domain_analyzer import exact
+
+
+def _coefficient(value: sp.Expr | int) -> object:
+    return exact(sp.sympify(value))
+
+
+def test_normalization_preserves_order_and_signed_input() -> None:
+    ode = build_linear_ode(
+        output_name="phi_G",
+        input_name="F_A",
+        output_coefficients=(
+            _coefficient(sp.Symbol("g") * (sp.Symbol("m_K") + sp.Symbol("m_G"))),
+            _coefficient(-sp.Symbol("d_K")),
+            _coefficient(sp.Symbol("m_K") * sp.Symbol("l")),
+        ),
+        input_coefficients=(_coefficient(-1),),
+        output_order=2,
+        input_order=0,
+        assumptions=("m_K > 0", "l > 0"),
+    )
+    assert ode.valid
+    assert "-F_A(t)" in ode.normalized_ode
+    assert ode.output_terms[-1][0] == 2
+
+
+def test_initial_condition_completeness_never_implies_zero() -> None:
+    conditions = build_initial_conditions(
+        "y", 2, (_coefficient(0), None), explicit_zero_policy=False
+    )
+    assert not conditions.complete
+    assert conditions.missing_orders == (1,)
+    explicit = build_initial_conditions("y", 2, (_coefficient(0), None), explicit_zero_policy=True)
+    assert explicit.complete
+    assert explicit.values[1].origin.value == "EXPLICIT_ZERO_POLICY"
+
+
+def test_derivative_theorem_is_visible_for_orders_one_through_four() -> None:
+    ode = build_linear_ode(
+        output_name="y",
+        input_name="u",
+        output_coefficients=tuple(_coefficient(1) for _ in range(5)),
+        input_coefficients=(_coefficient(1),),
+        output_order=4,
+        input_order=0,
+        assumptions=(),
+    )
+    conditions = build_initial_conditions(
+        "y", 4, tuple(_coefficient(index + 1) for index in range(4)), explicit_zero_policy=False
+    )
+    transformed, equation, _, _ = transform_ode(ode, conditions, None)
+    rules = {
+        item.derivative_order: item.display_rule for item in transformed if item.side == "output"
+    }
+    assert "s^2 Y(s) - s - 2" in rules[2]
+    assert "s^4 Y(s) - s^3 - 2*s^2 - 3*s - 4" in rules[4]
+    assert sp.expand(equation.a_polynomial._as_sympy()) == sum(
+        sp.Symbol("s") ** k for k in range(5)
+    )
+
+
+def test_symbolic_leading_coefficient_requires_nonzero_assumption() -> None:
+    coefficient = _coefficient(sp.Symbol("M"))
+    rejected = build_linear_ode(
+        output_name="y",
+        input_name="u",
+        output_coefficients=(_coefficient(1), coefficient),
+        input_coefficients=(_coefficient(1),),
+        output_order=1,
+        input_order=0,
+        assumptions=(),
+    )
+    accepted = build_linear_ode(
+        output_name="y",
+        input_name="u",
+        output_coefficients=(_coefficient(1), coefficient),
+        input_coefficients=(_coefficient(1),),
+        output_order=1,
+        input_order=0,
+        assumptions=("M > 0",),
+    )
+    assert not rejected.valid
+    assert accepted.valid
