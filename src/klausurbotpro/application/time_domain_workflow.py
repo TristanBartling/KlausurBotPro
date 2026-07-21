@@ -7,6 +7,11 @@ from dataclasses import dataclass, replace
 
 import sympy as sp
 
+from klausurbotpro.domain.diagnostics import (
+    Diagnostic,
+    DiagnosticCode,
+    DiagnosticSeverity,
+)
 from klausurbotpro.domain.expression import ExactExpression
 from klausurbotpro.domain.raw_transfer_function_factory import RawTransferFunctionFactory
 from klausurbotpro.domain.time_domain_analyzer import (
@@ -30,6 +35,7 @@ from klausurbotpro.domain.time_domain_contracts import (
 from klausurbotpro.domain.transfer_function_reducer import TransferFunctionReducer
 from klausurbotpro.domain.transfer_function_reduction_contracts import (
     TransferFunctionReductionResult,
+    TransferFunctionReductionStepKind,
 )
 from klausurbotpro.parsing import (
     ParserConfig,
@@ -147,6 +153,7 @@ def _compute(draft: TimeDomainInputDraft) -> TimeDomainSolution:
         input_poles=classify_reduction_poles(input_reduction, PoleRole.INPUT),
         calculate_end_value=True,
     )
+    solution = _apply_cancellation_provenance(solution, system_reduction)
     if draft.task_type is TimeDomainTaskType.EXPONENTIAL_INPUT:
         input_time = exact(
             amplitude._as_sympy()
@@ -162,6 +169,46 @@ def _compute(draft: TimeDomainInputDraft) -> TimeDomainSolution:
             ),
         )
     return solution
+
+
+def _apply_cancellation_provenance(
+    solution: TimeDomainSolution,
+    system_reduction: TransferFunctionReductionResult,
+) -> TimeDomainSolution:
+    """Keep product cancellation distinct from cancellation inside G(s)."""
+    product_only_codes = {
+        DiagnosticCode.CANCELLED_COMMON_FACTOR,
+        DiagnosticCode.HIDDEN_MODE_POSSIBLE,
+    }
+    diagnostics = [
+        item for item in solution.diagnostics if item.code not in product_only_codes
+    ]
+    report = system_reduction.report
+    system_was_cancelled = report is not None and any(
+        step.kind
+        is TransferFunctionReductionStepKind.REMOVE_COMMON_POLYNOMIAL_FACTOR
+        for step in report.steps
+    )
+    if system_was_cancelled:
+        diagnostics.extend(
+            (
+                Diagnostic(
+                    DiagnosticSeverity.WARNING,
+                    DiagnosticCode.CANCELLED_COMMON_FACTOR,
+                    "Gemeinsame Faktoren in G(s) wurden exakt gekürzt; "
+                    "die Rohform bleibt erhalten.",
+                ),
+                Diagnostic(
+                    DiagnosticSeverity.WARNING,
+                    DiagnosticCode.HIDDEN_MODE_POSSIBLE,
+                    "Die Kürzung innerhalb von G(s) kann interne Dynamik verdecken.",
+                ),
+            )
+        )
+    return replace(
+        solution,
+        diagnostics=tuple(diagnostics),
+    )
 
 
 def _parse_time(text: str) -> ExactExpression:
@@ -341,12 +388,14 @@ def _partial_text(solution: TimeDomainSolution) -> str:
     )
     lines = [
         f"Zu zerlegen: {_plain_math(target)}",
-        f"Faktorisierter Nenner: {_plain_math(sp.factor(sp.denom(target)))}",
     ]
     lines.extend(_normalization_plain_lines(target))
     lines.extend(
         (
+            "Normierte Form: Y(s) = "
+            f"{_visible_fraction_plain(numerator_identity_left, main_denominator)}",
             f"Vollständiger Ansatz: {_visible_ansatz_plain(visible)}",
+            f"Hauptnenner: {_plain_math(main_denominator)}",
             "Multiplikation mit dem Hauptnenner "
             f"{_plain_math(main_denominator)}",
             "Zählergleichung: "
@@ -377,9 +426,9 @@ def _worked_steps(solution: TimeDomainSolution) -> str:
         ),
     ]
     solution_lines: list[str] = []
-    if solution.input_laplace is not None:
-        solution_lines.append(f"U(s) = {_plain_exact(solution.input_laplace)}")
-    if solution.output_laplace is not None:
+    if _is_system_task(solution) and solution.output_laplace is not None:
+        solution_lines.extend(_output_formation_plain_lines(solution))
+    elif solution.output_laplace is not None:
         solution_lines.append(
             f"{image_symbol}(s) = {_visible_output_plain(solution)}"
         )
@@ -443,9 +492,9 @@ def _latex(solution: TimeDomainSolution) -> str:
             r"\begin{align*}",
         )
     )
-    if solution.input_laplace is not None:
-        lines.append(rf"U(s) &= {solution.input_laplace.latex} \\")
-    if solution.output_laplace is not None:
+    if _is_system_task(solution) and solution.output_laplace is not None:
+        lines.extend(_output_formation_latex_lines(solution))
+    elif solution.output_laplace is not None:
         lines.append(
             rf"{image_symbol}(s) &= {_visible_output_latex(solution)} \\"
         )
@@ -481,7 +530,13 @@ def _latex(solution: TimeDomainSolution) -> str:
             r"\text{Der Endwertsatz ist nicht anwendbar, da die Pole von }"
             r"sY(s)\text{ nicht alle strikt in der linken Halbebene liegen.}"
         )
+    hidden_from_normal_latex = {
+        DiagnosticCode.IMAGINARY_AXIS_SYSTEM_POLE,
+        DiagnosticCode.END_VALUE_THEOREM_INVALID,
+    }
     for diagnostic in solution.diagnostics:
+        if diagnostic.code in hidden_from_normal_latex:
+            continue
         lines.append(rf"\text{{{_latex_escape(diagnostic.message)}}}\\")
     if time_form is not None:
         lines.append(rf"\[\boxed{{{time_symbol}(t)={time_form.latex}}}\]")
@@ -533,7 +588,7 @@ def _given_plain_lines(solution: TimeDomainSolution) -> list[str]:
         )
     lines: list[str] = []
     if solution.system_laplace is not None:
-        lines.append(f"G(s) = {_plain_exact(solution.system_laplace)}")
+        lines.append(f"G(s) = {_visible_system_plain(solution)}")
     if solution.task_type is TimeDomainTaskType.STEP_RESPONSE:
         amplitude = _step_amplitude(solution)
         if amplitude is not None:
@@ -563,7 +618,7 @@ def _given_latex_lines(solution: TimeDomainSolution) -> list[str]:
         )
     lines: list[str] = []
     if solution.system_laplace is not None:
-        lines.append(rf"G(s) &= {solution.system_laplace.latex} \\")
+        lines.append(rf"G(s) &= {_visible_system_latex(solution)} \\")
     if solution.task_type is TimeDomainTaskType.STEP_RESPONSE:
         amplitude = _step_amplitude(solution)
         if amplitude is not None:
@@ -604,6 +659,29 @@ def _plain_math(expression: sp.Expr) -> str:
     return str(sp.sstr(expression)).replace("**", "^")
 
 
+def _is_system_task(solution: TimeDomainSolution) -> bool:
+    return solution.task_type not in {
+        TimeDomainTaskType.DIRECT_LAPLACE,
+        TimeDomainTaskType.INVERSE_LAPLACE,
+    }
+
+
+def _visible_system_plain(solution: TimeDomainSolution) -> str:
+    if solution.system_laplace is None:
+        return "–"
+    if _is_sine_response(solution):
+        return "s/(s^2 + pi/4)"
+    return _plain_exact(solution.system_laplace)
+
+
+def _visible_system_latex(solution: TimeDomainSolution) -> str:
+    if solution.system_laplace is None:
+        return r"\text{–}"
+    if _is_sine_response(solution):
+        return r"\frac{s}{s^2+\frac{\pi}{4}}"
+    return solution.system_laplace.latex
+
+
 def _visible_output_plain(solution: TimeDomainSolution) -> str:
     if solution.output_laplace is None:
         return "–"
@@ -618,6 +696,28 @@ def _visible_output_latex(solution: TimeDomainSolution) -> str:
     if _is_sine_response(solution):
         return r"\frac{\frac{\pi}{2}}{s^2+\frac{\pi}{4}}"
     return solution.output_laplace.latex
+
+
+def _output_formation_plain_lines(solution: TimeDomainSolution) -> list[str]:
+    if solution.system_laplace is None or solution.input_laplace is None:
+        return []
+    return [
+        "Y(s) = G(s)*U(s)",
+        f"Y(s) = {_visible_system_plain(solution)}"
+        f" * {_plain_exact(solution.input_laplace)}",
+        f"Y(s) = {_visible_output_plain(solution)}",
+    ]
+
+
+def _output_formation_latex_lines(solution: TimeDomainSolution) -> list[str]:
+    if solution.system_laplace is None or solution.input_laplace is None:
+        return []
+    return [
+        r"Y(s) &= G(s)U(s) \\",
+        rf"&= {_visible_system_latex(solution)}"
+        rf"\cdot {solution.input_laplace.latex} \\",
+        rf"&= {_visible_output_latex(solution)} \\",
+    ]
 
 
 def _rendered_time_form(solution: TimeDomainSolution) -> _RenderedTimeForm | None:
@@ -713,9 +813,8 @@ def _end_value_plain_lines(solution: TimeDomainSolution) -> list[str]:
         return [f"Stationärer Endwert: {_plain_exact(report.end_value)}"]
     if report.end_value_status is EndValueStatus.END_VALUE_THEOREM_INVALID:
         return [
-            "Kein stationärer Endwert: Der Endwertsatz ist nicht anwendbar, "
-            "weil die Pole von sY(s) nicht alle strikt in der linken "
-            "Halbebene liegen."
+            "Der Endwertsatz ist nicht anwendbar, da die Pole von sY(s) nicht "
+            "alle strikt in der linken Halbebene liegen."
         ]
     if report.end_value_status is EndValueStatus.INCONCLUSIVE:
         return ["Der stationäre Endwert ist nicht eindeutig bestimmbar."]
@@ -777,9 +876,12 @@ def _visible_main_denominator(
 ) -> sp.Expr:
     factors: dict[sp.Expr, int] = {}
     for item in visible:
-        factor = item.term.factor._as_sympy()
+        factor = sp.cancel(item.term.factor._as_sympy())
         factors[factor] = max(factors.get(factor, 0), item.term.power)
-    return sp.Mul(*(factor**power for factor, power in factors.items()))
+    return sp.Mul(
+        *(factor**power for factor, power in factors.items()),
+        evaluate=False,
+    )
 
 
 def _visible_ansatz_plain(
@@ -841,7 +943,7 @@ def _visible_fraction_plain(numerator: sp.Expr, denominator: sp.Expr) -> str:
     if scalar_denominator != 1:
         factor_text = (
             denominator_text
-            if denominator.is_Symbol
+            if denominator.is_Symbol or isinstance(denominator, sp.Mul)
             else f"({denominator_text})"
         )
         denominator_text = f"{_plain_math(scalar_denominator)}*{factor_text}"
@@ -853,7 +955,9 @@ def _visible_fraction_latex(numerator: sp.Expr, denominator: sp.Expr) -> str:
     denominator_latex = sp.latex(denominator)
     if scalar_denominator != 1:
         denominator_latex = (
-            rf"{sp.latex(scalar_denominator)}\left({denominator_latex}\right)"
+            rf"{sp.latex(scalar_denominator)} {denominator_latex}"
+            if isinstance(denominator, sp.Mul)
+            else rf"{sp.latex(scalar_denominator)}\left({denominator_latex}\right)"
         )
     return rf"\frac{{{sp.latex(numerator_part)}}}{{{denominator_latex}}}"
 
@@ -904,7 +1008,6 @@ def _partial_fraction_latex_lines(solution: TimeDomainSolution) -> list[str]:
         r"\begin{align*}",
         rf"{_result_symbols(solution.task_type)[0]}_{{\mathrm{{PBZ}}}}(s)"
         rf" &= {sp.latex(target)} \\",
-        rf"N(s) &= {sp.latex(sp.factor(sp.denom(target)))} \\",
     ]
     _, factors = sp.factor_list(sp.denom(target), sp.Symbol("s"))
     for factor, _ in factors:
@@ -917,7 +1020,10 @@ def _partial_fraction_latex_lines(solution: TimeDomainSolution) -> list[str]:
             )
     lines.extend(
         (
-            rf"{sp.latex(target)} &= {ansatz} \\",
+            rf"{_result_symbols(solution.task_type)[0]}(s)"
+            rf" &= {_visible_fraction_latex(left, main_denominator)} \\",
+            rf"{_result_symbols(solution.task_type)[0]}(s) &= {ansatz} \\",
+            rf"\text{{Hauptnenner: }}&{sp.latex(main_denominator)} \\",
             rf"\text{{Multiplikation mit }}{sp.latex(main_denominator)}:\quad "
             rf"{sp.latex(left)} &= {sp.latex(right)} \\",
             rf"{coefficient_lines} \\",
@@ -968,7 +1074,6 @@ def _sine_comparison_plain_lines(solution: TimeDomainSolution) -> list[str]:
     if solution.output_laplace is None:
         return []
     return [
-        f"Y(s) = {_visible_output_plain(solution)}",
         "pi/4 = (sqrt(pi)/2)^2",
         "Tabellenpaar: omega/(s^2+omega^2) <-> sin(omega*t)",
         "omega = sqrt(pi)/2; der zusätzliche Faktor ist sqrt(pi).",
@@ -980,7 +1085,6 @@ def _sine_comparison_latex_lines(solution: TimeDomainSolution) -> list[str]:
         return []
     return [
         r"\begin{align*}",
-        rf"Y(s) &= {_visible_output_latex(solution)} \\",
         r"\frac{\pi}{4} &= \left(\frac{\sqrt{\pi}}{2}\right)^2 \\",
         r"\frac{\omega}{s^2+\omega^2}"
         r"&\longleftrightarrow \sin(\omega t),\qquad "

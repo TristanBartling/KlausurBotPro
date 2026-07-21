@@ -11,6 +11,7 @@ from klausurbotpro.domain import (
     ComputationStatus,
     DiagnosticCode,
     EndValueStatus,
+    PoleRole,
     RationalClassificationKind,
     TimeDomainSolution,
 )
@@ -133,6 +134,15 @@ def test_rf08_real_oscillation_and_invalid_end_value() -> None:
         EndValueStatus.END_VALUE_THEOREM_INVALID
     )
     assert solution.verification.end_value is None
+    codes = {item.code for item in solution.diagnostics}
+    assert DiagnosticCode.HIDDEN_MODE_POSSIBLE not in codes
+    assert DiagnosticCode.CANCELLED_COMMON_FACTOR not in codes
+    assert DiagnosticCode.END_VALUE_THEOREM_INVALID in codes
+    assert not any("interne Dynamik verdecken" in item.message for item in solution.diagnostics)
+    pole_roles = [item.role for item in solution.poles]
+    assert pole_roles.count(PoleRole.SYSTEM) == 2
+    assert pole_roles.count(PoleRole.INPUT) == 1
+    assert pole_roles.count(PoleRole.OUTPUT) == 2
 
 
 def test_rf06_display_is_exam_ready_and_hides_internal_terms() -> None:
@@ -148,6 +158,10 @@ def test_rf06_display_is_exam_ready_and_hides_internal_terms() -> None:
     assert r"A=\frac{1}{10}" in latex
     assert r"B=- \frac{1}{10}" in latex
     assert r"Y_{\mathrm{PBZ}}(s)" in latex
+    assert "Hauptnenner" in latex
+    assert "N(s)" not in latex
+    assert r"\frac{A}{s} + \frac{B}{s + \frac{1}{2}}" in latex
+    assert r"\frac{1}{20}" in latex
     assert r"\boxed{y(t)=" in latex
     normal_output = "\n".join(
         (
@@ -195,8 +209,15 @@ def test_rf08_display_uses_real_sine_and_explains_end_value_rejection() -> None:
     )
     assert "Y(s) = (pi/2)/(s^2 + pi/4)" in result.presentation.summary
     assert "nicht anwendbar" in result.presentation.verifications
-    assert "imaginären Achse" in result.presentation.latex_source
-    assert "END_VALUE_THEOREM_INVALID" not in result.presentation.latex_source
+    latex = result.presentation.latex_source
+    explanation = (
+        "Der Endwertsatz ist nicht anwendbar, da die Pole von "
+        "}sY(s)\\text{ nicht alle strikt in der linken Halbebene liegen.}"
+    )
+    assert latex.count(explanation) == 1
+    assert "imaginären Achse" not in latex
+    assert "interne Dynamik verdecken" not in latex
+    assert "END_VALUE_THEOREM_INVALID" not in latex
 
 
 def test_rf09_improper_inverse_is_stopped_after_division() -> None:
@@ -269,6 +290,7 @@ def test_rf13_cancellation_keeps_raw_reduced_and_both_warnings() -> None:
     codes = {item.code for item in solution.diagnostics}
     assert DiagnosticCode.CANCELLED_COMMON_FACTOR in codes
     assert DiagnosticCode.HIDDEN_MODE_POSSIBLE in codes
+    assert any("interne Dynamik verdecken" in item.message for item in solution.diagnostics)
 
 
 def test_typed_exponential_input_builds_u_and_same_response() -> None:
