@@ -166,6 +166,7 @@ def _bode_report(
             *selected,
             *_unwrap_explanation(result, selected_index),
             *_reserve_section(result),
+            *_nyquist_section(result),
             *_singularity_lines(result, added_frequencies),
             *_workflow_notices(result),
         )
@@ -525,6 +526,52 @@ def _reserve_section(
         lines.append(rf"\[\text{{Amplitudenreserve {text}.}}\]")
     if reserves.multiple_crossovers:
         lines.append(r"\[\text{Mehrere Durchtritte: alle Einzelreserven sind maßgeblich.}\]")
+    return tuple(lines)
+
+
+def _nyquist_section(result: FrequencyDomainWorkflowResult) -> tuple[str, ...]:
+    analysis = result.nyquist_analysis
+    if analysis is None:
+        return ()
+    poles = analysis.pole_classification
+    winding = analysis.winding
+    stability = analysis.stability
+    n_cw = (
+        r"\text{nicht bestimmt}"
+        if stability.clockwise_encirclements is None
+        else str(stability.clockwise_encirclements)
+    )
+    z = (
+        r"\text{nicht bestimmt}"
+        if stability.rhp_closed_poles is None
+        else str(stability.rhp_closed_poles)
+    )
+    lhp_count = sum(item.multiplicity for item in poles.lhp_poles)
+    imag_count = sum(item.multiplicity for item in poles.imaginary_axis_poles)
+    prerequisites = "erfüllt" if stability.prerequisites_met else "nicht erfüllt"
+    lines = [
+        r"\section*{Nyquist-Analyse}",
+        r"\[\text{Konvention: Uhrzeigersinn positiv,}\qquad Z=P+N_{\mathrm{cw}}\]",
+        rf"\[P={stability.rhp_open_poles},\qquad N_{{\mathrm{{cw}}}}={n_cw},"
+        rf"\qquad Z=P+N_{{\mathrm{{cw}}}}={z}\]",
+        rf"\[\text{{Polklassifikation: LHP={lhp_count}, "
+        rf"RHP={poles.rhp_pole_count}, j-Achse={imag_count}}}\]",
+        rf"\[d_{{\min}}=\min_\omega |1+G(\mathrm{{j}}\omega)|="
+        rf"{winding.critical_point.minimum_distance:.8g},\quad "
+        rf"\omega={winding.critical_point.frequency:.8g}\,\mathrm{{rad/s}}\]",
+        rf"\[\text{{Voraussetzungen: {prerequisites}; "
+        rf"Kriterium: {stability.criterion.value}}}\]",
+        rf"\[\boxed{{\text{{{literal_text(stability.statement).latex}}}}}\]",
+    ]
+    gain = analysis.scalar_gain_range
+    if gain is not None:
+        interval_parts = []
+        for item in gain.stable_intervals:
+            lower = r"-\infty" if item.lower is None else f"{item.lower:.8g}"
+            upper = r"\infty" if item.upper is None else f"{item.upper:.8g}"
+            interval_parts.append(rf"\left({lower},{upper}\right)")
+        intervals = r"\cup".join(interval_parts) or r"\varnothing"
+        lines.extend((r"\section*{Skalarverstärkungsbereich}", rf"\[K\in {intervals}\]"))
     return tuple(lines)
 
 

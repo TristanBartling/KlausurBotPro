@@ -15,7 +15,7 @@ from klausurbotpro.application.transfer_function_request_factory import (
     TransferFunctionInputDraft,
     TransferFunctionRequestFactory,
 )
-from klausurbotpro.domain import ExactRationalValue, LogFrequencyGridRequest
+from klausurbotpro.domain import ExactRationalValue, LogFrequencyGridRequest, ScalarGainDomain
 
 _DEFAULT_LIMITS = FrequencyDomainWorkflowLimits()
 _FREQUENCY_FIELDS = frozenset(
@@ -32,6 +32,8 @@ _FREQUENCY_FIELDS = frozenset(
         "points_per_decade",
         "explicit_frequencies",
         "phase_presentation",
+        "scalar_gain_lower",
+        "scalar_gain_upper",
     }
 )
 
@@ -50,6 +52,9 @@ class FrequencyDomainInputDraft:
     phase_presentation: FrequencyPhasePresentation = (
         FrequencyPhasePresentation.PRINCIPAL_ONLY
     )
+    scalar_gain_enabled: bool = False
+    scalar_gain_lower_text: str = ""
+    scalar_gain_upper_text: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,9 +155,18 @@ class FrequencyDomainRequestFactory:
                     "Ungültige Phasendarstellung.",
                 )
             )
+        if type(draft.scalar_gain_enabled) is not bool:
+            errors.append(
+                _error(
+                    "field",
+                    "invalid_scalar_gain_mode",
+                    "Ungültiger Skalarverstärkungsmodus.",
+                )
+            )
 
         single_frequency: ExactRationalValue | None = None
         grid_request: LogFrequencyGridRequest | None = None
+        scalar_gain_domain: ScalarGainDomain | None = None
         if draft.mode is FrequencyDomainWorkflowMode.SINGLE_POINT:
             single_frequency = self._rational(
                 draft.single_angular_frequency_text,
@@ -206,6 +220,34 @@ class FrequencyDomainRequestFactory:
                     points_per_decade,
                     explicit,
                 )
+            if draft.scalar_gain_enabled:
+                lower_ok, lower = self._optional_rational(
+                    draft.scalar_gain_lower_text, "scalar_gain_lower", errors
+                )
+                upper_ok, upper = self._optional_rational(
+                    draft.scalar_gain_upper_text, "scalar_gain_upper", errors
+                )
+                if lower_ok and upper_ok:
+                    lower_value = (
+                        None
+                        if lower is None
+                        else float(lower.numerator / lower.denominator)
+                    )
+                    upper_value = (
+                        None
+                        if upper is None
+                        else float(upper.numerator / upper.denominator)
+                    )
+                    try:
+                        scalar_gain_domain = ScalarGainDomain(lower_value, upper_value)
+                    except ValueError:
+                        errors.append(
+                            _error(
+                                "scalar_gain_upper",
+                                "invalid_domain",
+                                "Die obere K-Grenze muss größer als die untere sein.",
+                            )
+                        )
 
         if errors:
             return FrequencyDomainRequestCreationResult(None, tuple(errors))
@@ -218,8 +260,24 @@ class FrequencyDomainRequestFactory:
                 grid_request=grid_request,
                 phase_presentation=draft.phase_presentation,
                 include_reserves=draft.mode is FrequencyDomainWorkflowMode.BODE,
+                include_nyquist=draft.mode is FrequencyDomainWorkflowMode.BODE,
+                scalar_gain_domain=scalar_gain_domain,
             )
         )
+
+    def _optional_rational(
+        self,
+        text: str,
+        field: str,
+        errors: list[FrequencyDomainRequestFieldError],
+    ) -> tuple[bool, ExactRationalValue | None]:
+        if type(text) is not str:
+            errors.append(_error(field, "invalid_type", "Die K-Grenze muss Text sein."))
+            return False, None
+        if not text.strip():
+            return True, None
+        value = self._rational(text, field, errors)
+        return value is not None, value
 
     def _explicit_frequencies(
         self,

@@ -48,14 +48,10 @@ def test_mode_controls_only_relevant_fields_and_unwrap() -> None:
     assert not workspace.phase_combo.isEnabled()
     assert workspace.phase_combo.currentIndex() == 0
     reserve_header = workspace.reserve_table.horizontalHeader()
-    assert reserve_header.sectionResizeMode(1) is QHeaderView.ResizeMode.Stretch
-    assert (
-        reserve_header.sectionResizeMode(6)
-        is QHeaderView.ResizeMode.ResizeToContents
-    )
-    assert (
-        reserve_header.sectionResizeMode(7)
-        is QHeaderView.ResizeMode.ResizeToContents
+    assert all(
+        reserve_header.sectionResizeMode(column)
+        is QHeaderView.ResizeMode.Interactive
+        for column in range(workspace.reserve_table.columnCount())
     )
     assert not reserve_header.stretchLastSection()
 

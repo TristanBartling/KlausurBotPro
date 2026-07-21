@@ -39,6 +39,8 @@ from klausurbotpro.domain import (
     FrequencySampleSet,
     LogFrequencyGridGenerator,
     LogFrequencyGridResult,
+    NyquistAnalysisResult,
+    NyquistAnalyzer,
     ParameterSubstitutions,
     StabilityReserveAnalysis,
     StandardElementBodeAnalyzer,
@@ -304,14 +306,15 @@ class FrequencyDomainWorkflowService:
                 FrequencyCrossoverAnalysis | None,
                 StabilityReserveAnalysis | None,
             ] = (None, None)
-            if request.include_reserves:
+            reserve_unwrap: BodePhaseUnwrapResult | None = None
+            if request.include_reserves or request.include_nyquist:
                 reserve_unwrap = BodePhaseUnwrapAnalyzer(
                     self._limits.frequency_response,
                     self._limits.grid,
                     self._limits.bode,
                     self._limits.phase_unwrap,
                 ).analyze(bode, field=request.preparation_request.field)
-                if reserve_unwrap.succeeded:
+                if reserve_unwrap.succeeded and request.include_reserves:
                     reserve_analyses = FrequencyReserveAnalyzer().analyze(
                         reduced,
                         preparation.request.substitutions
@@ -328,6 +331,19 @@ class FrequencyDomainWorkflowService:
                 standard_element_bode_result=standard_elements,
                 crossover_analysis=reserve_analyses[0],
                 reserve_analysis=reserve_analyses[1],
+                nyquist_analysis=(
+                    NyquistAnalyzer().analyze(
+                        reduced,
+                        preparation.request.substitutions or ParameterSubstitutions(),
+                        bode,
+                        reserve_analyses[0],
+                        scalar_gain_domain=request.scalar_gain_domain,
+                    )
+                    if reserve_unwrap is not None
+                    and reserve_unwrap.succeeded
+                    and request.include_nyquist
+                    else None
+                ),
                 records=(
                     *grid_prefix,
                     grid_record,
@@ -395,6 +411,17 @@ class FrequencyDomainWorkflowService:
             reserve_analysis=(
                 analyses[1]
                 if unwrap.succeeded and request.include_reserves
+                else None
+            ),
+            nyquist_analysis=(
+                NyquistAnalyzer().analyze(
+                    reduced,
+                    preparation.request.substitutions or ParameterSubstitutions(),
+                    bode,
+                    analyses[0] if request.include_reserves else None,
+                    scalar_gain_domain=request.scalar_gain_domain,
+                )
+                if unwrap.succeeded and request.include_nyquist
                 else None
             ),
             records=(
@@ -474,6 +501,7 @@ class FrequencyDomainWorkflowService:
         phase_unwrap_result: BodePhaseUnwrapResult | None = None,
         crossover_analysis: FrequencyCrossoverAnalysis | None = None,
         reserve_analysis: StabilityReserveAnalysis | None = None,
+        nyquist_analysis: NyquistAnalysisResult | None = None,
     ) -> FrequencyDomainWorkflowResult:
         (
             records,
@@ -510,6 +538,7 @@ class FrequencyDomainWorkflowService:
             phase_unwrap_result=phase_unwrap_result,
             crossover_analysis=crossover_analysis,
             reserve_analysis=reserve_analysis,
+            nyquist_analysis=nyquist_analysis,
             stage_records=records,
             diagnostics=diagnostics,
         )

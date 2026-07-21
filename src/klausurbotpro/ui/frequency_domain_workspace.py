@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from math import isfinite
+
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from matplotlib.ticker import AutoMinorLocator, LogLocator, MultipleLocator
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -208,6 +211,12 @@ class FrequencyDomainWorkspace(QWidget):
         self.phase_combo = QComboBox()
         self.phase_combo.setObjectName("frequencyPhasePresentation")
         self.phase_combo.addItems(("Hauptphase", "Hauptphase und entfaltete Phase"))
+        self.scalar_gain_checkbox = QCheckBox("Skalarverstärkungsbereich G₀(s,K)=K·Ḡ(s)")
+        self.scalar_gain_checkbox.setObjectName("frequencyScalarGainEnabled")
+        self.scalar_gain_lower_edit = QLineEdit()
+        self.scalar_gain_lower_edit.setPlaceholderText("leer = -∞")
+        self.scalar_gain_upper_edit = QLineEdit()
+        self.scalar_gain_upper_edit.setPlaceholderText("leer = +∞")
 
         self.input_help_label = QLabel(
             "<b>Übertragungsfunktion:</b> aus Aufgabenstellung oder "
@@ -235,6 +244,9 @@ class FrequencyDomainWorkspace(QWidget):
         frequency_form.addRow("ω_min:", self.omega_min_edit)
         frequency_form.addRow("ω_max:", self.omega_max_edit)
         frequency_form.addRow("Phasendarstellung:", self.phase_combo)
+        frequency_form.addRow(self.scalar_gain_checkbox)
+        frequency_form.addRow("K-Untergrenze (offen):", self.scalar_gain_lower_edit)
+        frequency_form.addRow("K-Obergrenze (offen):", self.scalar_gain_upper_edit)
         self.advanced_grid_group = QGroupBox("Erweiterte Rastereinstellungen")
         advanced_grid_layout = QFormLayout(self.advanced_grid_group)
         advanced_grid_layout.addRow(
@@ -322,19 +334,9 @@ class FrequencyDomainWorkspace(QWidget):
         self.reserve_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive
         )
-        self.reserve_table.horizontalHeader().setSectionResizeMode(
-            1,
-            QHeaderView.ResizeMode.Stretch,
-        )
-        self.reserve_table.horizontalHeader().setSectionResizeMode(
-            6,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
-        self.reserve_table.horizontalHeader().setSectionResizeMode(
-            7,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
         self.reserve_table.horizontalHeader().setStretchLastSection(False)
+        for column, width in enumerate((50, 175, 105, 90, 145, 95, 260, 105)):
+            self.reserve_table.setColumnWidth(column, width)
         reserve_page = QWidget()
         reserve_layout = QVBoxLayout(reserve_page)
         reserve_help = QLabel(
@@ -402,6 +404,29 @@ class FrequencyDomainWorkspace(QWidget):
         plot_layout.addWidget(self.plot_canvas, 1)
         plot_layout.addWidget(self.plot_gap_hint_label)
 
+        self.nyquist_figure = Figure(figsize=(6.5, 5.0), layout="constrained")
+        self.nyquist_axes = self.nyquist_figure.subplots(1, 1)
+        self.nyquist_canvas = FigureCanvasQTAgg(self.nyquist_figure)  # type: ignore[no-untyped-call]
+        self.nyquist_canvas.setObjectName("frequencyNyquistCanvas")
+        self.nyquist_labels: dict[str, QLabel] = {}
+        nyquist_summary = QGroupBox("Nyquist-Stabilitätsübersicht")
+        nyquist_summary_layout = QFormLayout(nyquist_summary)
+        for name, label in (
+            ("p", "P"), ("n_cw", "N_cw (Uhrzeigersinn positiv)"), ("z", "Z=P+N_cw"),
+            ("criterion", "Kriterium"), ("prerequisites", "Voraussetzungen"),
+            ("status", "Stabilität"), ("minimum_distance", "min |1+G(jω)|"),
+            ("critical_frequency", "Zugehörige Frequenz"),
+            ("scalar_gain_intervals", "Stabile K-Intervalle"),
+        ):
+            value = QLabel()
+            value.setWordWrap(True)
+            self.nyquist_labels[name] = value
+            nyquist_summary_layout.addRow(f"{label}:", value)
+        nyquist_page = QWidget()
+        nyquist_layout = QVBoxLayout(nyquist_page)
+        nyquist_layout.addWidget(nyquist_summary)
+        nyquist_layout.addWidget(self.nyquist_canvas, 1)
+
         self.worked_steps_edit = QPlainTextEdit()
         self.worked_steps_edit.setObjectName("frequencyWorkedSteps")
         self.worked_steps_edit.setReadOnly(True)
@@ -458,6 +483,7 @@ class FrequencyDomainWorkspace(QWidget):
             reserve_page,
             "Durchtritte und Reserven",
         )
+        self.nyquist_tab_index = self.result_tabs.addTab(nyquist_page, "Nyquist")
         self.worked_tab_index = self.result_tabs.addTab(
             worked_page,
             "Numerische Kurzlösung",
@@ -494,6 +520,7 @@ class FrequencyDomainWorkspace(QWidget):
     def _connect_ui(self) -> None:
         self.common_radio.toggled.connect(self._switch_input_form)
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
+        self.scalar_gain_checkbox.toggled.connect(self._mode_changed)
         self.add_parameter_button.clicked.connect(self.add_parameter_row)
         self.remove_parameter_button.clicked.connect(self.remove_selected_parameter_row)
         self.calculate_button.clicked.connect(self.calculate)
@@ -565,6 +592,9 @@ class FrequencyDomainWorkspace(QWidget):
             self.points_per_decade_edit.text(),
             self.explicit_frequencies_edit.text(),
             phase,
+            self.scalar_gain_checkbox.isChecked(),
+            self.scalar_gain_lower_edit.text(),
+            self.scalar_gain_upper_edit.text(),
         )
 
     def _cell_text(self, row: int, column: int) -> str:
@@ -592,6 +622,9 @@ class FrequencyDomainWorkspace(QWidget):
         self.points_per_decade_edit.setText("4")
         self.explicit_frequencies_edit.clear()
         self.phase_combo.setCurrentIndex(0)
+        self.scalar_gain_checkbox.setChecked(False)
+        self.scalar_gain_lower_edit.clear()
+        self.scalar_gain_upper_edit.clear()
 
     @Slot(object)
     def render_state(self, value: object) -> None:
@@ -610,6 +643,9 @@ class FrequencyDomainWorkspace(QWidget):
             self.add_parameter_button,
             self.remove_parameter_button,
             self.mode_combo,
+            self.scalar_gain_checkbox,
+            self.scalar_gain_lower_edit,
+            self.scalar_gain_upper_edit,
             self.calculate_button,
             self.reset_button,
         ):
@@ -626,6 +662,8 @@ class FrequencyDomainWorkspace(QWidget):
         self.result_tabs.setTabVisible(self.reserve_tab_index, bool(value.reserve_rows))
         self.result_tabs.setTabVisible(self.plot_tab_index, value.plot.visible)
         self._render_plot(value)
+        self.result_tabs.setTabVisible(self.nyquist_tab_index, value.nyquist.visible)
+        self._render_nyquist(value)
         self._render_worked_steps(value, value.selected_bode_index)
         self.latex_report_edit.setPlainText(value.latex_report)
         self.copy_latex_button.setEnabled(not running and bool(value.latex_report))
@@ -673,7 +711,33 @@ class FrequencyDomainWorkspace(QWidget):
             axes.set_xscale("log")
             axes.set_xlabel("ω [rad/s]")
             axes.set_ylabel(ylabel)
-            axes.grid(True, which="both", alpha=0.35)
+            axes.xaxis.set_major_locator(LogLocator(base=10.0))
+            axes.xaxis.set_minor_locator(
+                LogLocator(base=10.0, subs=tuple(range(2, 10)))
+            )
+            axes.grid(True, which="major", axis="x", alpha=0.38, linewidth=0.85)
+            axes.grid(True, which="minor", axis="x", alpha=0.13, linewidth=0.45)
+            axes.grid(True, which="major", axis="y", alpha=0.3, linewidth=0.7)
+            for spine in axes.spines.values():
+                spine.set_linewidth(1.1)
+        self.magnitude_axes.yaxis.set_major_locator(MultipleLocator(20.0))
+        self.magnitude_axes.yaxis.set_minor_locator(AutoMinorLocator(2))
+        self.magnitude_axes.grid(
+            True,
+            which="minor",
+            axis="y",
+            alpha=0.12,
+            linewidth=0.45,
+        )
+        self.magnitude_axes.hlines(
+            0.0,
+            0.0,
+            1.0,
+            transform=self.magnitude_axes.get_yaxis_transform(),
+            colors="#202020",
+            linewidth=1.6,
+            zorder=1,
+        )
 
         for segment in state.plot.magnitude_segments:
             self.magnitude_axes.plot(
@@ -755,7 +819,85 @@ class FrequencyDomainWorkspace(QWidget):
                     va="center",
                     transform=axes.transAxes,
                 )
+        self.magnitude_axes.margins(y=0.08)
+        self.phase_axes.margins(y=0.08)
         self.plot_canvas.draw_idle()  # type: ignore[no-untyped-call]
+
+    def _render_nyquist(self, state: FrequencyDomainViewState) -> None:
+        view = state.nyquist
+        for name, label in self.nyquist_labels.items():
+            label.setText(getattr(view, name))
+        axes = self.nyquist_axes
+        axes.clear()
+        axes.axhline(0, color="#666666", linewidth=0.8)
+        axes.axvline(0, color="#666666", linewidth=0.8)
+        axes.scatter([-1], [0], marker="x", color="#b22222", s=65, label="kritischer Punkt -1")
+        for index, segment in enumerate(view.positive_segments):
+            x_values = [float(value) for value in segment.x_values]
+            y_values = [float(value) for value in segment.y_values]
+            axes.plot(x_values, y_values, color="#146c94", label="ω ≥ 0" if index == 0 else None)
+            self._nyquist_direction_marker(axes, x_values, y_values, "#146c94")
+        for index, segment in enumerate(view.negative_segments):
+            x_values = [float(value) for value in segment.x_values]
+            y_values = [float(value) for value in segment.y_values]
+            axes.plot(
+                x_values,
+                y_values,
+                color="#8a4f00",
+                linestyle="--",
+                label="ω ≤ 0" if index == 0 else None,
+            )
+            self._nyquist_direction_marker(axes, x_values, y_values, "#8a4f00")
+        for marker in view.crossover_markers:
+            x_value = float(marker.x_value)
+            y_value = float(marker.y_value)
+            axes.scatter([x_value], [y_value], color="#5c2d91", s=28, zorder=5)
+            axes.annotate(marker.label, (x_value, y_value))
+        axes.set_xlabel("Re{G(jω)}")
+        axes.set_ylabel("Im{G(jω)}")
+        axes.grid(True, alpha=0.3)
+        self._set_nyquist_limits(axes, view)
+        axes.set_aspect("equal", adjustable="box")
+        axes.legend(loc="best")
+        self.nyquist_canvas.draw_idle()  # type: ignore[no-untyped-call]
+
+    @staticmethod
+    def _nyquist_direction_marker(
+        axes: object,
+        x_values: list[float],
+        y_values: list[float],
+        color: str,
+    ) -> None:
+        if len(x_values) < 3:
+            return
+        index = len(x_values) // 2
+        axes.annotate(  # type: ignore[attr-defined]
+            "",
+            xy=(x_values[index], y_values[index]),
+            xytext=(x_values[index - 1], y_values[index - 1]),
+            arrowprops={"arrowstyle": "->", "color": color},
+        )
+
+    @staticmethod
+    def _set_nyquist_limits(axes: object, view: object) -> None:
+        x_values = [-1.0, 0.0]
+        y_values = [0.0]
+        for segment in (*view.positive_segments, *view.negative_segments):  # type: ignore[attr-defined]
+            x_values.extend(float(value) for value in segment.x_values)
+            y_values.extend(float(value) for value in segment.y_values)
+        for marker in view.crossover_markers:  # type: ignore[attr-defined]
+            x_values.append(float(marker.x_value))
+            y_values.append(float(marker.y_value))
+        x_values = [value for value in x_values if isfinite(value)]
+        y_values = [value for value in y_values if isfinite(value)]
+        x_min, x_max = min(x_values), max(x_values)
+        y_min, y_max = min(y_values), max(y_values)
+        span = max(x_max - x_min, y_max - y_min, 1e-6)
+        half_span = 0.6 * span
+        x_center = (x_min + x_max) / 2.0
+        y_center = (y_min + y_max) / 2.0
+        axes.set_xlim(x_center - half_span, x_center + half_span)  # type: ignore[attr-defined]
+        axes.set_ylim(y_center - half_span, y_center + half_span)  # type: ignore[attr-defined]
 
     def _render_worked_steps(
         self,
@@ -883,8 +1025,12 @@ class FrequencyDomainWorkspace(QWidget):
             self.points_per_decade_edit,
             self.explicit_frequencies_edit,
             self.phase_combo,
+            self.scalar_gain_checkbox,
         ):
             widget.setEnabled(not running and not single)
+        gain_bounds_enabled = not running and not single and self.scalar_gain_checkbox.isChecked()
+        self.scalar_gain_lower_edit.setEnabled(gain_bounds_enabled)
+        self.scalar_gain_upper_edit.setEnabled(gain_bounds_enabled)
 
 
 __all__ = ["FrequencyDomainWorkspace"]
