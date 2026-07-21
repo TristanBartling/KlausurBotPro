@@ -16,6 +16,8 @@ from klausurbotpro.domain.expression import ExactExpression
 from klausurbotpro.domain.linear_ode_analyzer import (
     build_initial_conditions,
     build_linear_ode,
+    format_ode_latex,
+    format_ode_plain,
     transform_ode,
     verify_ode_solution,
 )
@@ -31,6 +33,7 @@ from klausurbotpro.domain.time_domain_contracts import (
     EndValueStatus,
     ExponentialInputSignal,
     FactorType,
+    InitialConditionOrigin,
     InitialConditionSet,
     InputSignalType,
     LinearOdeInput,
@@ -138,6 +141,40 @@ def run_time_domain_workflow(draft: TimeDomainInputDraft) -> TimeDomainWorkflowR
         message = str(error) or "Die Eingabe konnte nicht verarbeitet werden."
         return TimeDomainWorkflowResult(None, _error_presentation(message), (message,))
     return TimeDomainWorkflowResult(solution, _present(solution))
+
+
+def format_ode_preview(
+    output_name: str,
+    input_name: str,
+    output_coefficient_texts: tuple[str, ...],
+    input_coefficient_texts: tuple[str, ...],
+) -> str:
+    """Build the preview through the same safe term formatter as results."""
+    try:
+        output_coefficients = tuple(
+            _parse_optional_coefficient(item) for item in output_coefficient_texts
+        )
+        input_coefficients = tuple(
+            _parse_optional_coefficient(item) for item in input_coefficient_texts
+        )
+    except ValueError:
+        return "Vorschau erst nach gültiger Koeffizienteneingabe verfügbar."
+    output_terms = tuple(
+        (order, coefficient)
+        for order, coefficient in enumerate(output_coefficients)
+        if coefficient is not None and coefficient._as_sympy() != 0
+    )
+    input_terms = tuple(
+        (order, coefficient)
+        for order, coefficient in enumerate(input_coefficients)
+        if coefficient is not None and coefficient._as_sympy() != 0
+    )
+    return format_ode_plain(
+        output_name.strip() or "y",
+        output_terms,
+        input_name.strip() or "u",
+        input_terms,
+    )
 
 
 def _compute(draft: TimeDomainInputDraft) -> TimeDomainSolution:
@@ -430,6 +467,24 @@ def _transfer_function_from_ode(
         reduction, task_type=draft.task_type, system_laplace=exact(raw_g)
     )
     multiplication_residual = sp.simplify(a_expr * reduced_g._as_sympy() - b_expr)
+    output_ics = build_initial_conditions(
+        ode.output_name,
+        ode.output_order,
+        tuple(exact(sp.Integer(0)) for _ in range(ode.output_order)),
+        explicit_zero_policy=False,
+    )
+    input_count = max((order for order, _ in ode.input_terms), default=0)
+    input_ics = (
+        build_initial_conditions(
+            ode.input_name or "u",
+            input_count,
+            tuple(exact(sp.Integer(0)) for _ in range(input_count)),
+            explicit_zero_policy=False,
+        )
+        if input_count
+        else None
+    )
+    transformed_terms, _, _, _ = transform_ode(ode, output_ics, input_ics)
     transfer = OdeTransferFunctionResult(
         ode,
         True,
@@ -438,6 +493,7 @@ def _transfer_function_from_ode(
         exact(b_expr),
         exact(a_expr),
         exact(multiplication_residual),
+        transformed_terms,
     )
     check = VerificationItem(
         "ode_transfer_multiplication",
@@ -826,7 +882,7 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
     forced = _plain_math(sp.expand(data.forced_time.expression._as_sympy()))
     ic_lines = [
         f"{data.ode.output_name}^({item.derivative_order})(0+) = "
-        f"{_plain_exact(item.value)} [{item.origin.value}]"
+        f"{_plain_exact(item.value)} [{_initial_origin_label(item.origin)}]"
         for item in data.output_initial_conditions.values
     ]
     input_ic_lines = (
@@ -834,7 +890,7 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         if data.input_initial_conditions is None
         else [
             f"{data.ode.input_name}^({item.derivative_order})(0+) = "
-            f"{_plain_exact(item.value)} [{item.origin.value}]"
+            f"{_plain_exact(item.value)} [{_initial_origin_label(item.origin)}]"
             for item in data.input_initial_conditions.values
         ]
     )
@@ -844,9 +900,14 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         else []
     )
     parameter_lines = _second_order_parameter_lines(data)
-    transform_lines = [item.display_rule for item in data.transformed_terms]
+    ordered_transforms = sorted(
+        data.transformed_terms,
+        key=lambda item: (item.side != "output", -item.derivative_order),
+    )
+    transform_lines = [item.display_rule for item in ordered_transforms]
     equation_lines = [
         data.image_equation.display_equation,
+        f"U(s) = {_plain_exact(data.input_signal.laplace_expression)}",
         f"Y(s) = {_plain_exact(data.total_laplace)}",
     ]
     split_lines = [
@@ -895,23 +956,23 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         )
     )
     latex_ic = r" \\ ".join(
-        rf"{data.ode.output_name}^{{({item.derivative_order})}}(0^+)={item.value.latex}"
+        rf"{_initial_condition_latex(data.ode.output_name, item.derivative_order)}"
+        rf"={item.value.latex}"
         for item in data.output_initial_conditions.values
     )
-    latex_rules = "\n".join(
-        rf"\text{{{_latex_escape(item.display_rule)}}}\\" for item in data.transformed_terms
-    )
+    latex_rules = "\n".join(rf"\[{item.latex_rule}\]" for item in ordered_transforms)
     latex = "\n".join(
         (
             r"\section*{Zeitbereichslösung}",
             r"\textbf{Gegeben}",
-            rf"\[{_latex_escape(data.ode.normalized_ode)}\]",
+            rf"\[{format_ode_latex(data.ode)}\]",
             rf"\[{latex_ic}\]",
             r"\textbf{Gesucht}",
             r"\[y(t)\]",
             r"\textbf{Lösung}",
             latex_rules,
-            rf"\[{_latex_escape(data.image_equation.display_equation)}\]",
+            rf"\[{_ode_image_equation_latex(data)}\]",
+            rf"\[U(s)={data.input_signal.laplace_expression.latex}\]",
             rf"\[Y(s)={data.total_laplace.latex}\]",
             rf"\[Y_{{\mathrm{{frei}}}}(s)={data.free_laplace.latex},\quad "
             rf"Y_{{\mathrm{{erzwungen}}}}(s)={data.forced_laplace.latex}\]",
@@ -970,12 +1031,17 @@ def _present_ode_transfer(solution: TimeDomainSolution) -> TimeDomainPresentatio
             *(pole_lines or ["Pole: unter den Annahmen nicht explizit bestimmt."]),
         )
     )
+    ordered_transforms = sorted(
+        data.transformed_terms,
+        key=lambda item: (item.side != "output", -item.derivative_order),
+    )
+    transform_text = "\n".join(item.display_rule for item in ordered_transforms)
     steps = "\n\n".join(
         (
             "1. Gegebene DGL\n" + data.ode.normalized_ode,
             "2. Bestätigte Nullanfangsbedingungen\nAlle Ausgangs- und erforderlichen "
             "Eingangsanfangswerte sind ausdrücklich null.",
-            "3. Termweise Laplace-Transformation\nL{y^(k)} = s^k Y(s), L{u^(j)} = s^j U(s)",
+            "3. Termweise Laplace-Transformation\n" + transform_text,
             f"4. Bildgleichung\n({_plain_exact(data.denominator)}) Y(s) = "
             f"({_plain_exact(data.numerator)}) U(s)",
             f"5. Übertragungsfunktion\nG(s) = Y(s)/U(s) = {raw}",
@@ -988,15 +1054,18 @@ def _present_ode_transfer(solution: TimeDomainSolution) -> TimeDomainPresentatio
     latex = "\n".join(
         (
             r"\textbf{Gegeben}",
-            rf"\[{_latex_escape(data.ode.normalized_ode)}\]",
+            rf"\[{format_ode_latex(data.ode)}\]",
             r"\textbf{Gesucht}",
-            r"\[G(s)=Y(s)/U(s)\]",
+            rf"\[G_S(s)={_laplace_name_latex(data.ode.output_name)}(s)"
+            rf"/{_laplace_name_latex(data.ode.input_name or 'u')}(s)\]",
             r"\textbf{Lösung}",
             r"\[\text{Nullanfangsbedingungen bestätigt}\]",
-            rf"\[{data.denominator.latex}Y(s)={data.numerator.latex}U(s)\]",
-            rf"\[G_{{\mathrm{{roh}}}}(s)={data.raw_transfer_function.latex},\quad "
-            rf"G_{{\mathrm{{red}}}}(s)={data.reduced_transfer_function.latex}\]",
-            rf"\[\boxed{{G(s)={data.reduced_transfer_function.latex}}}\]",
+            *(rf"\[{item.latex_rule}\]" for item in ordered_transforms),
+            rf"\[{_transfer_image_equation_latex(data)}\]",
+            rf"\[G_S(s)=\frac{{{_laplace_name_latex(data.ode.output_name)}(s)}}"
+            rf"{{{_laplace_name_latex(data.ode.input_name or 'u')}(s)}}"
+            rf"={data.reduced_transfer_function.latex}\]",
+            rf"\[\boxed{{G_S(s)={data.reduced_transfer_function.latex}}}\]",
         )
     )
     return TimeDomainPresentation(
@@ -1016,7 +1085,7 @@ def _present_ode_transfer(solution: TimeDomainSolution) -> TimeDomainPresentatio
             for item in solution.diagnostics
         ),
         ode_and_initials=data.ode.normalized_ode + "\nNullzustand ausdrücklich bestätigt.",
-        laplace_transformation="L{y^(k)} = s^k Y(s); L{u^(j)} = s^j U(s)",
+        laplace_transformation=transform_text,
         image_equation=(
             f"({_plain_exact(data.denominator)}) Y(s) = "
             f"({_plain_exact(data.numerator)}) U(s)"
@@ -1034,12 +1103,90 @@ def _second_order_parameter_lines(data: OdeSolutionData) -> list[str]:
     a0 = coefficients[0]._as_sympy()
     a1 = coefficients[1]._as_sympy()
     a2 = coefficients[2]._as_sympy()
+    if not (a0.free_symbols or a1.free_symbols or a2.free_symbols):
+        return []
     delta = sp.simplify(a1 / (2 * a2))
     omega = sp.sqrt(sp.simplify(a0 / a2 - delta**2))
     return [
         f"delta = {_plain_math(delta)}",
         f"omega = {_plain_math(omega)}; unterdämpfte Darstellung für omega > 0",
     ]
+
+
+def _initial_origin_label(origin: InitialConditionOrigin) -> str:
+    return {
+        InitialConditionOrigin.USER_PROVIDED: "vom Nutzer angegeben",
+        InitialConditionOrigin.EXPLICIT_ZERO_POLICY: "ausdrücklich als 0 gesetzt",
+        InitialConditionOrigin.DERIVED: "aus dem Eingangssignal abgeleitet",
+    }[origin]
+
+
+def _laplace_name_latex(name: str) -> str:
+    if name == "phi_G":
+        return r"\Phi_G"
+    return str(sp.latex(sp.Symbol(name.upper() if name in {"y", "u"} else name)))
+
+
+def _time_name_latex(name: str) -> str:
+    return r"\varphi_G" if name == "phi_G" else str(sp.latex(sp.Symbol(name)))
+
+
+def _initial_condition_latex(name: str, order: int) -> str:
+    function = _time_name_latex(name)
+    if order == 0:
+        return rf"{function}(0^+)"
+    if order == 1:
+        return rf"\dot{{{function}}}(0^+)"
+    if order == 2:
+        return rf"\ddot{{{function}}}(0^+)"
+    return rf"{function}^{{({order})}}(0^+)"
+
+
+def _ode_image_equation_latex(data: OdeSolutionData) -> str:
+    left = _image_side_latex(
+        data.image_equation.a_polynomial._as_sympy(),
+        "Y(s)",
+        data.image_equation.output_initial_part._as_sympy(),
+    )
+    right = _image_side_latex(
+        data.image_equation.b_polynomial._as_sympy(),
+        "U(s)",
+        data.image_equation.input_initial_part._as_sympy(),
+    )
+    return f"{left}={right}"
+
+
+def _transfer_image_equation_latex(data: OdeTransferFunctionResult) -> str:
+    output_image = f"{_laplace_name_latex(data.ode.output_name)}(s)"
+    input_image = f"{_laplace_name_latex(data.ode.input_name or 'u')}(s)"
+    left = _image_side_latex(
+        data.denominator._as_sympy(),
+        output_image,
+        sp.Integer(0),
+    )
+    right = _image_side_latex(
+        data.numerator._as_sympy(),
+        input_image,
+        sp.Integer(0),
+    )
+    return f"{left}={right}"
+
+
+def _image_side_latex(
+    polynomial: sp.Expr,
+    image_name: str,
+    initial_part: sp.Expr,
+) -> str:
+    expanded = sp.expand(polynomial)
+    if expanded == 1:
+        main = image_name
+    elif expanded == -1:
+        main = f"-{image_name}"
+    else:
+        main = rf"\left({sp.latex(expanded)}\right){image_name}"
+    if initial_part == 0:
+        return main
+    return rf"{main}-{sp.latex(sp.expand(initial_part))}"
 
 
 def _rational_text(solution: TimeDomainSolution) -> str:
@@ -1814,6 +1961,7 @@ def _error_presentation(message: str) -> TimeDomainPresentation:
 
 
 __all__ = [
+    "format_ode_preview",
     "TimeDomainInputDraft",
     "TimeDomainPresentation",
     "TimeDomainWorkflowResult",

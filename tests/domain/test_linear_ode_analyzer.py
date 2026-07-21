@@ -61,8 +61,8 @@ def test_derivative_theorem_is_visible_for_orders_one_through_four() -> None:
     rules = {
         item.derivative_order: item.display_rule for item in transformed if item.side == "output"
     }
-    assert "s^2 Y(s) - s - 2" in rules[2]
-    assert "s^4 Y(s) - s^3 - 2*s^2 - 3*s - 4" in rules[4]
+    assert rules[2].endswith("s^2*Y(s) - s - 2")
+    assert rules[4].endswith("s^4*Y(s) - s^3 - 2*s^2 - 3*s - 4")
     assert sp.expand(equation.a_polynomial._as_sympy()) == sum(
         sp.Symbol("s") ** k for k in range(5)
     )
@@ -90,3 +90,29 @@ def test_symbolic_leading_coefficient_requires_nonzero_assumption() -> None:
     )
     assert not rejected.valid
     assert accepted.valid
+
+
+def test_safe_coefficient_formatting_preserves_one_minus_one_and_eleven() -> None:
+    ode = build_linear_ode(
+        output_name="y",
+        input_name="u",
+        output_coefficients=(_coefficient(11), _coefficient(1)),
+        input_coefficients=(_coefficient(-1),),
+        output_order=1,
+        input_order=0,
+        assumptions=(),
+    )
+    assert ode.normalized_ode == "y'(t) + 11*y(t) = -u(t)"
+    assert "1y(t)" not in ode.normalized_ode
+
+    signed = build_linear_ode(
+        output_name="y",
+        input_name="u",
+        output_coefficients=(_coefficient(11), _coefficient(-2)),
+        input_coefficients=(_coefficient(sp.Rational(1, 2)),),
+        output_order=1,
+        input_order=0,
+        assumptions=(),
+    )
+    assert "+ -" not in signed.normalized_ode
+    assert signed.normalized_ode == "-2*y'(t) + 11*y(t) = 1/2*u(t)"

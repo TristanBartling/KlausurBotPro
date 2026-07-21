@@ -417,19 +417,19 @@ class TimeDomainWorkspace(QWidget):
         output_name = self.output_name_edit.text().strip() or "y"
         input_name = self.input_name_edit.text().strip() or "u"
 
-        def side(name: str, edits: list[QLineEdit], order: int) -> str:
-            terms = []
-            for derivative_order in range(order, -1, -1):
-                coefficient = edits[derivative_order].text().strip() or "?"
-                derivative = (
-                    f"{name}(t)" if derivative_order == 0 else f"{name}^({derivative_order})(t)"
-                )
-                terms.append(f"{coefficient} {derivative}")
-            return " + ".join(terms)
-
         self.ode_preview.setText(
-            f"{side(output_name, self.output_coefficient_edits, output_order)} = "
-            f"{side(input_name, self.input_coefficient_edits, input_order)}"
+            self.presenter.ode_preview(
+                output_name,
+                input_name,
+                tuple(
+                    edit.text()
+                    for edit in self.output_coefficient_edits[: output_order + 1]
+                ),
+                tuple(
+                    edit.text()
+                    for edit in self.input_coefficient_edits[: input_order + 1]
+                ),
+            )
         )
 
     @Slot(object)

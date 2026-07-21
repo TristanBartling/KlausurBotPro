@@ -229,6 +229,7 @@ class TransformedOdeTerm:
     transformed_expression: ExactExpression
     initial_value_part: ExactExpression
     display_rule: str
+    latex_rule: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,6 +279,7 @@ class OdeTransferFunctionResult:
     numerator: ExactExpression
     denominator: ExactExpression
     multiplication_residual: ExactExpression
+    transformed_terms: tuple[TransformedOdeTerm, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

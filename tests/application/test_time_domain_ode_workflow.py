@@ -3,6 +3,7 @@
 import sympy as sp
 
 from klausurbotpro.application import TimeDomainInputDraft, run_time_domain_workflow
+from klausurbotpro.application.time_domain_workflow import format_ode_preview
 from klausurbotpro.domain.time_domain_contracts import InputSignalType, TimeDomainTaskType
 
 
@@ -37,6 +38,13 @@ def test_rf03_free_forced_pbz_and_all_ode_checks_pass() -> None:
     )
     assert data.verification.trusted
     assert result.solution.partial_fractions is not None
+    assert "L{2*y'(t)} = 2*(s*Y(s) - y(0+)) = 2*s*Y(s)" in (
+        result.presentation.laplace_transformation
+    )
+    assert "s*y(0+) - y'(0+)" in result.presentation.laplace_transformation
+    assert "(s^2 + 2*s + 1)*Y(s) - 1 = U(s)" in result.presentation.image_equation
+    assert r"\mathcal{L}\{2\,\dot{y}(t)\}" in result.presentation.latex_source
+    _assert_no_internal_origin_names(result)
 
 
 def test_rf04_transfer_function_preserves_negative_sign() -> None:
@@ -66,6 +74,13 @@ def test_rf04_transfer_function_preserves_negative_sign() -> None:
         )
         == 0
     )
+    assert "+ -" not in result.presentation.ode_and_initials
+    assert "= -F_A(t)" in result.presentation.ode_and_initials
+    assert r"\ddot{\varphi_G}(t)" in result.presentation.latex_source
+    assert r"G_S(s)=\frac{\Phi_G(s)}{F_{A}(s)}=- \frac{1}" in (
+        result.presentation.latex_source
+    )
+    _assert_no_internal_origin_names(result)
 
 
 def test_rf05_missing_initial_value_stops_before_y_of_s() -> None:
@@ -159,3 +174,37 @@ def test_input_derivative_uses_derived_initial_value() -> None:
     input_conditions = result.solution.ode_solution.input_initial_conditions
     assert input_conditions is not None and input_conditions.complete
     assert input_conditions.values[0].origin.value == "DERIVED"
+    assert "aus dem Eingangssignal abgeleitet" in result.presentation.ode_and_initials
+    _assert_no_internal_origin_names(result)
+
+
+def test_preview_hides_zero_terms_and_preserves_eleven() -> None:
+    preview = format_ode_preview("y", "u", ("11", "1"), ("0",))
+    assert preview == "y'(t) + 11*y(t) = 0"
+    assert "u(t)" not in preview
+
+
+def test_explicit_zero_policy_uses_only_german_origin_label() -> None:
+    result = run_time_domain_workflow(
+        _rf03(output_initial_texts=("0", ""), missing_initials_are_zero=True)
+    )
+    assert "ausdrücklich als 0 gesetzt" in result.presentation.ode_and_initials
+    _assert_no_internal_origin_names(result)
+
+
+def _assert_no_internal_origin_names(result: object) -> None:
+    presentation = result.presentation
+    normal_output = "\n".join(
+        (
+            presentation.summary,
+            presentation.ode_and_initials,
+            presentation.laplace_transformation,
+            presentation.image_equation,
+            presentation.free_and_forced,
+            presentation.short_solution,
+            presentation.worked_steps,
+            presentation.latex_source,
+        )
+    )
+    for forbidden in ("USER_PROVIDED", "DERIVED", "EXPLICIT_ZERO_POLICY"):
+        assert forbidden not in normal_output

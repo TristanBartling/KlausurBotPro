@@ -59,6 +59,9 @@ def test_rf03_real_calculate_button_click_solves_structured_ode() -> None:
     workspace.ode_amplitude_edit.setText("9")
     workspace.ode_rate_edit.setText("2")
 
+    assert "0*y" not in workspace.ode_preview.text()
+    assert workspace.ode_preview.text() == "y''(t) + 2*y'(t) + y(t) = u(t)"
+
     QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
     application.processEvents()
 

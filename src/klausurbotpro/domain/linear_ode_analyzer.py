@@ -74,7 +74,12 @@ def build_linear_ode(
                 "Mindestens ein Ausgangsterm ist erforderlich.",
             )
         )
-    normalized = f"{_side_text(output_name, output_terms)} = {_side_text(input_name, input_terms)}"
+    normalized = format_ode_plain(
+        output_name,
+        output_terms,
+        input_name,
+        input_terms,
+    )
     return LinearOdeInput(
         output_name,
         input_name,
@@ -155,8 +160,11 @@ def transform_ode(
                 output_initial += coefficient_expr * initial
             else:
                 input_initial += coefficient_expr * initial
-            rule = _derivative_rule(
-                ode.output_name if side == "output" else ode.input_name or "u", order, values
+            rule, latex_rule = _derivative_rule(
+                ode.output_name if side == "output" else ode.input_name or "u",
+                order,
+                coefficient_expr,
+                values,
             )
             transformed.append(
                 TransformedOdeTerm(
@@ -166,6 +174,7 @@ def transform_ode(
                     exact(transformed_expr),
                     exact(coefficient_expr * initial),
                     rule,
+                    latex_rule,
                 )
             )
     left = a_polynomial * y_image - output_initial
@@ -177,8 +186,12 @@ def transform_ode(
         exact(input_initial),
         exact(left),
         exact(right),
-        f"({_plain(a_polynomial)})*Y(s) - ({_plain(output_initial)}) = "
-        f"({_plain(b_polynomial)})*U(s) - ({_plain(input_initial)})",
+        _image_equation_plain(
+            a_polynomial,
+            output_initial,
+            b_polynomial,
+            input_initial,
+        ),
     )
     return (
         tuple(transformed),
@@ -246,37 +259,309 @@ def _is_proven_nonzero(expression: sp.Expr, assumptions: tuple[str, ...]) -> boo
     )
 
 
-def _side_text(name: str, terms: tuple[tuple[int, ExactExpression], ...]) -> str:
+def format_ode_plain(
+    output_name: str,
+    output_terms: tuple[tuple[int, ExactExpression], ...],
+    input_name: str,
+    input_terms: tuple[tuple[int, ExactExpression], ...],
+) -> str:
+    """Format a structured ODE without global string replacement."""
+    return (
+        f"{_side_plain(output_name, output_terms)} = "
+        f"{_side_plain(input_name, input_terms)}"
+    )
+
+
+def format_ode_latex(ode: LinearOdeInput) -> str:
+    """Return mathematical LaTeX for a normalized structured ODE."""
+    return (
+        f"{_side_latex(ode.output_name, ode.output_terms)}="
+        f"{_side_latex(ode.input_name or 'u', ode.input_terms)}"
+    )
+
+
+def _side_plain(name: str, terms: tuple[tuple[int, ExactExpression], ...]) -> str:
+    return _join_signed_terms(
+        tuple(
+            (
+                coefficient._as_sympy(),
+                _derivative_plain(name, order),
+            )
+            for order, coefficient in reversed(terms)
+        ),
+        latex=False,
+    )
+
+
+def _side_latex(name: str, terms: tuple[tuple[int, ExactExpression], ...]) -> str:
+    return _join_signed_terms(
+        tuple(
+            (
+                coefficient._as_sympy(),
+                _derivative_latex(name, order),
+            )
+            for order, coefficient in reversed(terms)
+        ),
+        latex=True,
+    )
+
+
+def _join_signed_terms(
+    terms: tuple[tuple[sp.Expr, str], ...],
+    *,
+    latex: bool,
+) -> str:
     if not terms:
         return "0"
-    pieces = []
-    for order, coefficient in reversed(terms):
-        derivative = (
-            f"{name}(t)"
-            if order == 0
-            else f"{name}{chr(39) * order}(t)"
-            if order <= 3
-            else f"{name}^(4)(t)"
-        )
-        pieces.append(f"{coefficient.canonical_text}*{derivative}")
-    return " + ".join(pieces).replace("1*", "")
+    pieces: list[str] = []
+    for index, (coefficient, variable) in enumerate(terms):
+        negative = coefficient.could_extract_minus_sign()
+        magnitude = -coefficient if negative else coefficient
+        if magnitude == 1:
+            body = variable
+        elif latex:
+            body = rf"{sp.latex(magnitude)}\,{variable}"
+        else:
+            body = f"{_plain(magnitude)}*{variable}"
+        if index == 0:
+            pieces.append(f"-{body}" if negative else body)
+        else:
+            pieces.append((" - " if negative else " + ") + body)
+    return "".join(pieces)
 
 
-def _derivative_rule(name: str, order: int, values: dict[int, sp.Expr]) -> str:
+def _derivative_plain(name: str, order: int) -> str:
     if order == 0:
-        return f"L{{{name}(t)}} = {name.upper()}(s)"
-    initial = " - ".join(
-        _plain(sp.Symbol("s") ** (order - 1 - r) * values[r]) for r in range(order)
+        return f"{name}(t)"
+    if order <= 3:
+        return f"{name}{chr(39) * order}(t)"
+    return f"{name}^({order})(t)"
+
+
+def _function_latex(name: str) -> str:
+    return r"\varphi_G" if name == "phi_G" else sp.latex(sp.Symbol(name))
+
+
+def _derivative_latex(name: str, order: int) -> str:
+    function = _function_latex(name)
+    if order == 0:
+        return rf"{function}(t)"
+    if order == 1:
+        return rf"\dot{{{function}}}(t)"
+    if order == 2:
+        return rf"\ddot{{{function}}}(t)"
+    return rf"{function}^{{({order})}}(t)"
+
+
+def _derivative_rule(
+    name: str,
+    order: int,
+    coefficient: sp.Expr,
+    values: dict[int, sp.Expr],
+) -> tuple[str, str]:
+    image_name = "Y" if name in {"y", "phi_G"} else "U"
+    source = _coefficient_term_plain(coefficient, _derivative_plain(name, order))
+    source_latex = _coefficient_term_latex(
+        coefficient,
+        _derivative_latex(name, order),
     )
-    return f"L{{{name}^({order})(t)}} = s^{order} {name.upper()}(s) - {initial}"
+    if order == 0:
+        actual = sp.expand(coefficient * sp.Symbol(image_name))
+        return (
+            f"L{{{source}}} = {_image_plain(actual)}",
+            rf"\mathcal{{L}}\{{{source_latex}\}}={_image_latex(actual)}",
+        )
+    image_factor_plain = "s" if order == 1 else f"s^{order}"
+    image_factor_latex = "s" if order == 1 else rf"s^{{{order}}}"
+    inner_plain = f"{image_factor_plain}*{image_name}(s)" + "".join(
+        _initial_plain_part(name, order, derivative_order)
+        for derivative_order in range(order)
+    )
+    inner_latex = rf"{image_factor_latex}{image_name}(s)" + "".join(
+        _initial_latex_part(name, order, derivative_order)
+        for derivative_order in range(order)
+    )
+    actual = coefficient * (
+        sp.Symbol("s") ** order * sp.Symbol(image_name)
+        - sum(
+            (
+                sp.Symbol("s") ** (order - 1 - derivative_order)
+                * values[derivative_order]
+                for derivative_order in range(order)
+            ),
+            sp.Integer(0),
+        )
+    )
+    if coefficient == 1:
+        middle_plain = inner_plain
+        middle_latex = inner_latex
+    else:
+        middle_plain = f"{_plain(coefficient)}*({inner_plain})"
+        middle_latex = rf"{sp.latex(coefficient)}\left({inner_latex}\right)"
+    return (
+        f"L{{{source}}} = {middle_plain} = {_image_plain(sp.expand(actual))}",
+        rf"\mathcal{{L}}\{{{source_latex}\}}={middle_latex}"
+        rf"={_image_latex(sp.expand(actual))}",
+    )
+
+
+def _coefficient_term_plain(coefficient: sp.Expr, variable: str) -> str:
+    return _join_signed_terms(((coefficient, variable),), latex=False)
+
+
+def _coefficient_term_latex(coefficient: sp.Expr, variable: str) -> str:
+    return _join_signed_terms(((coefficient, variable),), latex=True)
+
+
+def _initial_plain_part(name: str, order: int, derivative_order: int) -> str:
+    power = order - 1 - derivative_order
+    power_text = "" if power == 0 else "s*" if power == 1 else f"s^{power}*"
+    initial = (
+        f"{name}(0+)"
+        if derivative_order == 0
+        else f"{name}{chr(39) * derivative_order}(0+)"
+    )
+    return f" - {power_text}{initial}"
+
+
+def _initial_latex_part(name: str, order: int, derivative_order: int) -> str:
+    power = order - 1 - derivative_order
+    power_latex = "" if power == 0 else r"s\," if power == 1 else rf"s^{{{power}}}\,"
+    return rf"-{power_latex}{_initial_latex(name, derivative_order)}"
+
+
+def _initial_latex(name: str, order: int) -> str:
+    function = _function_latex(name)
+    if order == 0:
+        return rf"{function}(0^+)"
+    if order == 1:
+        return rf"\dot{{{function}}}(0^+)"
+    if order == 2:
+        return rf"\ddot{{{function}}}(0^+)"
+    return rf"{function}^{{({order})}}(0^+)"
+
+
+def _image_plain(expression: sp.Expr) -> str:
+    expanded = sp.expand(expression)
+    for symbol_name in ("Y", "U"):
+        symbol = sp.Symbol(symbol_name)
+        coefficient = sp.expand(expanded.coeff(symbol))
+        if coefficient == 0:
+            continue
+        remainder = sp.expand(expanded - coefficient * symbol)
+        if coefficient == 1:
+            main = f"{symbol_name}(s)"
+        elif coefficient == -1:
+            main = f"-{symbol_name}(s)"
+        else:
+            main = f"{_plain(coefficient)}*{symbol_name}(s)"
+        if remainder == 0:
+            return main
+        return _append_plain_terms(main, remainder)
+    return _plain(expanded)
+
+
+def _image_latex(expression: sp.Expr) -> str:
+    expanded = sp.expand(expression)
+    for symbol_name in ("Y", "U"):
+        symbol = sp.Symbol(symbol_name)
+        coefficient = sp.expand(expanded.coeff(symbol))
+        if coefficient == 0:
+            continue
+        remainder = sp.expand(expanded - coefficient * symbol)
+        if coefficient == 1:
+            main = f"{symbol_name}(s)"
+        elif coefficient == -1:
+            main = f"-{symbol_name}(s)"
+        else:
+            coefficient_latex = sp.latex(coefficient)
+            if isinstance(coefficient, sp.Add):
+                coefficient_latex = rf"\left({coefficient_latex}\right)"
+            main = rf"{coefficient_latex}{symbol_name}(s)"
+        if remainder == 0:
+            return main
+        return _append_latex_terms(main, remainder)
+    return str(sp.latex(expanded))
+
+
+def _append_plain_terms(main: str, remainder: sp.Expr) -> str:
+    result = main
+    for term in _ordered_image_terms(remainder):
+        if term.could_extract_minus_sign():
+            result += f" - {_plain(-term)}"
+        else:
+            result += f" + {_plain(term)}"
+    return result
+
+
+def _append_latex_terms(main: str, remainder: sp.Expr) -> str:
+    result = main
+    for term in _ordered_image_terms(remainder):
+        if term.could_extract_minus_sign():
+            result += rf"-{sp.latex(-term)}"
+        else:
+            result += rf"+{sp.latex(term)}"
+    return result
+
+
+def _ordered_image_terms(expression: sp.Expr) -> tuple[sp.Expr, ...]:
+    s = sp.Symbol("s")
+    return tuple(
+        sorted(
+            sp.Add.make_args(sp.expand(expression)),
+            key=lambda term: int(sp.Poly(term, s).degree()),
+            reverse=True,
+        )
+    )
+
+
+def _image_equation_plain(
+    a_polynomial: sp.Expr,
+    output_initial: sp.Expr,
+    b_polynomial: sp.Expr,
+    input_initial: sp.Expr,
+) -> str:
+    left = _grouped_image_plain(a_polynomial, "Y", output_initial)
+    right = _grouped_image_plain(b_polynomial, "U", input_initial)
+    return f"{left} = {right}"
+
+
+def _grouped_image_plain(
+    polynomial: sp.Expr,
+    image_name: str,
+    initial_part: sp.Expr,
+) -> str:
+    expanded = sp.expand(polynomial)
+    if expanded == 1:
+        main = f"{image_name}(s)"
+    elif expanded == -1:
+        main = f"-{image_name}(s)"
+    else:
+        main = f"({_plain_expanded(expanded)})*{image_name}(s)"
+    if initial_part == 0:
+        return main
+    if initial_part.could_extract_minus_sign():
+        return f"{main} + {_plain(-initial_part)}"
+    return f"{main} - {_plain(initial_part)}"
 
 
 def _plain(expression: sp.Expr) -> str:
     return str(sp.sstr(sp.factor(expression))).replace("**", "^")
 
 
+def _plain_expanded(expression: sp.Expr) -> str:
+    return str(sp.sstr(sp.expand(expression))).replace("**", "^")
+
+
 def _error(code: DiagnosticCode, message: str) -> Diagnostic:
     return Diagnostic(DiagnosticSeverity.ERROR, code, message)
 
 
-__all__ = ["build_initial_conditions", "build_linear_ode", "transform_ode", "verify_ode_solution"]
+__all__ = [
+    "build_initial_conditions",
+    "build_linear_ode",
+    "format_ode_latex",
+    "format_ode_plain",
+    "transform_ode",
+    "verify_ode_solution",
+]
