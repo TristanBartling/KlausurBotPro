@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from math import isfinite
+
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from matplotlib.ticker import AutoMinorLocator, LogLocator, MultipleLocator
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -708,7 +711,33 @@ class FrequencyDomainWorkspace(QWidget):
             axes.set_xscale("log")
             axes.set_xlabel("ω [rad/s]")
             axes.set_ylabel(ylabel)
-            axes.grid(True, which="both", alpha=0.35)
+            axes.xaxis.set_major_locator(LogLocator(base=10.0))
+            axes.xaxis.set_minor_locator(
+                LogLocator(base=10.0, subs=tuple(range(2, 10)))
+            )
+            axes.grid(True, which="major", axis="x", alpha=0.38, linewidth=0.85)
+            axes.grid(True, which="minor", axis="x", alpha=0.13, linewidth=0.45)
+            axes.grid(True, which="major", axis="y", alpha=0.3, linewidth=0.7)
+            for spine in axes.spines.values():
+                spine.set_linewidth(1.1)
+        self.magnitude_axes.yaxis.set_major_locator(MultipleLocator(20.0))
+        self.magnitude_axes.yaxis.set_minor_locator(AutoMinorLocator(2))
+        self.magnitude_axes.grid(
+            True,
+            which="minor",
+            axis="y",
+            alpha=0.12,
+            linewidth=0.45,
+        )
+        self.magnitude_axes.hlines(
+            0.0,
+            0.0,
+            1.0,
+            transform=self.magnitude_axes.get_yaxis_transform(),
+            colors="#202020",
+            linewidth=1.6,
+            zorder=1,
+        )
 
         for segment in state.plot.magnitude_segments:
             self.magnitude_axes.plot(
@@ -790,6 +819,8 @@ class FrequencyDomainWorkspace(QWidget):
                     va="center",
                     transform=axes.transAxes,
                 )
+        self.magnitude_axes.margins(y=0.08)
+        self.phase_axes.margins(y=0.08)
         self.plot_canvas.draw_idle()  # type: ignore[no-untyped-call]
 
     def _render_nyquist(self, state: FrequencyDomainViewState) -> None:
@@ -825,7 +856,8 @@ class FrequencyDomainWorkspace(QWidget):
         axes.set_xlabel("Re{G(jω)}")
         axes.set_ylabel("Im{G(jω)}")
         axes.grid(True, alpha=0.3)
-        axes.set_aspect("equal", adjustable="datalim")
+        self._set_nyquist_limits(axes, view)
+        axes.set_aspect("equal", adjustable="box")
         axes.legend(loc="best")
         self.nyquist_canvas.draw_idle()  # type: ignore[no-untyped-call]
 
@@ -845,6 +877,27 @@ class FrequencyDomainWorkspace(QWidget):
             xytext=(x_values[index - 1], y_values[index - 1]),
             arrowprops={"arrowstyle": "->", "color": color},
         )
+
+    @staticmethod
+    def _set_nyquist_limits(axes: object, view: object) -> None:
+        x_values = [-1.0, 0.0]
+        y_values = [0.0]
+        for segment in (*view.positive_segments, *view.negative_segments):  # type: ignore[attr-defined]
+            x_values.extend(float(value) for value in segment.x_values)
+            y_values.extend(float(value) for value in segment.y_values)
+        for marker in view.crossover_markers:  # type: ignore[attr-defined]
+            x_values.append(float(marker.x_value))
+            y_values.append(float(marker.y_value))
+        x_values = [value for value in x_values if isfinite(value)]
+        y_values = [value for value in y_values if isfinite(value)]
+        x_min, x_max = min(x_values), max(x_values)
+        y_min, y_max = min(y_values), max(y_values)
+        span = max(x_max - x_min, y_max - y_min, 1e-6)
+        half_span = 0.6 * span
+        x_center = (x_min + x_max) / 2.0
+        y_center = (y_min + y_max) / 2.0
+        axes.set_xlim(x_center - half_span, x_center + half_span)  # type: ignore[attr-defined]
+        axes.set_ylim(y_center - half_span, y_center + half_span)  # type: ignore[attr-defined]
 
     def _render_worked_steps(
         self,

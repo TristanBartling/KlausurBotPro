@@ -21,7 +21,12 @@ from klausurbotpro.domain import (
 )
 
 
-def _analyze(expression: str, domain: ScalarGainDomain | None = None) -> NyquistAnalysisResult:
+def _analyze(
+    expression: str,
+    domain: ScalarGainDomain | None = None,
+    *,
+    points_per_decade: int = 16,
+) -> NyquistAnalysisResult:
     request = FrequencyDomainWorkflowRequest(
         TransferFunctionWorkflowRequest(
             WorkflowInputForm.COMMON,
@@ -30,7 +35,9 @@ def _analyze(expression: str, domain: ScalarGainDomain | None = None) -> Nyquist
         ),
         FrequencyDomainWorkflowMode.BODE,
         grid_request=LogFrequencyGridRequest(
-            ExactRationalValue(1, 1000), ExactRationalValue(1000), 16
+            ExactRationalValue(1, 100),
+            ExactRationalValue(100),
+            points_per_decade,
         ),
         phase_presentation=FrequencyPhasePresentation.PRINCIPAL_AND_UNWRAPPED,
         include_reserves=True,
@@ -47,7 +54,6 @@ def _analyze(expression: str, domain: ScalarGainDomain | None = None) -> Nyquist
     (
         ("2.5*(1-s)/(s^2+3*s+2)", 0, 0, 0, ClosedLoopStabilityStatus.ASYMPTOTICALLY_STABLE),
         ("6*s/((s-1)*(s-2))", 2, -2, 0, ClosedLoopStabilityStatus.ASYMPTOTICALLY_STABLE),
-        ("2/(s^3+2.3*s^2+1.6*s+2)", 0, 2, 2, ClosedLoopStabilityStatus.UNSTABLE),
     ),
 )
 def test_nyquist_reference_decisions(
@@ -58,6 +64,21 @@ def test_nyquist_reference_decisions(
     assert result.winding.clockwise_encirclements == n_cw
     assert result.stability.rhp_closed_poles == z
     assert result.stability.status is status
+
+
+@pytest.mark.parametrize("points_per_decade", (4, 8, 16))
+def test_unstable_closed_loop_winding_is_grid_density_independent(
+    points_per_decade: int,
+) -> None:
+    result = _analyze(
+        "2/(s^3+2.3*s^2+1.6*s+2)",
+        points_per_decade=points_per_decade,
+    )
+    assert result.pole_classification.rhp_pole_count == 0
+    assert result.winding.clockwise_encirclements == 2
+    assert result.stability.rhp_closed_poles == 2
+    assert result.stability.status is ClosedLoopStabilityStatus.UNSTABLE
+    assert len(result.winding.curve_segments[1].values) > 100
 
 
 def test_origin_pole_rejects_standard_count() -> None:
