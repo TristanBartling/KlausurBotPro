@@ -168,6 +168,36 @@ class PlotView:
 
 
 @dataclass(frozen=True, slots=True)
+class NyquistView:
+    visible: bool = False
+    positive_segments: tuple[PlotSegmentView, ...] = ()
+    negative_segments: tuple[PlotSegmentView, ...] = ()
+    crossover_markers: tuple[PlotMarkerView, ...] = ()
+    p: str = "—"
+    n_cw: str = "—"
+    z: str = "—"
+    criterion: str = ""
+    prerequisites: str = ""
+    status: str = ""
+    minimum_distance: str = ""
+    critical_frequency: str = ""
+    scalar_gain_intervals: str = ""
+
+    def __post_init__(self) -> None:
+        if type(self.visible) is not bool:
+            raise TypeError("Nyquist visibility must be a bool.")
+        for values in (self.positive_segments, self.negative_segments):
+            if type(values) is not tuple or any(
+                type(value) is not PlotSegmentView for value in values
+            ):
+                raise TypeError("Nyquist segments must be plot segment views.")
+        if type(self.crossover_markers) is not tuple or any(
+            type(value) is not PlotMarkerView for value in self.crossover_markers
+        ):
+            raise TypeError("Nyquist crossover markers are invalid.")
+
+
+@dataclass(frozen=True, slots=True)
 class FrequencyPointDetailView:
     heading: str = ""
     lines: tuple[tuple[str, str], ...] = ()
@@ -229,6 +259,7 @@ class FrequencyDomainViewState:
     rows: tuple[FrequencyDomainTableRow, ...] = ()
     reserve_rows: tuple[FrequencyReserveTableRow, ...] = ()
     plot: PlotView = PlotView()
+    nyquist: NyquistView = NyquistView()
     worked_steps: WorkedStepsView = WorkedStepsView()
     latex_report: str = ""
     selected_bode_index: int = 0
@@ -246,6 +277,8 @@ class FrequencyDomainViewState:
             raise TypeError("single_point has an invalid type.")
         if type(self.plot) is not PlotView:
             raise TypeError("plot has an invalid type.")
+        if type(self.nyquist) is not NyquistView:
+            raise TypeError("nyquist has an invalid type.")
         if type(self.worked_steps) is not WorkedStepsView:
             raise TypeError("worked_steps has an invalid type.")
         if type(self.latex_report) is not str:
@@ -284,6 +317,7 @@ __all__ = [
     "FrequencyDomainUiRunStatus",
     "FrequencyDomainViewState",
     "PlotMarkerView",
+    "NyquistView",
     "PlotSegmentView",
     "PlotView",
     "WorkedStepsView",

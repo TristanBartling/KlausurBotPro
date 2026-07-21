@@ -224,6 +224,14 @@ class DiagnosticCode(StrEnum):
     STANDARD_ELEMENT_BODE_UNSUPPORTED = (
         "standard_element_bode.unsupported"
     )
+    IMAG_AXIS_POLE_MODIFIED_CONTOUR_REQUIRED = (
+        "nyquist.imag_axis_pole_modified_contour_required"
+    )
+    BIPROPER_OR_IMPROPER_NYQUIST_UNSUPPORTED = (
+        "nyquist.biproper_or_improper_unsupported"
+    )
+    NYQUIST_WINDING_METHODS_DISAGREE = "nyquist.winding_methods_disagree"
+    NYQUIST_CRITICAL_POINT_HIT = "nyquist.critical_point_hit"
 
 
 @dataclass(frozen=True, slots=True)

@@ -23,8 +23,10 @@ from klausurbotpro.domain import (
     LogFrequencyGridLimits,
     LogFrequencyGridRequest,
     LogFrequencyGridResult,
+    NyquistAnalysisResult,
     ParameterSubstitutions,
     ReducedTransferFunction,
+    ScalarGainDomain,
     StabilityReserveAnalysis,
     StandardElementBodeResult,
     TransferFunctionBodeDataResult,
@@ -96,6 +98,8 @@ class FrequencyDomainWorkflowRequest:
         FrequencyPhasePresentation.PRINCIPAL_ONLY
     )
     include_reserves: bool = False
+    include_nyquist: bool = False
+    scalar_gain_domain: ScalarGainDomain | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +181,7 @@ class FrequencyDomainWorkflowResult:
     phase_unwrap_result: BodePhaseUnwrapResult | None
     crossover_analysis: FrequencyCrossoverAnalysis | None
     reserve_analysis: StabilityReserveAnalysis | None
+    nyquist_analysis: NyquistAnalysisResult | None
     stage_records: tuple[FrequencyDomainWorkflowStageRecord, ...]
     diagnostics: tuple[Diagnostic, ...]
 
@@ -203,6 +208,7 @@ class FrequencyDomainWorkflowResult:
         phase_unwrap_result: BodePhaseUnwrapResult | None = None,
         crossover_analysis: FrequencyCrossoverAnalysis | None = None,
         reserve_analysis: StabilityReserveAnalysis | None = None,
+        nyquist_analysis: NyquistAnalysisResult | None = None,
         stage_records: tuple[FrequencyDomainWorkflowStageRecord, ...] = (),
         diagnostics: tuple[Diagnostic, ...] = (),
     ) -> FrequencyDomainWorkflowResult:
@@ -218,6 +224,7 @@ class FrequencyDomainWorkflowResult:
             ("phase_unwrap_result", phase_unwrap_result),
             ("crossover_analysis", crossover_analysis),
             ("reserve_analysis", reserve_analysis),
+            ("nyquist_analysis", nyquist_analysis),
             ("stage_records", stage_records),
             ("diagnostics", diagnostics),
         ):
@@ -268,6 +275,11 @@ class FrequencyDomainWorkflowResult:
                 self.reserve_analysis,
                 StabilityReserveAnalysis,
                 "reserve_analysis",
+            ),
+            (
+                self.nyquist_analysis,
+                NyquistAnalysisResult,
+                "nyquist_analysis",
             ),
         )
         for value, expected_type, name in optional_contracts:

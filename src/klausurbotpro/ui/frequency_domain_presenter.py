@@ -30,6 +30,7 @@ from klausurbotpro.ui.frequency_domain_view_state import (
     FrequencyDomainViewState,
     FrequencyPointDetailView,
     FrequencyReserveTableRow,
+    NyquistView,
     PlotMarkerView,
     PlotSegmentView,
     PlotView,
@@ -209,6 +210,7 @@ class FrequencyDomainPresenter(QObject):
                 rows=_rows(value),
                 reserve_rows=_reserve_rows(value),
                 plot=_plot(value),
+                nyquist=_nyquist(value),
                 worked_steps=_worked_steps(value),
                 latex_report=latex_report,
                 diagnostics=tuple(
@@ -297,6 +299,7 @@ class FrequencyDomainPresenter(QObject):
                 rows=self._state.rows,
                 reserve_rows=self._state.reserve_rows,
                 plot=self._state.plot,
+                nyquist=self._state.nyquist,
                 worked_steps=self._state.worked_steps,
                 latex_report=self._state.latex_report,
                 selected_bode_index=self._state.selected_bode_index,
@@ -520,6 +523,7 @@ def _worked_steps(result: FrequencyDomainWorkflowResult) -> WorkedStepsView:
         ("Frequenzdefinition", _frequency_definition_text(result)),
         *_standard_element_worked_lines(result),
         *_reserve_worked_lines(result),
+        *_nyquist_worked_lines(result),
     )
     response = result.active_frequency_response_result
     if response is None:
@@ -693,6 +697,106 @@ def _reserve_rows(
             FrequencyReserveTableRow("—", "Keine Durchtritte", "—", "—", "—", "—", status, "—")
         )
     return tuple(rows)
+
+
+def _nyquist(result: FrequencyDomainWorkflowResult) -> NyquistView:
+    analysis = result.nyquist_analysis
+    if analysis is None:
+        return NyquistView()
+    positive: list[PlotSegmentView] = []
+    negative: list[PlotSegmentView] = []
+    for segment in analysis.winding.curve_segments:
+        view = PlotSegmentView(
+            tuple(f"{value.real:.16g}" for value in segment.values),
+            tuple(f"{value.imag:.16g}" for value in segment.values),
+        )
+        (positive if segment.frequency_sign > 0 else negative).append(view)
+    stability = analysis.stability
+    gain = analysis.scalar_gain_range
+    gain_text = ""
+    if gain is not None:
+        gain_text = " ∪ ".join(_gain_domain_text(value) for value in gain.stable_intervals)
+    crossovers = result.crossover_analysis
+    markers = () if crossovers is None else tuple(
+        PlotMarkerView(
+            f"{item.complex_value.real:.16g}",
+            f"ω{'g' if item.crossover_type.value == 'gain' else 'p'}{index}",
+            f"{item.complex_value.imag:.16g}",
+        )
+        for index, item in enumerate(
+            crossovers.gain_crossovers + crossovers.phase_crossovers, 1
+        )
+    )
+    return NyquistView(
+        True,
+        tuple(positive),
+        tuple(negative),
+        markers,
+        str(stability.rhp_open_poles),
+        (
+            "—"
+            if stability.clockwise_encirclements is None
+            else str(stability.clockwise_encirclements)
+        ),
+        "—" if stability.rhp_closed_poles is None else str(stability.rhp_closed_poles),
+        stability.criterion.value,
+        "erfüllt" if stability.prerequisites_met else "nicht erfüllt",
+        stability.statement,
+        f"{analysis.winding.critical_point.minimum_distance:.8g}",
+        f"{analysis.winding.critical_point.frequency:.8g} rad/s",
+        gain_text,
+    )
+
+
+def _gain_domain_text(domain: Any) -> str:
+    lower = "-∞" if domain.lower is None else f"{domain.lower:.8g}"
+    upper = "∞" if domain.upper is None else f"{domain.upper:.8g}"
+    return f"{lower} < K < {upper}"
+
+
+def _nyquist_worked_lines(result: FrequencyDomainWorkflowResult) -> tuple[tuple[str, str], ...]:
+    analysis = result.nyquist_analysis
+    if analysis is None:
+        return ()
+    stability = analysis.stability
+    winding = analysis.winding
+    lines = [
+        ("Offene Polklassifikation", f"P={stability.rhp_open_poles}"),
+        ("Nyquist-Konvention", "Uhrzeigersinn positiv; Z=P+N_cw"),
+        (
+            "Kritischer Punkt",
+            f"min |1+G(jω)|={winding.critical_point.minimum_distance:.8g} "
+            f"bei ω={winding.critical_point.frequency:.8g}",
+        ),
+        (
+            "Umschlingungszahl",
+            "N_cw=" + (
+                str(stability.clockwise_encirclements)
+                if stability.clockwise_encirclements is not None
+                else "nicht bestimmt"
+            ),
+        ),
+        (
+            "Geschlossene Pole",
+            "Z=" + (
+                str(stability.rhp_closed_poles)
+                if stability.rhp_closed_poles is not None
+                else "nicht bestimmt"
+            ),
+        ),
+        ("Stabilität", stability.statement),
+    ]
+    if analysis.scalar_gain_range is not None:
+        lines.append(
+            (
+                "Stabile K-Intervalle",
+                " ∪ ".join(
+                    _gain_domain_text(item)
+                    for item in analysis.scalar_gain_range.stable_intervals
+                ),
+            )
+        )
+    return tuple(lines)
 
 
 def _reserve_worked_lines(

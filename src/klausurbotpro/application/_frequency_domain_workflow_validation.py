@@ -39,6 +39,7 @@ from klausurbotpro.domain import (
     DiagnosticSeverity,
     ExactRationalValue,
     LogFrequencyGridRequest,
+    ScalarGainDomain,
 )
 from klausurbotpro.domain._bode_data_validation import (
     BodeDataFailure,
@@ -95,6 +96,12 @@ def validate_frequency_domain_request(
         errors.append(("phase_presentation", "Ungültige Phasendarstellung."))
     if type(request.include_reserves) is not bool:
         errors.append(("include_reserves", "Ungültige Reservenanforderung."))
+    if type(request.include_nyquist) is not bool:
+        errors.append(("include_nyquist", "Ungültige Nyquist-Anforderung."))
+    if request.scalar_gain_domain is not None and (
+        type(request.scalar_gain_domain) is not ScalarGainDomain
+    ):
+        errors.append(("scalar_gain_domain", "Ungültige Skalarverstärkungsdomain."))
     if request.mode is FrequencyDomainWorkflowMode.SINGLE_POINT:
         if not _is_canonical_rational(request.single_angular_frequency):
             errors.append(
@@ -237,6 +244,7 @@ def _validate_invalid_request_result(
         result.phase_unwrap_result,
         result.crossover_analysis,
         result.reserve_analysis,
+        result.nyquist_analysis,
     )
     if (
         result.status is not FrequencyDomainWorkflowStatus.FAILED
@@ -545,6 +553,10 @@ def _validate_bode_result(
             _fail("A failed Bode result cannot retain an unwrap result.")
         return
     _validate_reserve_results(result)
+    if result.request.include_nyquist and result.nyquist_analysis is None:
+        _fail("A successful requested Nyquist analysis requires a result.")
+    if not result.request.include_nyquist and result.nyquist_analysis is not None:
+        _fail("An unrequested Bode run cannot retain a Nyquist result.")
     _validate_unwrap_result(result, limits)
 
 
