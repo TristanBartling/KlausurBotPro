@@ -146,8 +146,26 @@ def _routh_check(item: object) -> str:
     from klausurbotpro.domain.routh_contracts import RouthDegreeCaseResult
 
     assert isinstance(item, RouthDegreeCaseResult)
-    status = _check_status(item.numerical_check.status.value) if item.numerical_check else "keine"
-    return f"{status}; Routh-RHP={item.rhp_roots_routh}; numerisch-RHP={item.numerical_rhp_roots}"
+    changes = str(item.sign_changes) if item.sign_changes is not None else "nicht bestimmbar"
+    routh_count = (
+        str(item.rhp_roots_routh)
+        if item.rhp_roots_routh is not None
+        else "nicht bestimmbar"
+    )
+    numeric_count = (
+        str(item.numerical_rhp_roots)
+        if item.numerical_rhp_roots is not None
+        else "nicht bestimmt"
+    )
+    numerical = (
+        "Numerische Kontrolle: " + _check_status(item.numerical_check.status.value)
+        if item.numerical_check is not None
+        else "Keine numerische Kontrolle verfügbar"
+    )
+    return (
+        f"Vorzeichenwechsel: {changes}; Routh-RHP-Polzahl: {routh_count}; "
+        f"Numerische RHP-Polzahl: {numeric_count}; {numerical}"
+    )
 
 
 def _routh_expression(value: object) -> str:

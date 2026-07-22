@@ -61,22 +61,14 @@ def analyze_routh(canonical: CanonicalCharacteristicPolynomial) -> RouthAnalysis
         for item in results
     )
     combined = _combined_region(results, canonical.input.decision_parameters)
-    statement = (
-        f"{_concept(canonical)} genau für {combined}."
-        if trusted and combined
-        else (
-            " ".join(item.statement for item in results)
-            if trusted
-            else "Kein vertrauenswürdiges Endergebnis wegen einer schweren Diagnose."
-        )
-    )
+    statement = _overall_statement(canonical, results, combined, trusted)
     notice = ""
     if canonical.input.role is PolynomialRole.REDUCED_TRANSFER_DENOMINATOR:
         notice = (
             "Kürzungshinweis: Der reduzierte E/A-Nenner beweist keine interne "
             "Stabilität; entfernte instabile Dynamik kann verdeckt sein."
         )
-    latex_source = _latex(canonical, results, statement, notice) if trusted else ""
+    latex_source = _latex(canonical, results, notice) if trusted else ""
     return RouthAnalysisResult(
         canonical,
         results,
@@ -381,7 +373,12 @@ def _worked_steps(
         ("2. Polynomrolle und Analyseziel", f"{_role_text(canonical)}; {_concept(canonical)}"),
         (
             "3. Entscheidungsparameter und Annahmen",
-            ", ".join(canonical.input.decision_parameters) or "keine",
+            "Parameter: "
+            + (", ".join(canonical.input.decision_parameters) or "keine")
+            + "; Annahmen: "
+            + _conditions_text(canonical.input.assumptions)
+            + "; Ausschlüsse: "
+            + _conditions_text(canonical.input.exclusions),
         ),
         (
             "4. Kanonische Koeffizientenfolge",
@@ -420,8 +417,7 @@ def _worked_steps(
                 ("11. Exakter Parameterbereich", result.parameter_region.exact_text),
                 (
                     "12. Vorzeichenwechsel / Kontrollpunkt",
-                    f"{result.control_point or 'parameterfrei'}: {result.sign_sequence}; "
-                    f"Wechsel={result.sign_changes}",
+                    _sign_change_text(result),
                 ),
                 (
                     "13. Numerische Polkontrolle",
@@ -444,6 +440,72 @@ def _concept(canonical: CanonicalCharacteristicPolynomial) -> str:
         AnalysisTarget.STATE_ASYMPTOTIC: "asymptotische Zustandsstabilität",
     }
     return labels[canonical.input.analysis_target]
+
+
+def _overall_statement(
+    canonical: CanonicalCharacteristicPolynomial,
+    results: tuple[RouthDegreeCaseResult, ...],
+    combined_region: str,
+    trusted: bool,
+) -> str:
+    if not trusted:
+        return " ".join(item.statement for item in results) or (
+            "Kein vertrauenswürdiges Endergebnis wegen einer schweren Diagnose."
+        )
+    if canonical.input.decision_parameters:
+        return (
+            f"{_concept(canonical)} genau für {combined_region}."
+            if combined_region
+            else " ".join(item.statement for item in results)
+        )
+    rhp_counts = tuple(item.rhp_roots_routh for item in results)
+    if not rhp_counts or any(value is None for value in rhp_counts):
+        return "Keine Stabilitätsendaussage bestimmbar."
+    total = sum(value for value in rhp_counts if value is not None)
+    root_text = "Nullstelle" if total == 1 else "Nullstellen"
+    if total == 0:
+        concept = _concept(canonical)
+        return (
+            f"{concept[0].upper() + concept[1:]}: stabil; "
+            f"0 {root_text} in der rechten Halbebene."
+        )
+    return (
+        f"{_not_stable_text(canonical)}; "
+        f"{total} {root_text} in der rechten Halbebene."
+    )
+
+
+def _not_stable_text(canonical: CanonicalCharacteristicPolynomial) -> str:
+    return {
+        AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC: (
+            "Nicht intern asymptotisch stabil"
+        ),
+        AnalysisTarget.EXTERNAL_BIBO: "Nicht E/A-asymptotisch (BIBO-)stabil",
+        AnalysisTarget.STATE_ASYMPTOTIC: "Nicht asymptotisch zustandsstabil",
+    }[canonical.input.analysis_target]
+
+
+def _conditions_text(conditions: tuple[AtomicParameterCondition, ...]) -> str:
+    return "; ".join(_relation_text(item) for item in conditions) or "keine"
+
+
+def _relation_text(condition: AtomicParameterCondition) -> str:
+    symbols = {
+        Relation.GT: ">",
+        Relation.GE: ">=",
+        Relation.LT: "<",
+        Relation.LE: "<=",
+        Relation.EQ: "=",
+        Relation.NE: "!=",
+    }
+    return f"{condition.expression.canonical_text} {symbols[condition.relation]} 0"
+
+
+def _sign_change_text(result: RouthDegreeCaseResult) -> str:
+    point = ", ".join(f"{name}={value}" for name, value in result.control_point)
+    signs = ", ".join(result.sign_sequence) or "nicht bestimmbar"
+    changes = str(result.sign_changes) if result.sign_changes is not None else "nicht bestimmbar"
+    return f"{point or 'parameterfrei'}: {signs}; Wechsel={changes}"
 
 
 def _role_text(canonical: CanonicalCharacteristicPolynomial) -> str:
@@ -489,12 +551,13 @@ def _rows_text(rows: tuple[RouthRow, ...]) -> str:
 def _latex(
     canonical: CanonicalCharacteristicPolynomial,
     results: tuple[RouthDegreeCaseResult, ...],
-    statement: str,
     notice: str,
 ) -> str:
     lines = [
         r"\textbf{Gegeben}\quad p(s)=" + canonical.expanded_polynomial.latex,
-        r"\textbf{Gesucht}\quad \text{" + _concept(canonical) + "}",
+        r"\textbf{Gesucht}\quad \text{"
+        + _escape_latex_text(_concept(canonical))
+        + "}",
         r"\textbf{Lösung}",
     ]
     for result in results:
@@ -536,9 +599,61 @@ def _latex(
                     + rf"\quad\Rightarrow\quad {result.sign_changes}\text{{ RHP-Pole}}"
                 )
     if notice:
-        lines.append(r"\textbf{Warnung: }\text{" + notice + "}")
-    lines.append(r"\boxed{\text{" + statement + "}}")
+        lines.append(
+            r"\textbf{Warnung: }\text{" + _escape_latex_text(notice) + "}"
+        )
+    lines.append(_latex_final_box(canonical, results))
     return "\n\n".join(r"\[" + line + r"\]" for line in lines)
+
+
+def _latex_final_box(
+    canonical: CanonicalCharacteristicPolynomial,
+    results: tuple[RouthDegreeCaseResult, ...],
+) -> str:
+    if canonical.input.decision_parameters:
+        regions = tuple(item.parameter_region.latex for item in results)
+        return r"\boxed{" + r"\lor".join(regions) + "}"
+    total = sum(item.rhp_roots_routh or 0 for item in results)
+    text = (
+        _stable_latex_text(canonical)
+        if total == 0
+        else _not_stable_latex_text(canonical)
+    )
+    return r"\boxed{\text{" + _escape_latex_text(text) + "}}"
+
+
+def _stable_latex_text(canonical: CanonicalCharacteristicPolynomial) -> str:
+    return {
+        AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC: "intern asymptotisch stabil",
+        AnalysisTarget.EXTERNAL_BIBO: "E/A-asymptotisch (BIBO-)stabil",
+        AnalysisTarget.STATE_ASYMPTOTIC: "asymptotisch zustandsstabil",
+    }[canonical.input.analysis_target]
+
+
+def _not_stable_latex_text(canonical: CanonicalCharacteristicPolynomial) -> str:
+    return {
+        AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC: (
+            "nicht intern asymptotisch stabil"
+        ),
+        AnalysisTarget.EXTERNAL_BIBO: "nicht E/A-asymptotisch (BIBO-)stabil",
+        AnalysisTarget.STATE_ASYMPTOTIC: "nicht asymptotisch zustandsstabil",
+    }[canonical.input.analysis_target]
+
+
+def _escape_latex_text(value: str) -> str:
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "{": r"\{",
+        "}": r"\}",
+        "$": r"\$",
+        "&": r"\&",
+        "#": r"\#",
+        "%": r"\%",
+        "_": r"\_",
+        "^": r"\textasciicircum{}",
+        "~": r"\textasciitilde{}",
+    }
+    return "".join(replacements.get(character, character) for character in value)
 
 
 __all__ = ["analyze_routh"]

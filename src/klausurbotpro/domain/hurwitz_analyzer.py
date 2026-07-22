@@ -77,7 +77,7 @@ def analyze_hurwitz(
         statement,
         notice,
         steps,
-        _latex(canonical, results, statement, notice),
+        _latex(canonical, results, notice) if trusted else "",
         tuple(item for result in results for item in result.diagnostics),
     )
 
@@ -414,14 +414,15 @@ def _numeric_text(check: NumericalPoleCheck | None) -> str:
 def _latex(
     canonical: CanonicalCharacteristicPolynomial,
     results: tuple[HurwitzDegreeCaseResult, ...],
-    statement: str,
     notice: str,
 ) -> str:
     lines = [
         r"\text{Charakteristisches Polynom:}\quad p(s)="
         + canonical.expanded_polynomial.latex
         + r".",
-        r"\text{Stabilitätsbegriff:}\quad \text{" + _concept(canonical) + r"}.",
+        r"\text{Stabilitätsbegriff:}\quad \text{"
+        + _escape_latex_text(_concept(canonical))
+        + r"}.",
     ]
     for result in results:
         matrix_latex = sp.latex(
@@ -439,13 +440,66 @@ def _latex(
         lines.append(r"\text{Parametergebiet:}\quad " + result.parameter_region.latex + r".")
         lines.append(
             r"\text{Numerische Kontrolle:}\quad \text{"
-            + _numeric_text(result.numerical_check).replace("_", r"\_")
+            + _escape_latex_text(_numeric_text(result.numerical_check))
             + r"}."
         )
     if notice:
-        lines.append(r"\textbf{Warnung: }\text{" + notice + r"}")
-    lines.append(r"\boxed{\text{" + statement + r"}}")
+        lines.append(
+            r"\textbf{Warnung: }\text{" + _escape_latex_text(notice) + r"}"
+        )
+    lines.append(_latex_final_box(canonical, results))
     return "\n\n".join(r"\[" + line + r"\]" for line in lines)
+
+
+def _latex_final_box(
+    canonical: CanonicalCharacteristicPolynomial,
+    results: tuple[HurwitzDegreeCaseResult, ...],
+) -> str:
+    if canonical.input.decision_parameters:
+        regions = tuple(item.parameter_region.latex for item in results)
+        return r"\boxed{" + r"\lor".join(regions) + "}"
+    stable = all(
+        item.parameter_region.status is SolveStatus.SOLVED_EXACT
+        and item.numerical_check is not None
+        and item.numerical_check.status is NumericalCheckStatus.CONSISTENT
+        for item in results
+    )
+    text = _stable_latex_text(canonical) if stable else _not_stable_latex_text(canonical)
+    return r"\boxed{\text{" + _escape_latex_text(text) + "}}"
+
+
+def _stable_latex_text(canonical: CanonicalCharacteristicPolynomial) -> str:
+    return {
+        AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC: "intern asymptotisch stabil",
+        AnalysisTarget.EXTERNAL_BIBO: "E/A-asymptotisch (BIBO-)stabil",
+        AnalysisTarget.STATE_ASYMPTOTIC: "asymptotisch zustandsstabil",
+    }[canonical.input.analysis_target]
+
+
+def _not_stable_latex_text(canonical: CanonicalCharacteristicPolynomial) -> str:
+    return {
+        AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC: (
+            "nicht intern asymptotisch stabil"
+        ),
+        AnalysisTarget.EXTERNAL_BIBO: "nicht E/A-asymptotisch (BIBO-)stabil",
+        AnalysisTarget.STATE_ASYMPTOTIC: "nicht asymptotisch zustandsstabil",
+    }[canonical.input.analysis_target]
+
+
+def _escape_latex_text(value: str) -> str:
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "{": r"\{",
+        "}": r"\}",
+        "$": r"\$",
+        "&": r"\&",
+        "#": r"\#",
+        "%": r"\%",
+        "_": r"\_",
+        "^": r"\textasciicircum{}",
+        "~": r"\textasciitilde{}",
+    }
+    return "".join(replacements.get(character, character) for character in value)
 
 
 __all__ = ["analyze_hurwitz"]

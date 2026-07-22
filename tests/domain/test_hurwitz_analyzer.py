@@ -1,5 +1,7 @@
 """Focused official and contract reference tests for Hurwitz."""
 
+import re
+
 import sympy as sp
 
 from klausurbotpro.application.stability_workflow import (
@@ -37,6 +39,10 @@ def test_exercise_09_has_strict_open_interval() -> None:
     )
     assert analysis.combined_region == "(0 < K_P) & (K_P < 20)"
     assert "K_P < 20" in analysis.case_results[0].parameter_region.exact_text
+    assert r"\boxed{0 < K_{P} \wedge K_{P} < 20}" in analysis.latex_source
+    final_box = analysis.latex_source.rsplit(r"\boxed", maxsplit=1)[-1]
+    assert " & " not in final_box
+    assert re.search(r"\\text\{[^}]*K_P", final_box) is None
 
 
 def test_even_power_coefficient_keeps_zero_excluded() -> None:

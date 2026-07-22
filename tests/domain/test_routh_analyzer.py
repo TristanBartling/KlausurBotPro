@@ -1,5 +1,7 @@
 """Focused Routh MVP reference and integration tests."""
 
+import re
+
 import sympy as sp
 
 from klausurbotpro.application.stability_workflow import (
@@ -55,16 +57,26 @@ def test_r1_exact_table_open_region_and_cell_derivation() -> None:
     assert analysis.combined_region == "(0 < K_P) & (K_P < 20)"
     assert "4*5" in analysis.case_results[0].rows[2].cells[0].derivation
     assert "K_P" in analysis.case_results[0].rows[2].cells[0].derivation
+    assert r"\boxed{0 < K_{P} \wedge K_{P} < 20}" in analysis.latex_source
+    final_box = analysis.latex_source.rsplit(r"\boxed", maxsplit=1)[-1]
+    assert " & " not in final_box
+    assert re.search(r"\\text\{[^}]*K_P", final_box) is None
 
 
 def test_r2_r3_sign_changes_and_numeric_cross_check() -> None:
-    stable = _routh("s^3+4*s^2+5*s+2").case_results[0]
-    unstable = _routh("s^3+2*s^2-s+2").case_results[0]
+    stable_analysis = _routh("s^3+4*s^2+5*s+2")
+    unstable_analysis = _routh("s^3+2*s^2-s+2")
+    stable = stable_analysis.case_results[0]
+    unstable = unstable_analysis.case_results[0]
     assert stable.first_column == tuple(row.first_column for row in stable.rows)
     assert stable.sign_sequence == ("+", "+", "+", "+")
     assert stable.sign_changes == stable.numerical_rhp_roots == 0
     assert unstable.sign_sequence == ("+", "+", "-", "+")
     assert unstable.sign_changes == unstable.numerical_rhp_roots == 2
+    assert "stabil; 0 Nullstellen in der rechten Halbebene" in stable_analysis.statement
+    assert "Nicht intern asymptotisch stabil" in unstable_analysis.statement
+    assert "2 Nullstellen in der rechten Halbebene" in unstable_analysis.statement
+    assert "genau für ∅" not in unstable_analysis.statement
 
 
 def test_degree_two_four_and_missing_power_rows() -> None:
@@ -83,12 +95,29 @@ def test_degree_two_four_and_missing_power_rows() -> None:
 
 
 def test_safe_special_case_detection() -> None:
-    zero_first = _routh("s^3+2*s+1").case_results[0]
-    zero_row = _routh("s^3+2*s^2+s+2").case_results[0]
+    zero_first_analysis = _routh("s^3+2*s+1")
+    zero_row_analysis = _routh("s^3+2*s^2+s+2")
+    zero_first = zero_first_analysis.case_results[0]
+    zero_row = zero_row_analysis.case_results[0]
     assert zero_first.special_case is RouthSpecialCase.ZERO_FIRST_COLUMN
     assert "ε-Verfahren" in zero_first.statement
     assert zero_row.special_case is RouthSpecialCase.COMPLETE_ZERO_ROW
     assert "Hilfspolynomverfahren" in zero_row.statement
+    assert zero_first_analysis.latex_source == ""
+    assert zero_row_analysis.latex_source == ""
+
+
+def test_worked_steps_show_parameters_assumptions_and_exclusions_readably() -> None:
+    analysis = _routh(
+        "s^3+4*s^2+5*s+K_P",
+        "K_P",
+        assumptions_text="K_P>0",
+    )
+
+    assert analysis.worked_steps[2] == (
+        "3. Entscheidungsparameter und Annahmen",
+        "Parameter: K_P; Annahmen: K_P > 0; Ausschlüsse: keine",
+    )
 
 
 def test_degree_cases_and_reduced_denominator_semantics_are_reused() -> None:
