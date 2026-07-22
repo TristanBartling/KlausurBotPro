@@ -1,5 +1,11 @@
 """Public PySide6 desktop UI facade."""
 
+from klausurbotpro.ui.controller_design_presenter import ControllerDesignPresenter
+from klausurbotpro.ui.controller_design_view_state import (
+    ControllerDesignUiRunStatus,
+    ControllerDesignViewState,
+)
+from klausurbotpro.ui.controller_design_workspace import ControllerDesignWorkspace
 from klausurbotpro.ui.frequency_domain_presenter import (
     FrequencyDomainPresenter,
 )
@@ -30,6 +36,7 @@ from klausurbotpro.ui.transfer_function_workspace import (
     TransferFunctionWorkspace,
 )
 from klausurbotpro.ui.workflow_worker import (
+    ControllerDesignWorkflowWorker,
     FrequencyDomainWorkflowWorker,
     TransferFunctionWorkflowExecutionResult,
     TransferFunctionWorkflowWorker,
@@ -37,6 +44,11 @@ from klausurbotpro.ui.workflow_worker import (
 )
 
 __all__ = [
+    "ControllerDesignPresenter",
+    "ControllerDesignUiRunStatus",
+    "ControllerDesignViewState",
+    "ControllerDesignWorkflowWorker",
+    "ControllerDesignWorkspace",
     "FrequencyDomainDiagnosticView",
     "FrequencyDomainPresenter",
     "FrequencyDomainSinglePointView",

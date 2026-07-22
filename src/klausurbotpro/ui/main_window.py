@@ -13,6 +13,12 @@ from klausurbotpro.application import (
     TransferFunctionRequestFactory,
     TransferFunctionWorkflowLimits,
 )
+from klausurbotpro.ui.controller_design_presenter import ControllerDesignPresenter
+from klausurbotpro.ui.controller_design_view_state import (
+    ControllerDesignUiRunStatus,
+    ControllerDesignViewState,
+)
+from klausurbotpro.ui.controller_design_workspace import ControllerDesignWorkspace
 from klausurbotpro.ui.frequency_domain_presenter import (
     FrequencyDomainPresenter,
 )
@@ -40,6 +46,7 @@ from klausurbotpro.ui.transfer_function_workspace import (
     TransferFunctionWorkspace,
 )
 from klausurbotpro.ui.workflow_worker import (
+    ControllerDesignWorkflowWorker,
     FrequencyDomainWorkflowWorker,
     TransferFunctionWorkflowWorker,
 )
@@ -71,22 +78,22 @@ class MainWindow(QMainWindow):
         self.resize(1200, 780)
         self.setMinimumSize(760, 560)
 
-        self.presenter = TransferFunctionPresenter(
-            TransferFunctionRequestFactory(workflow_limits)
-        )
+        self.presenter = TransferFunctionPresenter(TransferFunctionRequestFactory(workflow_limits))
         self.workspace = TransferFunctionWorkspace(self.presenter)
         self.frequency_presenter = FrequencyDomainPresenter(
             FrequencyDomainRequestFactory(frequency_limits)
         )
-        self.frequency_workspace = FrequencyDomainWorkspace(
-            self.frequency_presenter
-        )
+        self.frequency_workspace = FrequencyDomainWorkspace(self.frequency_presenter)
         self.stability_presenter = StabilityPresenter()
         self.stability_workspace = StabilityWorkspace(self.stability_presenter)
         self.time_domain_presenter = TimeDomainPresenter()
         self.time_domain_workspace = TimeDomainWorkspace(self.time_domain_presenter)
         self.state_space_presenter = StateSpacePresenter()
         self.state_space_workspace = StateSpaceWorkspace(self.state_space_presenter)
+        self.controller_design_presenter = ControllerDesignPresenter()
+        self.controller_design_workspace = ControllerDesignWorkspace(
+            self.controller_design_presenter
+        )
         self.workspace_tabs = QTabWidget()
         self.workspace_tabs.setObjectName("mainWorkspaceTabs")
         self.workspace_tabs.addTab(self.workspace, "Transferfunktion")
@@ -97,6 +104,7 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.addTab(self.stability_workspace, "Stabilität")
         self.workspace_tabs.addTab(self.time_domain_workspace, "Zeitbereich")
         self.workspace_tabs.addTab(self.state_space_workspace, "Zustandsraum")
+        self.workspace_tabs.addTab(self.controller_design_workspace, "Reglerauslegung")
         self.setCentralWidget(self.workspace_tabs)
 
         self.worker_thread = QThread(self)
@@ -108,22 +116,29 @@ class MainWindow(QMainWindow):
         self.worker.moveToThread(self.worker_thread)
         self.frequency_worker = FrequencyDomainWorkflowWorker(frequency_limits)
         self.frequency_worker.moveToThread(self.worker_thread)
+        self.controller_design_worker = ControllerDesignWorkflowWorker(frequency_limits)
+        self.controller_design_worker.moveToThread(self.worker_thread)
         self.worker_thread.finished.connect(self.worker.deleteLater)
         self.worker_thread.finished.connect(self.frequency_worker.deleteLater)
+        self.worker_thread.finished.connect(self.controller_design_worker.deleteLater)
         self.presenter.execution_requested.connect(self.worker.execute)
-        self.frequency_presenter.execution_requested.connect(
-            self.frequency_worker.execute
+        self.frequency_presenter.execution_requested.connect(self.frequency_worker.execute)
+        self.controller_design_presenter.execution_requested.connect(
+            self.controller_design_worker.execute
         )
         self.worker.completed.connect(self.presenter.accept_result)
         self.worker.failed.connect(self.presenter.accept_failure)
-        self.frequency_worker.completed.connect(
-            self.frequency_presenter.accept_result
+        self.frequency_worker.completed.connect(self.frequency_presenter.accept_result)
+        self.frequency_worker.failed.connect(self.frequency_presenter.accept_failure)
+        self.controller_design_worker.completed.connect(
+            self.controller_design_presenter.accept_result
         )
-        self.frequency_worker.failed.connect(
-            self.frequency_presenter.accept_failure
+        self.controller_design_worker.failed.connect(
+            self.controller_design_presenter.accept_failure
         )
         self.presenter.state_changed.connect(self._state_changed)
         self.frequency_presenter.state_changed.connect(self._state_changed)
+        self.controller_design_presenter.state_changed.connect(self._state_changed)
         self.worker_thread.start()
         self._close_pending = False
         self._shutdown_complete = False
@@ -135,19 +150,16 @@ class MainWindow(QMainWindow):
             return True
         if self._is_running():
             self._close_pending = True
-            message = (
-                "Schließen wird nach Abschluss der laufenden Berechnung fortgesetzt."
-            )
-            if (
-                self.presenter.state.run_status
-                is TransferFunctionUiRunStatus.RUNNING
-            ):
+            message = "Schließen wird nach Abschluss der laufenden Berechnung fortgesetzt."
+            if self.presenter.state.run_status is TransferFunctionUiRunStatus.RUNNING:
                 self.presenter.set_general_message(message)
-            if (
-                self.frequency_presenter.state.run_status
-                is FrequencyDomainUiRunStatus.RUNNING
-            ):
+            if self.frequency_presenter.state.run_status is FrequencyDomainUiRunStatus.RUNNING:
                 self.frequency_presenter.set_general_message(message)
+            if (
+                self.controller_design_presenter.state.run_status
+                is ControllerDesignUiRunStatus.RUNNING
+            ):
+                self.controller_design_presenter.set_general_message(message)
             return False
         self.worker_thread.quit()
         stopped = self.worker_thread.wait(10_000)
@@ -168,6 +180,7 @@ class MainWindow(QMainWindow):
         if type(value) not in (
             TransferFunctionViewState,
             FrequencyDomainViewState,
+            ControllerDesignViewState,
         ):
             return
         if self._close_pending and not self._is_running():
@@ -176,10 +189,10 @@ class MainWindow(QMainWindow):
 
     def _is_running(self) -> bool:
         return (
-            self.presenter.state.run_status
-            is TransferFunctionUiRunStatus.RUNNING
-            or self.frequency_presenter.state.run_status
-            is FrequencyDomainUiRunStatus.RUNNING
+            self.presenter.state.run_status is TransferFunctionUiRunStatus.RUNNING
+            or self.frequency_presenter.state.run_status is FrequencyDomainUiRunStatus.RUNNING
+            or self.controller_design_presenter.state.run_status
+            is ControllerDesignUiRunStatus.RUNNING
         )
 
 

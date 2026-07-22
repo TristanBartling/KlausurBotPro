@@ -1,5 +1,18 @@
 """Public application-service facade."""
 
+from klausurbotpro.application.controller_design_workflow import (
+    ControllerDesignCandidate,
+    ControllerDesignCandidateStatus,
+    ControllerDesignInputDraft,
+    ControllerDesignMethod,
+    ControllerDesignOutcomeDecision,
+    ControllerDesignResult,
+    ControllerDesignWorkflowService,
+    ControllerType,
+    controller_design_candidate_status_text,
+    controller_design_method_text,
+    decide_p_phase_margin_outcome,
+)
 from klausurbotpro.application.frequency_domain_request_factory import (
     FrequencyDomainInputDraft,
     FrequencyDomainRequestCreationResult,
@@ -123,6 +136,17 @@ from klausurbotpro.domain.state_space_contracts import (
 from klausurbotpro.domain.time_domain_contracts import InputSignalType, TimeDomainTaskType
 
 __all__ = [
+    "ControllerDesignCandidate",
+    "ControllerDesignCandidateStatus",
+    "ControllerDesignInputDraft",
+    "ControllerDesignMethod",
+    "ControllerDesignOutcomeDecision",
+    "ControllerDesignResult",
+    "ControllerType",
+    "ControllerDesignWorkflowService",
+    "controller_design_candidate_status_text",
+    "controller_design_method_text",
+    "decide_p_phase_margin_outcome",
     "ExactMatrix",
     "ConditionLine",
     "EquationLine",

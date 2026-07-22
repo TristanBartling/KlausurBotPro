@@ -31,6 +31,22 @@ from klausurbotpro.domain.bode_phase_unwrap_contracts import (
     BodeUnwrappedPhasePoint,
     BodeUnwrappedPhaseSegment,
 )
+from klausurbotpro.domain.controller_design_analyzer import (
+    design_cohen_coon,
+    design_ziegler_nichols_closed,
+    design_ziegler_nichols_open,
+)
+from klausurbotpro.domain.controller_design_contracts import (
+    ControllerDesignCandidateStatus,
+    ControllerDesignControl,
+    ControllerDesignDiagnostic,
+    ControllerDesignMethod,
+    ControllerDesignStatus,
+    ControllerParameters,
+    ControllerScalar,
+    ControllerType,
+    ControllerValueProvenance,
+)
 from klausurbotpro.domain.diagnostics import (
     Diagnostic,
     DiagnosticCode,
@@ -50,6 +66,7 @@ from klausurbotpro.domain.frequency_reserve_contracts import (
     StabilityReserve,
     StabilityReserveAnalysis,
     StabilityReserveType,
+    UnwrappedPhaseTargetRoot,
 )
 from klausurbotpro.domain.frequency_response_contracts import (
     DecibelValueKind,
@@ -244,6 +261,15 @@ from klausurbotpro.domain.transfer_function_stability_analyzer import (
 )
 
 __all__ = [
+    "ControllerDesignCandidateStatus",
+    "ControllerDesignControl",
+    "ControllerDesignDiagnostic",
+    "ControllerDesignMethod",
+    "ControllerDesignStatus",
+    "ControllerParameters",
+    "ControllerScalar",
+    "ControllerType",
+    "ControllerValueProvenance",
     "BandCompletenessStatus",
     "BodeAxisMetadata",
     "ComputationStatus",
@@ -405,6 +431,10 @@ __all__ = [
     "verify_ode_solution",
     "TransferFunctionBodeDataAnalyzer",
     "TransferFunctionBodeDataResult",
+    "UnwrappedPhaseTargetRoot",
+    "design_cohen_coon",
+    "design_ziegler_nichols_closed",
+    "design_ziegler_nichols_open",
     "TransferFunctionFrequencyResponseAnalyzer",
     "TransferFunctionFrequencyResponseResult",
     "TransferFunctionFrequencyResponseStatus",
