@@ -38,8 +38,24 @@ def test_exercise_09_has_strict_open_interval() -> None:
         )
     )
     assert analysis.combined_region == "(0 < K_P) & (K_P < 20)"
-    assert "K_P < 20" in analysis.case_results[0].parameter_region.exact_text
+    case = analysis.case_results[0]
+    assert "K_P < 20" in case.parameter_region.exact_text
+    assert [[item.canonical_text for item in row] for row in case.matrix] == [
+        ["5", "1", "0"],
+        ["K_P", "4", "0"],
+        ["0", "5", "1"],
+    ]
+    assert [item.expression.canonical_text for item in case.solver_conditions] == [
+        "1",
+        "1",
+        "K_P",
+        "-K_P + 20",
+    ]
     assert r"\boxed{0 < K_{P} \wedge K_{P} < 20}" in analysis.latex_source
+    assert r"\text{Numerische Kontrolle:}\quad \text{konsistent; Pole:" in (
+        analysis.latex_source
+    )
+    assert "consistent" not in analysis.latex_source
     final_box = analysis.latex_source.rsplit(r"\boxed", maxsplit=1)[-1]
     assert " & " not in final_box
     assert re.search(r"\\text\{[^}]*K_P", final_box) is None

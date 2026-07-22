@@ -42,6 +42,7 @@ from klausurbotpro.application import (
     WarningLine,
     WorkflowInputForm,
     WorkflowStage,
+    prepend_latex_task_heading,
 )
 from klausurbotpro.ui.transfer_function_presenter import (
     TransferFunctionPresenter,
@@ -107,6 +108,7 @@ class TransferFunctionWorkspace(QWidget):
         if type(presenter) is not TransferFunctionPresenter:
             raise TypeError("presenter has an invalid type.")
         self.presenter = presenter
+        self._latex_task_title = ""
         self.setObjectName("transferFunctionWorkspace")
         self._configure_base_font()
         self._build_ui()
@@ -149,6 +151,11 @@ class TransferFunctionWorkspace(QWidget):
         self.input_stack.addWidget(separated_page)
         self.variable_edit = QLineEdit("s")
         self.variable_edit.setObjectName("mainVariable")
+        self.task_title_edit = QLineEdit()
+        self.task_title_edit.setObjectName("transferFunctionTaskTitle")
+        self.task_title_edit.setPlaceholderText(
+            "z. B. Aufgabe 1a – Regelungsnormalform"
+        )
 
         self.parameter_table = QTableWidget(0, 3)
         self.parameter_table.setObjectName("parameterTable")
@@ -187,6 +194,9 @@ class TransferFunctionWorkspace(QWidget):
         input_layout.addLayout(form_switch)
         input_layout.addWidget(self.input_stack)
         variable_layout = QFormLayout()
+        variable_layout.addRow(
+            "Aufgabenname / LaTeX-Überschrift:", self.task_title_edit
+        )
         variable_layout.addRow("Hauptvariable:", self.variable_edit)
         input_layout.addLayout(variable_layout)
         input_layout.addWidget(QLabel("Parameter und exakte Belegungen:"))
@@ -407,6 +417,7 @@ class TransferFunctionWorkspace(QWidget):
 
     @Slot()
     def calculate(self) -> None:
+        self._latex_task_title = self.task_title_edit.text()
         self.presenter.submit(self.input_draft())
 
     @Slot()
@@ -419,6 +430,8 @@ class TransferFunctionWorkspace(QWidget):
         self.denominator_edit.clear()
         self.variable_edit.setText("s")
         self.parameter_table.setRowCount(0)
+        self.task_title_edit.clear()
+        self._latex_task_title = ""
 
     @Slot(int)
     def _report_tab_changed(self, index: int) -> None:
@@ -430,7 +443,11 @@ class TransferFunctionWorkspace(QWidget):
 
     @Slot()
     def copy_active_report(self) -> None:
-        text = self.presenter.active_report_text()
+        text = (
+            self.plaintext_report_edit.toPlainText()
+            if self.report_tabs.currentIndex() == 0
+            else self.latex_report_edit.toPlainText()
+        )
         if not text:
             return
         clipboard = QApplication.clipboard()
@@ -462,7 +479,9 @@ class TransferFunctionWorkspace(QWidget):
         )
         self.status_label.setText(value.general_message)
         self.plaintext_report_edit.setPlainText(value.plaintext_report)
-        self.latex_report_edit.setPlainText(value.latex_report)
+        self.latex_report_edit.setPlainText(
+            prepend_latex_task_heading(value.latex_report, self._latex_task_title)
+        )
         expected_index = (
             0
             if value.active_report_view is TransferFunctionReportView.PLAINTEXT

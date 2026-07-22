@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from klausurbotpro.application import prepend_latex_task_heading
 from klausurbotpro.application.stability_workflow import (
     AnalysisTarget,
     PolynomialRole,
@@ -32,6 +33,7 @@ class StabilityWorkspace(QWidget):
     def __init__(self, presenter: StabilityPresenter, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.presenter = presenter
+        self._latex_task_title = ""
         self.setObjectName("stabilityWorkspace")
         self._build_ui()
         self.presenter.state_changed.connect(self.render_state)
@@ -76,6 +78,9 @@ class StabilityWorkspace(QWidget):
         self.provenance_edit.setObjectName("stabilityProvenance")
         self.cancellation_edit = QLineEdit()
         self.cancellation_edit.setObjectName("stabilityCancellationNote")
+        self.task_title_edit = QLineEdit()
+        self.task_title_edit.setObjectName("stabilityTaskTitle")
+        self.task_title_edit.setPlaceholderText("z. B. Aufgabe 1a – Regelungsnormalform")
         self.analyze_button = QPushButton("Hurwitz analysieren")
         self.analyze_button.setObjectName("analyzeHurwitz")
         self.reset_button = QPushButton("Zurücksetzen")
@@ -88,6 +93,7 @@ class StabilityWorkspace(QWidget):
         form_widget = QWidget()
         form = QFormLayout(form_widget)
         form.addRow("Verfahren:", self.method_combo)
+        form.addRow("Aufgabenname / LaTeX-Überschrift:", self.task_title_edit)
         form.addRow("Polynom:", self.polynomial_edit)
         form.addRow("Variable:", self.variable_edit)
         form.addRow("Entscheidungsparameter:", self.parameters_edit)
@@ -132,6 +138,7 @@ class StabilityWorkspace(QWidget):
 
     @Slot()
     def analyze(self) -> None:
+        self._latex_task_title = self.task_title_edit.text()
         try:
             method = StabilityMethod(_combo_value(self.method_combo))
             role = PolynomialRole(_combo_value(self.role_combo))
@@ -141,6 +148,8 @@ class StabilityWorkspace(QWidget):
             self.result_edits["diagnostics"].setPlainText(
                 "Polynomrolle oder Analyseziel fehlt oder ist ungültig."
             )
+            self.result_edits["latex"].clear()
+            self.copy_latex_button.setEnabled(False)
             return
         self.presenter.analyze(
             StabilityInputDraft(
@@ -164,6 +173,8 @@ class StabilityWorkspace(QWidget):
         self.provenance_edit.clear()
         self.cancellation_edit.clear()
         self.method_combo.setCurrentIndex(0)
+        self.task_title_edit.clear()
+        self._latex_task_title = ""
         self.presenter.reset()
 
     @Slot()
@@ -183,9 +194,10 @@ class StabilityWorkspace(QWidget):
         self.result_edits["region"].setPlainText(state.parameter_region)
         self.result_edits["short"].setPlainText(state.short_solution)
         self.result_edits["steps"].setPlainText(state.worked_steps)
-        self.result_edits["latex"].setPlainText(state.latex_source)
+        latex_source = prepend_latex_task_heading(state.latex_source, self._latex_task_title)
+        self.result_edits["latex"].setPlainText(latex_source)
         self.result_edits["diagnostics"].setPlainText(state.diagnostics)
-        self.copy_latex_button.setEnabled(bool(state.latex_source))
+        self.copy_latex_button.setEnabled(bool(latex_source))
         self._set_method_tabs(state.method)
 
     @Slot()

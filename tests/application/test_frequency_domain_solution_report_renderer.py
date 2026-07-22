@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 from klausurbotpro.application import (
     FrequencyDomainInputDraft,
     FrequencyDomainRequestFactory,
@@ -158,6 +160,38 @@ def test_bode_report_contains_every_numeric_row_without_table_asymptote() -> Non
     assert len(table_rows) == len(result.bode_data_result.points) + 1
     assert "asymptot" not in table.lower()
     assert re.search(r"\d+\.\d{12,}", latex) is None
+
+
+def test_manual_frequency_reference_hides_internal_statuses_and_deduplicates_nyquist() -> None:
+    result, limits = _result(
+        "100/(s*(10*s+1))",
+        FrequencyDomainWorkflowMode.BODE,
+    )
+    assert result.crossover_analysis is not None
+    assert result.reserve_analysis is not None
+    assert result.nyquist_analysis is not None
+
+    latex = render_frequency_domain_solution_latex(result, limits)
+
+    assert len(result.crossover_analysis.gain_crossovers) == 1
+    assert result.crossover_analysis.gain_crossovers[0].frequency == pytest.approx(
+        3.1614871895993377
+    )
+    assert result.reserve_analysis.phase_margins[0].value == pytest.approx(
+        1.8117006141630725
+    )
+    assert result.nyquist_analysis.stability.rhp_open_poles == 0
+    assert "Bandstatus: vollständig im nachgewiesenen Frequenzbereich" in latex
+    assert latex.count("Voraussetzungen des Standard-Nyquist-Kriteriums") == 1
+    assert latex.count("Das Kriterium ist für diesen Fall nicht direkt anwendbar") == 1
+    for internal in (
+        "complete_in_proven_range",
+        "complete\\_in\\_proven\\_range",
+        "notapplicable",
+        "not_applicable",
+        "NyquistCriterion",
+    ):
+        assert internal not in latex
 
 
 def test_unsupported_standard_elements_keep_readable_latex_reason() -> None:
