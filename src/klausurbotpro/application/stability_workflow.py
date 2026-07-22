@@ -35,6 +35,13 @@ from klausurbotpro.domain.parameter_core_contracts import (
 )
 from klausurbotpro.domain.routh_analyzer import analyze_routh
 from klausurbotpro.domain.routh_contracts import RouthAnalysisResult
+from klausurbotpro.domain.stability_presentation import (
+    display_math,
+    format_parameter_region_plain,
+    latex_additive_equation,
+    latex_transfer_function,
+    paragraph,
+)
 from klausurbotpro.domain.transfer_function_reduction_contracts import (
     TransferFunctionReductionStepKind,
 )
@@ -255,6 +262,15 @@ def format_stability_expression(value: object) -> str:
     return value.canonical_text
 
 
+def format_stability_region(value: object, parameters: tuple[str, ...]) -> str:
+    """Project one exact region into the normal user-facing representation."""
+    from klausurbotpro.domain.parameter_core_contracts import ParameterRegion
+
+    if type(value) is not ParameterRegion:
+        raise TypeError("value must be ParameterRegion.")
+    return format_parameter_region_plain(value, parameters)
+
+
 def _cancellation_note(
     factors: tuple[ExactExpression, ...], was_reduced: bool
 ) -> str:
@@ -320,30 +336,37 @@ def _transfer_latex(
     reduced_num = reduced.numerator.expression
     reduced_den = reduced.denominator.expression
     factored_num = ExactExpression._from_sympy(sp.factor(raw_num._as_sympy()))
-    factor_latex = r",\;".join(item.latex for item in factors) or r"\text{keine}"
+    factor_latex = r",\;".join(item.latex for item in factors) or r"\mathrm{keine}"
     target = (
-        r"\text{E/A-asymptotische Stabilität; reduzierter Nenner}"
+        "E/A-asymptotische Stabilität; analysiert wird der reduzierte Nenner."
         if external
-        else r"\text{interne asymptotische Stabilität; roher Nenner}"
-    )
-    warning = (
-        r"\[\textbf{Warnung: }\text{Gekürzte Faktoren bleiben für die interne Dynamik relevant.}\]"
-        if factors
-        else ""
+        else "Interne asymptotische Stabilität; analysiert wird der rohe Nenner."
     )
     blocks = (
-        r"\[\textbf{Gegeben}\quad G_w(s)=\frac{" + raw_num.latex + "}{" + raw_den.latex + r"}\]",
-        r"\[\text{Zählerfaktorisierung:}\quad " + factored_num.latex + r"\]",
-        r"\[\text{Roher Nenner:}\quad " + raw_den.latex + r"\]",
-        r"\[\text{Entfernte gemeinsame Faktoren:}\quad " + factor_latex + r"\]",
-        r"\[\text{Reduzierte Führungsübertragungsfunktion:}\quad G_{w,\mathrm{red}}(s)=\frac{"
-        + reduced_num.latex + "}{" + reduced_den.latex + r"}\]",
-        r"\[\textbf{Gesucht}\quad " + target + r"\]",
-        r"\[\text{Ausgewähltes charakteristisches Polynom:}\quad p(s)="
-        + selected.latex + r"\]",
-        warning,
+        paragraph("Gegeben", "Führungsübertragungsfunktion:"),
+        latex_transfer_function(
+            raw_num,
+            raw_den,
+            symbol="G_w(s)",
+            variable=raw.variable_name,
+        ),
+        paragraph("Zählerfaktorisierung", "Exakte algebraische Form:"),
+        latex_additive_equation("N(s)", factored_num),
+        paragraph("Kürzung", "Entfernte gemeinsame Faktoren:"),
+        display_math(factor_latex),
+        paragraph("Reduzierte Führungsübertragungsfunktion", "Nach der Kürzung:"),
+        latex_transfer_function(
+            reduced_num,
+            reduced_den,
+            symbol=r"G_{w,\mathrm{red}}(s)",
+            component_subscript="red",
+            variable=raw.variable_name,
+        ),
+        paragraph("Gesucht", target),
+        paragraph("Analyseobjekt", "Ausgewähltes charakteristisches Polynom:"),
+        latex_additive_equation("p(s)", selected, variable=raw.variable_name),
     )
-    return "\n\n".join((*filter(None, blocks), analysis.latex_source))
+    return "\n\n".join((*blocks, analysis.latex_source))
 
 
 def _parse_assumptions(
@@ -393,5 +416,6 @@ __all__ = [
     "StabilityInputDraft",
     "StabilityWorkflowResult",
     "format_stability_expression",
+    "format_stability_region",
     "run_stability_workflow",
 ]

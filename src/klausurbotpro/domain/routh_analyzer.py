@@ -11,6 +11,7 @@ from klausurbotpro.domain.parameter_core import solve_parameter_conditions
 from klausurbotpro.domain.parameter_core_contracts import (
     AnalysisTarget,
     AtomicParameterCondition,
+    CancellationStatus,
     CanonicalCharacteristicPolynomial,
     ConditionOrigin,
     DegreeCaseKind,
@@ -29,8 +30,17 @@ from klausurbotpro.domain.routh_contracts import (
     RouthRowType,
     RouthSpecialCase,
 )
-from klausurbotpro.domain.stability_contracts import NumericalCheckStatus
+from klausurbotpro.domain.stability_contracts import NumericalCheckStatus, NumericalPoleCheck
 from klausurbotpro.domain.stability_numeric import check_numeric_poles
+from klausurbotpro.domain.stability_presentation import (
+    display_math,
+    format_parameter_region_plain,
+    latex_additive_equation,
+    latex_conditions,
+    latex_numerical_check,
+    latex_parameter_region,
+    paragraph,
+)
 
 
 def _exact(value: sp.Expr) -> ExactExpression:
@@ -63,10 +73,15 @@ def analyze_routh(canonical: CanonicalCharacteristicPolynomial) -> RouthAnalysis
     combined = _combined_region(results, canonical.input.decision_parameters)
     statement = _overall_statement(canonical, results, combined, trusted)
     notice = ""
-    if canonical.input.role is PolynomialRole.REDUCED_TRANSFER_DENOMINATOR:
+    if (
+        canonical.input.role is PolynomialRole.REDUCED_TRANSFER_DENOMINATOR
+        and canonical.input.cancellation_report is not None
+        and canonical.input.cancellation_report.status
+        is CancellationStatus.FACTORS_REMOVED
+    ):
         notice = (
-            "Kürzungshinweis: Der reduzierte E/A-Nenner beweist keine interne "
-            "Stabilität; entfernte instabile Dynamik kann verdeckt sein."
+            "Der reduzierte E/A-Nenner beweist keine interne Stabilität. "
+            "Entfernte instabile Dynamik kann verdeckt sein."
         )
     latex_source = _latex(canonical, results, notice) if trusted else ""
     return RouthAnalysisResult(
@@ -163,7 +178,10 @@ def _analyze_case(
     if region.status is SolveStatus.EMPTY:
         statement = f"Grad {case.degree}: keine zulässige Einstellung für {_concept(canonical)}."
     elif region.status is SolveStatus.SOLVED_EXACT:
-        statement = f"Grad {case.degree}: {_concept(canonical)} genau für {region.exact_text}."
+        statement = (
+            f"Grad {case.degree}: {_concept(canonical)} genau für "
+            f"{format_parameter_region_plain(region, parameters)}."
+        )
     else:
         statement = f"Grad {case.degree}: Stabilitätsbereich nicht vollständig entscheidbar."
     return RouthDegreeCaseResult(
@@ -419,16 +437,19 @@ def _worked_steps(
                     "10. Übergabe an den Parameterkern",
                     "Gradfall, Annahmen, Ausschlüsse und Routh-Bedingungen",
                 ),
-                ("11. Exakter Parameterbereich", result.parameter_region.exact_text),
+                (
+                    "11. Exakter Parameterbereich",
+                    format_parameter_region_plain(
+                        result.parameter_region, canonical.input.decision_parameters
+                    ),
+                ),
                 (
                     "12. Vorzeichenwechsel / Kontrollpunkt",
                     _sign_change_text(result),
                 ),
                 (
                     "13. Numerische Polkontrolle",
-                    ", ".join(result.numerical_check.poles)
-                    if result.numerical_check
-                    else "nicht verfügbar",
+                    _numeric_text(result.numerical_check),
                 ),
             )
         )
@@ -458,9 +479,15 @@ def _overall_statement(
             "Kein vertrauenswürdiges Endergebnis wegen einer schweren Diagnose."
         )
     if canonical.input.decision_parameters:
+        solved = tuple(
+            item.parameter_region
+            for item in results
+            if item.parameter_region.status is SolveStatus.SOLVED_EXACT
+        )
         return (
-            f"{_concept(canonical)} genau für {combined_region}."
-            if combined_region
+            f"{_concept(canonical)} genau für "
+            f"{format_parameter_region_plain(solved[0], canonical.input.decision_parameters)}."
+            if combined_region and len(solved) == 1
             else " ".join(item.statement for item in results)
         )
     rhp_counts = tuple(item.rhp_roots_routh for item in results)
@@ -513,6 +540,19 @@ def _sign_change_text(result: RouthDegreeCaseResult) -> str:
     return f"{point or 'parameterfrei'}: {signs}; Wechsel={changes}"
 
 
+def _numeric_text(check: NumericalPoleCheck | None) -> str:
+    if check is None:
+        return "nicht verfügbar"
+    point = ", ".join(f"{name}={value}" for name, value in check.parameter_point)
+    prefix = f"Kontrollpunkt {point}; " if point else ""
+    status = {
+        NumericalCheckStatus.CONSISTENT: "konsistent",
+        NumericalCheckStatus.INCONSISTENT: "widersprüchlich",
+        NumericalCheckStatus.NUMERICALLY_INCONCLUSIVE: "numerisch nicht entscheidbar",
+    }[check.status]
+    return f"{prefix}{status}; Pole: {', '.join(check.poles)}"
+
+
 def _role_text(canonical: CanonicalCharacteristicPolynomial) -> str:
     labels = {
         PolynomialRole.DIRECT_CHARACTERISTIC_POLYNOMIAL: "direktes charakteristisches Polynom",
@@ -558,59 +598,83 @@ def _latex(
     results: tuple[RouthDegreeCaseResult, ...],
     notice: str,
 ) -> str:
-    lines = [
-        r"\textbf{Gegeben}\quad p(s)=" + canonical.expanded_polynomial.latex,
-        r"\textbf{Gesucht}\quad \text{"
-        + _escape_latex_text(_concept(canonical))
-        + "}",
-        r"\textbf{Lösung}",
-        r"\text{Hurwitz-Skriptkonvention bei Gegenkontrolle: erste Zeile }"
-        r"a_1,a_3,a_5,\ldots",
+    blocks = [
+        paragraph("Gegeben", "Charakteristisches Polynom:"),
+        latex_additive_equation(
+            f"p({canonical.input.variable})",
+            canonical.expanded_polynomial,
+            variable=canonical.input.variable,
+        ),
+        paragraph("Gesucht", _concept(canonical)),
+        paragraph(
+            "Hurwitz-Skriptkonvention",
+            "Bei einer Gegenkontrolle beginnt die erste Matrixzeile mit a_1, a_3, a_5, ...",
+        ),
     ]
     for result in results:
         if result.rows:
-            column_spec = "c|" + "c" * len(result.rows[0].entries)
-            table_rows = []
             for row in result.rows:
-                entries = [rf"\mathbf{{{row.entries[0].latex}}}"]
-                entries.extend(item.latex for item in row.entries[1:])
-                table_rows.append(row.power_label + " & " + " & ".join(entries))
-            lines.append(
-                r"\begin{array}{" + column_spec + "}" + r"\\".join(table_rows) + r"\end{array}"
-            )
+                blocks.append(paragraph("Routh-Zeile", row.power_label))
+                blocks.extend(
+                    latex_additive_equation(
+                        rf"r_{{{row.power},{index}}}", entry
+                    )
+                    for index, entry in enumerate(row.entries, 1)
+                )
             recursive_cells = [cell for row in result.rows[2:] for cell in row.cells]
-            if recursive_cells:
-                derivations = r"\\".join(
-                    rf"r_{{{cell.row_index},{cell.column_index}}}="
-                    rf"\frac{{{cell.raw_numerator.latex}}}{{{cell.raw_denominator.latex}}}="
-                    + cell.value.latex
-                    for cell in recursive_cells
+            for cell in recursive_cells:
+                label = rf"r_{{{cell.row_index},{cell.column_index}}}"
+                if len(cell.raw_numerator.latex) > 75:
+                    helper = rf"Z_{{{cell.row_index},{cell.column_index}}}"
+                    blocks.append(paragraph("Routh-Rekursion", "Additive Zwischengröße:"))
+                    blocks.append(latex_additive_equation(helper, cell.raw_numerator))
+                    blocks.append(
+                        display_math(
+                            label
+                            + rf"=\frac{{{helper}}}{{{cell.raw_denominator.latex}}}"
+                        )
+                    )
+                    blocks.append(latex_additive_equation(label, cell.value))
+                else:
+                    blocks.append(
+                        display_math(
+                            r"\begin{aligned}"
+                            + label
+                            + rf"&=\frac{{{cell.raw_numerator.latex}}}"
+                            + rf"{{{cell.raw_denominator.latex}}}\\"
+                            + rf"&={cell.value.latex}"
+                            + r"\end{aligned}"
+                        )
+                    )
+            blocks.append(paragraph("Stabilitätsbedingungen", "Erste Spalte strikt positiv:"))
+            blocks.append(
+                latex_conditions(
+                    tuple(
+                        item.expression
+                        for item in result.full_conditions[: len(result.first_column)]
+                    )
                 )
-                lines.append(r"\begin{aligned}" + derivations + r"\end{aligned}")
-            lines.append(
-                r"\text{Erste Spalte: }\quad "
-                + r",\;".join(item.latex for item in result.first_column)
             )
-            lines.append(
-                r"\text{Bedingungen: }\quad "
-                + r",\qquad ".join(
-                    item.expression.latex + ">0"
-                    for item in result.full_conditions[: len(result.first_column)]
+            blocks.append(paragraph("Parametergebiet", "Exaktes Ergebnis:"))
+            blocks.append(
+                latex_parameter_region(
+                    result.parameter_region,
+                    canonical.input.decision_parameters,
                 )
             )
-            lines.append(r"\text{Parameterbereich: }\quad " + result.parameter_region.latex)
+            blocks.append(latex_numerical_check(result.numerical_check))
             if result.sign_changes is not None:
-                lines.append(
-                    r"\text{Vorzeichen: }"
-                    + ",".join(result.sign_sequence)
-                    + rf"\quad\Rightarrow\quad {result.sign_changes}\text{{ RHP-Pole}}"
+                blocks.append(
+                    paragraph(
+                        "Vorzeichenwechsel",
+                        f"Folge {', '.join(result.sign_sequence)}; "
+                        f"{result.sign_changes} Pole in der rechten Halbebene.",
+                    )
                 )
     if notice:
-        lines.append(
-            r"\textbf{Warnung: }\text{" + _escape_latex_text(notice) + "}"
-        )
-    lines.append(_latex_final_box(canonical, results))
-    return "\n\n".join(r"\[" + line + r"\]" for line in lines)
+        blocks.append(paragraph("Warnung", notice))
+    blocks.append(_latex_final_box(canonical, results))
+    return "\n\n".join(blocks)
 
 
 def _latex_final_box(
@@ -618,15 +682,27 @@ def _latex_final_box(
     results: tuple[RouthDegreeCaseResult, ...],
 ) -> str:
     if canonical.input.decision_parameters:
-        regions = tuple(item.parameter_region.latex for item in results)
-        return r"\boxed{" + r"\lor".join(regions) + "}"
+        if len(results) == 1:
+            return latex_parameter_region(
+                results[0].parameter_region,
+                canonical.input.decision_parameters,
+                boxed=True,
+            )
+        return "\n\n".join(
+            latex_parameter_region(
+                item.parameter_region,
+                canonical.input.decision_parameters,
+                boxed=True,
+            )
+            for item in results
+        )
     total = sum(item.rhp_roots_routh or 0 for item in results)
     text = (
         _stable_latex_text(canonical)
         if total == 0
         else _not_stable_latex_text(canonical)
     )
-    return r"\boxed{\text{" + _escape_latex_text(text) + "}}"
+    return display_math(r"\boxed{\text{" + _escape_latex_text(text) + "}}")
 
 
 def _stable_latex_text(canonical: CanonicalCharacteristicPolynomial) -> str:

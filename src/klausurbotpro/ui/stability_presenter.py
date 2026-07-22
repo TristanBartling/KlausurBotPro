@@ -12,6 +12,7 @@ from klausurbotpro.application.stability_workflow import (
     StabilityInputMode,
     StabilityMethod,
     format_stability_expression,
+    format_stability_region,
     run_stability_workflow,
 )
 from klausurbotpro.ui.stability_view_state import StabilityUiRunStatus, StabilityViewState
@@ -102,7 +103,11 @@ class StabilityPresenter(QObject):
             checks = "\n".join(
                 _routh_check(item) for item in analysis.case_results
             )
-        regions = "\n".join(item.parameter_region.exact_text for item in analysis.case_results)
+        parameters = analysis.canonical_polynomial.input.decision_parameters
+        regions = "\n\nund\n\n".join(
+            format_stability_region(item.parameter_region, parameters)
+            for item in analysis.case_results
+        )
         diagnostics = "\n".join((*analysis.diagnostics, analysis.cancellation_notice))
         steps = "\n".join(
             f"{name}: {item_value}"

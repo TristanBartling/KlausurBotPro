@@ -6,8 +6,10 @@ from PySide6.QtWidgets import QApplication
 
 from klausurbotpro.application.stability_workflow import (
     StabilityInputDraft,
+    StabilityInputMode,
     StabilityMethod,
 )
+from klausurbotpro.domain.parameter_core_contracts import AnalysisTarget
 from klausurbotpro.ui.main_window import MainWindow
 from klausurbotpro.ui.stability_presenter import StabilityPresenter
 from klausurbotpro.ui.stability_workspace import StabilityWorkspace
@@ -169,3 +171,31 @@ def test_transfer_input_is_locked_during_persistent_worker_run() -> None:
     assert workspace.copy_latex_button.isEnabled()
     assert window.shutdown()
     window.close()
+
+
+def test_golden_user_tabs_do_not_expose_sympy_relations_or_enum_values() -> None:
+    presenter = StabilityPresenter()
+    presenter.analyze(
+        StabilityInputDraft(
+            decision_parameters_text="a,K",
+            analysis_target=AnalysisTarget.EXTERNAL_BIBO,
+            input_mode=StabilityInputMode.TRANSFER_FUNCTION,
+            transfer_function_text=(
+                "(s^2+2*K*s+K^2)/"
+                "(((s+3)*(s+2*a)*(s+5)+8*K)*(s+K))"
+            ),
+        )
+    )
+
+    user_text = "\n".join(
+        (
+            presenter.state.summary,
+            presenter.state.parameter_region,
+            presenter.state.worked_steps,
+        )
+    )
+    assert "a > -15/16" in user_text
+    assert "-15*a/4 < K < (2*a+3)*(2*a+5)" in user_text
+    assert " & " not in user_text
+    assert "oo" not in user_text
+    assert "reduced_transfer_denominator" not in user_text
