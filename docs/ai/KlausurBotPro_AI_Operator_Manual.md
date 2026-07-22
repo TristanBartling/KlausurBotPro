@@ -10,14 +10,14 @@
 | App-Version | `0.1.0` |
 | Startart | Nach Installation: `python -m klausurbotpro` oder Konsolenskript `klausurbotpro` |
 | Zweck | Technische Arbeitsgrundlage für einen KI-Assistenten, der die vorhandene Desktop-App bedient und Bedienprobleme einordnet |
-| Zielgruppe | GPT-Chats und Menschen, die den implementierten Stand nicht aus der Entwicklung kennen |
-| Grenzen der Verlässlichkeit | Gilt ausschließlich für den genannten Commit; sichtbares Verhalten wurde aus verdrahteter UI, Application-Code und fokussierten Tests abgeleitet. Nicht ausdrücklich nachgewiesene Varianten bleiben unbekannt. |
+| Zielgruppe | GPT-/KI-Assistenten, die den implementierten Stand nicht aus der Entwicklung kennen; Menschen ausschließlich als Prüfer oder Maintainer dieser Referenz |
+| Grenzen der Verlässlichkeit | Gilt ausschließlich für den genannten Commit; UI-Pfade wurden aus aktueller Verdrahtung im Code oder fokussierten UI-Tests abgeleitet. Dies ist kein Nachweis, dass jedes Element in der real gestarteten Windows-App bei jeder DPI-, Schrift- oder Fensterkonfiguration visuell geprüft wurde. Nicht ausdrücklich nachgewiesene Varianten bleiben unbekannt. |
 
 Dieses Handbuch beschreibt App-Bedienung und implementiertes Verhalten. Es ist keine fachliche Quelle für Regelungstechnik. App-Ergebnisse müssen bei wichtigen Aufgaben unabhängig fachlich geprüft werden. Das Handbuch gilt nur für den angegebenen Softwarestand.
 
 ## 2. Statusvokabular
 
-- `UI_VERIFIED`: In der aktuellen Oberfläche erreichbar und durch Code oder fokussierten UI-Test nachgewiesen.
+- `UI_VERIFIED`: Der UI-Pfad ist durch aktuelle Verdrahtung im Code oder einen fokussierten UI-Test nachgewiesen. Der Status bestätigt nicht automatisch eine visuelle Prüfung jedes Elements in der real gestarteten Windows-App bei jeder DPI-, Schrift- oder Fensterkonfiguration; reales Rendering und plattformspezifische Bedienbarkeit bleiben Gegenstand der offenen manuellen Validierungen.
 - `INTERNAL_ONLY`: Implementiert, aber nicht sicher über die aktuelle Oberfläche erreichbar.
 - `PARTIAL`: Nutzbar, jedoch mit dokumentierten Einschränkungen oder manuellen Schritten.
 - `UNSUPPORTED`: Vom aktuellen Workflow ausdrücklich abgelehnt oder nachweislich nicht vorhanden.
@@ -33,8 +33,8 @@ Dieses Handbuch beschreibt App-Bedienung und implementiertes Verhalten. Es ist k
 | Hurwitz und Parameterbereich | Stabilität | `UI_VERIFIED` | Polynom oder Führungsübertragungsfunktion | Kanonisierung, Matrix, Determinanten, Bedingungen, Bereich | Rolle und Analyseziel korrekt wählen | Höchstens zwei Entscheidungsparameter |
 | Routh und Parameterbereich | Stabilität | `PARTIAL` | Polynom oder Führungsübertragungsfunktion | Routh-Schema, erste Spalte, Vorzeichenwechsel, Bereich | Sonderfälle fachlich behandeln | Vollständige Nullzeile kann LaTeX-Ausgabe verhindern |
 | Direkte Laplace-Transformation | Zeitbereich | `PARTIAL` | Unterstützte Kombinationen in `t` | Tabellenpaar-/Regeltransformation | Prüfen, ob Funktion im begrenzten Regelvorrat liegt | Kein allgemeiner CAS-Laplace-Workflow |
-| Inverse Laplace und Partialbruchzerlegung | Zeitbereich | `PARTIAL` | Rationale Funktion in `s` | Kürzung, Klassifikation, PBZ, Rücktransformation, Kontrollen | Uneigentliche Fälle ggf. nach Polynomdivision manuell weiterführen | Uneigentliche rationale Funktionen werden nach Division gestoppt |
-| Sprung-, allgemeine und Exponentialantwort | Zeitbereich | `PARTIAL` | `G(s)` plus Eingang | `Y(s)`, PBZ, Zeitfunktion, Endwertprüfung | Anfangsbedingungen/Modellannahmen prüfen | Diese drei Modi bilden Nullzustandsantworten aus Übertragungsfunktionen |
+| Inverse Laplace und Partialbruchzerlegung | Zeitbereich | `PARTIAL` | Allgemeine rationale Bildfunktion `F(s)` | Algebraische Reduktion von `F(s)`, Klassifikation, PBZ, Rücktransformation, Kontrollen | Uneigentliche Fälle ggf. nach Polynomdivision manuell weiterführen; Kürzungen ohne Systemkontext nur algebraisch deuten | Uneigentliche rationale Funktionen werden nach Division gestoppt |
+| Sprung-, allgemeine und Exponentialantwort | Zeitbereich | `PARTIAL` | Systemübertragungsfunktion `G(s)` plus Eingang | Separate Reduktion von `G(s)`, Produktbildung `Y(s)=G(s)U(s)`, PBZ, Zeitfunktion, Endwertprüfung | Anfangsbedingungen/Modellannahmen prüfen; Provenienz einer Kürzung beachten | Nur Kürzungen innerhalb von `G(s)` begründen eine Warnung vor verdeckter Systemdynamik; reine Produktkürzungen in `Y(s)` nicht |
 | Lineare DGL mit Anfangswerten | Zeitbereich | `PARTIAL` | Strukturierte Koeffizienten, Signal, Anfangswerte | Laplace-DGL, freie/erzwungene Antwort, PBZ, Verifikation | Alle benötigten Anfangswerte angeben oder Nullpolitik bestätigen | Ordnung 1 bis 4; zeitvariable Koeffizienten abgelehnt |
 | Übertragungsfunktion aus DGL | Zeitbereich | `UI_VERIFIED` | Strukturierte DGL-Koeffizienten | Nullzustands-Laplace und Quotient | Vollständigen Nullzustand sichtbar bestätigen | Nichtnull-Anfangszustand ist für diesen Workflow unzulässig |
 | DGL → Regelungsnormalform | Zustandsraum | `PARTIAL` | DGL-Koeffizienten, Ordnung 1 bis 4 | Normalisierung, Matrizen, Polynom, Eigenwerte, Übertragungsfunktion | Nur nicht abgeleiteten Eingang verwenden | Unsicherer führender Koeffizient wird abgelehnt |
@@ -397,9 +397,9 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Akzeptierte Syntax:** Bildprofil; faktorisierte und ausmultiplizierte rationale Formen.
 - **Gültiges Beispiel:** `(s+7)/((s+1)^2*(s-2))`.
 - **Bedienfolge:** 1. Aufgabentyp wählen. 2. `F(s)` eingeben. 3. Berechnen. 4. `Partialbruchzerlegung` und `Zeitfunktion` lesen.
-- **Interne Interpretation:** Bewahrt rohe/reduzierte Form, klassifiziert Echt-/Unechtheit und Poltypen.
+- **Interne Interpretation:** Bewahrt rohe und reduzierte algebraische Form von `F(s)` und klassifiziert Echt-/Unechtheit sowie Poltypen. Ohne zusätzlichen Systemkontext ist `F(s)` keine Systemübertragungsfunktion.
 - **Automatische Schritte:** Kürzung, Polynomdivision falls nötig, vollständiger Ansatz für wiederholte Pole, Koeffizienten und Rücktransformation.
-- **Sichtbare Ergebnisse:** Rationale Analyse, PBZ, Zeitfunktion, Kontrollen, Warnungen zu Kürzungen/verborgenen Modi.
+- **Sichtbare Ergebnisse:** Rationale Analyse, PBZ, Zeitfunktion, Kontrollen und Kürzungsdiagnosen. Eine Kürzung von `F(s)` ist hier nur als algebraische Kürzung zu dokumentieren, nicht als verborgener Systemmodus.
 - **Manuelle Vorarbeit:** Keine zwingende Faktorisierung, solange Parser und Faktorisierung den Fall erkennen.
 - **Manuelle Nacharbeit/Kontrolle:** Bei gestopptem uneigentlichem Fall Impuls-/Distributionsanteile außerhalb der App behandeln.
 - **Typische Fehlbedienung:** `exp(s)` im Bildbereich.
@@ -416,7 +416,7 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Akzeptierte Syntax:** Bildprofil und exakter Skalar.
 - **Gültiges Beispiel:** `G(s)=1/(2*s+1)`, `A=0.1`.
 - **Bedienfolge:** 1. `Sprungantwort` wählen. 2. System und Höhe eingeben. 3. Berechnen.
-- **Interne Interpretation:** Baut `U(s)=A/s`, dann `Y(s)=G(s)U(s)`.
+- **Interne Interpretation:** Reduziert zuerst `G(s)`, baut `U(s)=A/s` und bildet anschließend `Y(s)=G(s)U(s)`. Nur eine Kürzung innerhalb der Systemreduktion von `G(s)` kann als möglicherweise verdeckte Systemdynamik gemeldet werden; eine erst im Produkt `Y(s)` entstehende Kürzung erhält diese Bedeutung nicht.
 - **Automatische Schritte:** PBZ, Zeitfunktion und Endwertsatz-Prüfung.
 - **Sichtbare Ergebnisse:** `y(t)=(1-exp(-t/2))/10`, stationärer Endwert `1/10` im Testfall.
 - **Manuelle Vorarbeit:** Prüfen, ob Nullzustand und Sprungeingang gemeint sind.
@@ -435,7 +435,7 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Akzeptierte Syntax:** Rationale Bildsyntax.
 - **Gültiges Beispiel:** `G(s)=1/(s+1)^2`, `U(s)=9/(s-2)`.
 - **Bedienfolge:** 1. Aufgabentyp wählen. 2. Beide Funktionen eingeben. 3. Berechnen.
-- **Interne Interpretation:** Multipliziert zu `Y(s)` und invertiert.
+- **Interne Interpretation:** Reduziert `G(s)` und `U(s)` getrennt, multipliziert anschließend zu `Y(s)` und invertiert. Die Implementierung entfernt Kürzungs-/Moduswarnungen, die ausschließlich aus der Reduktion des Produkts stammen, und leitet eine Warnung vor verdeckter Systemdynamik nur aus einer Kürzung innerhalb von `G(s)` ab.
 - **Automatische Schritte:** Reduktion, Polrollen, PBZ, Zeitfunktion, Kontrollen.
 - **Sichtbare Ergebnisse:** System-/Eingangs-/Ausgangsbild, PBZ und Zeitantwort.
 - **Manuelle Vorarbeit:** `U(s)` ggf. selbst aus dem Zeitsignal bilden.
@@ -454,7 +454,7 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Akzeptierte Syntax:** Rationale TF und exakte Skalare.
 - **Gültiges Beispiel:** `G(s)=1/(s+1)^2`, Amplitude `9`, Exponent `2`.
 - **Bedienfolge:** 1. Modus wählen. 2. Drei Felder füllen. 3. Berechnen.
-- **Interne Interpretation:** Baut `U(s)=A/(s-λ)`.
+- **Interne Interpretation:** Reduziert `G(s)`, baut `U(s)=A/(s-λ)` und bildet danach `Y(s)`. Wie bei WF-09 und WF-10 gilt: Nur die Systemreduktion von `G(s)`, nicht eine reine Produktkürzung in `Y(s)`, begründet eine Warnung vor verdeckter Systemdynamik.
 - **Automatische Schritte:** Wie WF-10 plus sichtbare Eingangsfunktion.
 - **Sichtbare Ergebnisse:** `U(s)`, `Y(s)`, PBZ und Zeitfunktion.
 - **Manuelle Vorarbeit:** Vorzeichen von `λ` korrekt übertragen.
@@ -636,6 +636,7 @@ Entscheidungsbaum:
 | Frequenz `0.5` abgelehnt | Feld verlangt exakte rationale Schreibweise | Diagnose nennt rationale Zahl | `1/2` eingeben | Wenn `1/2` reproduzierbar abgelehnt wird |
 | Stabilitätsaussage widerspricht Erwartung | Roh/reduziert oder Ziel verwechselt | Rolle, Analyseziel, Kürzungen prüfen | Passendes Ziel wählen und beide Modelle benennen | Wenn dasselbe korrekt gewählte Polynom unabhängig anderes Soll liefert |
 | Keine Zeitfunktion nach inverser Laplace | Uneigentliche Funktion oder nicht unterstützter Faktor | Tab `Rationale Analyse` und Diagnosen | Polynomdivision/Distributionsanteile manuell fortsetzen | Wenn ein fokussiert getesteter eigentlicher Fall scheitert |
+| Kürzung im Zeitbereich | Provenienz `F(s)`, `G(s)` oder Produkt `Y(s)` verwechselt | Aufgabentyp und rohe/reduzierte Ausdrücke prüfen: allgemeines `F(s)`, Systemreduktion von `G(s)` oder erst Produktbildung | Bei `F(s)` nur algebraische Kürzung benennen; „verborgener Systemmodus“ nur aus einer Kürzung innerhalb von `G(s)` ableiten; reine Produktkürzung in `Y(s)` nicht so deuten | Wenn die App bei WF-09 bis WF-11 trotz unverändertem `G(s)` eine reine Produktkürzung als verdeckte Systemdynamik ausgibt |
 | DGL stoppt vor `Y(s)` | Anfangswert fehlt | `Diagnosen` und Felder bei `0+` prüfen | Wert angeben oder Nullpolitik bewusst bestätigen | Wenn vollständige Werte nicht erkannt werden |
 | TF aus DGL wird abgelehnt | Nullzustand nicht bestätigt | Checkbox prüfen | Sichtbar bestätigen, sofern fachlich korrekt | Wenn Bestätigung gesetzt und kein Nichtnullzustand vorliegt |
 | Zustands-TF stabil, Zustandsmodell instabil | Verborgener gekürzter Modus | Roh-/reduzierte TF und Kürzungsbericht prüfen | E/A- und Zustandsstabilität getrennt berichten | Wenn Modus trotz algebraisch nachweisbarer Beobacht-/Steuerbarkeit falsch klassifiziert wird |
@@ -667,7 +668,7 @@ Ein möglicher Bug darf erst angenommen werden, wenn der richtige Workflow gewä
 | `Zeitwerte müssen als reine Zahlen in Sekunden eingegeben werden.` | Einheit im Skalarfeld | `12 s` | `12` | Keine LaTeX-Ausgabe; Diagnose sichtbar |
 | `Ziegler–Nichols … nur für L < 0,5 T` / `Cohen–Coon … nur für L < 2 T` | Quellenbereich verletzt | Verhältnis zu groß | Anderes Verfahren oder korrekte Werte | Keine LaTeX-Ausgabe; Diagnose sichtbar |
 
-Bei `Transferfunktion` werden alte Resultate vor einem gültig gestarteten Lauf gelöscht; scheitert nur die Request-Erstellung, bleiben sie klar markiert sichtbar. Ein unerwarteter Workerfehler entfernt alte Mathematik. Die anderen synchronen Fachmodule ersetzen ihren View-State bei der nächsten Berechnung; eine allgemeine Garantie über alte Zwischenstände außerhalb der nachgewiesenen Pfade besteht nicht.
+Das Verhalten ist nicht für alle Module einheitlich: Bei `Transferfunktion` löscht ein gültig gestarteter neuer Lauf das alte Resultat. Scheitert dort nur die Request-Erstellung, bleibt das vorherige Resultat sichtbar und wird ausdrücklich als Ergebnis der vorherigen Berechnung markiert; ein unerwarteter Ausführungsfehler entfernt die alte Mathematik. `Frequenzbereich` ersetzt bei einer ungültigen neuen Eingabe die bisherige Ansicht durch einen neuen Fehlerzustand; schlägt nur die optionale Singularitätsverfeinerung fehl, bleibt dagegen das Basisergebnis desselben aktuellen Laufs mit einem Hinweis sichtbar. `Stabilität`, `Zeitbereich`, `Zustandsraum` und `Reglerauslegung` stellen bei den geprüften neuen Berechnungs- und Fehlerpfaden einen neuen Zustand dar und übernehmen kein ausdrücklich als veraltet markiertes Vorresultat. Darüber hinaus besteht keine modulübergreifende Garantie; bei einer nicht dokumentierten Fehlerfolge muss ein KI-Assistent den sichtbaren Status und gegebenenfalls einen aktuellen Screenshot prüfen.
 
 ## 10. Bekannte Grenzen und manuelle Schritte
 
@@ -681,6 +682,7 @@ Bei `Transferfunktion` werden alte Resultate vor einem gültig gestarteten Lauf 
 - Direkte Laplace-Transformation unterstützt einen begrenzten Vorrat aus Konstanten, Potenzen, Exponential-, Sinus-/Kosinusformen und nachgewiesenen Kombinationen.
 - Uneigentliche inverse Laplace-Funktionen werden klassifiziert und dividiert, aber eine gewöhnliche Zeitfunktion mit Distributionsanteilen wird nicht fertiggestellt.
 - TF-basierte Zeitantworten sind Nullzustandsantworten. Allgemeine Anfangsbedingungen gehören in `Lineare DGL lösen`.
+- Im Zeitbereich ist die Kürzungsprovenienz strikt zu trennen: Eine allgemeine inverse Bildfunktion `F(s)` wird ohne Systemaussage nur algebraisch reduziert. In den Antwortmodi wird `G(s)` vor der Produktbildung separat reduziert; nur eine Kürzung innerhalb dieses `G(s)` kann als möglicherweise verdeckte Systemdynamik gelten. Kürzungen, die erst in `Y(s)=G(s)U(s)` entstehen, sind keine verborgenen Systemmoden und ihre entsprechenden Warncodes werden im sichtbaren Antwortworkflow entfernt.
 - DGL: Ausgangsordnung 1–4, Eingangsordnung 0–4; Koeffizienten zeitunabhängig. Fehlende Anfangswerte werden niemals ohne gesetzte Nullpolitik angenommen.
 - Zustandsraum: SISO, Dimension 1–4. DGL→Regelungsnormalform unterstützt nur den nicht abgeleiteten Eingang.
 - Reglerauslegung ermittelt Prozesskennwerte nicht aus Diagrammen. ZN/Cohen–Coon bleiben Tabellenverfahren in der implementierten Kurskonvention.
@@ -688,7 +690,7 @@ Bei `Transferfunktion` werden alte Resultate vor einem gültig gestarteten Lauf 
 
 ## 11. Regeln für einen GPT-Chat
 
-1. Versionsstand zuerst mit dem Baseline-Commit vergleichen.
+1. Versionsstand zuerst mit dem Baseline-Commit vergleichen. Weicht der getestete App-Commit ab, das Handbuch nur vorläufig verwenden: zuerst prüfen, ob betroffene Module, Eingabeformate oder Workflows seitdem verändert wurden, und bei Unsicherheit aktuelle Screenshots oder eine aktualisierte Handbuchversion verlangen.
 2. Keine nicht dokumentierten Buttons, Felder oder Optionen erfinden.
 3. Bei unbekannter Ansicht einen Screenshot verlangen.
 4. Exakte kopierbare Eingaben bereitstellen, einschließlich `*`, Klammern und passender Bruchsyntax.
