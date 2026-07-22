@@ -40,6 +40,7 @@ from klausurbotpro.application import (
     ParameterInputDraft,
     TransferFunctionInputDraft,
     WorkflowInputForm,
+    prepend_latex_task_heading,
 )
 from klausurbotpro.ui.frequency_domain_presenter import (
     FrequencyDomainPresenter,
@@ -152,6 +153,7 @@ class FrequencyDomainWorkspace(QWidget):
         if type(presenter) is not FrequencyDomainPresenter:
             raise TypeError("presenter has an invalid type.")
         self.presenter = presenter
+        self._latex_task_title = ""
         self.setObjectName("frequencyDomainWorkspace")
         self._build_ui()
         self._connect_ui()
@@ -191,6 +193,11 @@ class FrequencyDomainWorkspace(QWidget):
         self.input_stack.addWidget(separated_page)
         self.variable_edit = QLineEdit("s")
         self.variable_edit.setObjectName("frequencyMainVariable")
+        self.task_title_edit = QLineEdit()
+        self.task_title_edit.setObjectName("frequencyTaskTitle")
+        self.task_title_edit.setPlaceholderText(
+            "z. B. Aufgabe 1a – Regelungsnormalform"
+        )
 
         self.parameter_table = QTableWidget(0, 3)
         self.parameter_table.setObjectName("frequencyParameterTable")
@@ -286,6 +293,9 @@ class FrequencyDomainWorkspace(QWidget):
         input_layout.addLayout(form_switch)
         input_layout.addWidget(self.input_stack)
         base_form = QFormLayout()
+        base_form.addRow(
+            "Aufgabenname / LaTeX-Überschrift:", self.task_title_edit
+        )
         base_form.addRow("Hauptvariable:", self.variable_edit)
         input_layout.addLayout(base_form)
         input_layout.addWidget(QLabel("Parameter und exakte Belegungen:"))
@@ -650,6 +660,7 @@ class FrequencyDomainWorkspace(QWidget):
 
     @Slot()
     def calculate(self) -> None:
+        self._latex_task_title = self.task_title_edit.text()
         self.presenter.submit(self.input_draft())
 
     @Slot()
@@ -661,6 +672,8 @@ class FrequencyDomainWorkspace(QWidget):
         self.numerator_edit.clear()
         self.denominator_edit.clear()
         self.variable_edit.setText("s")
+        self.task_title_edit.clear()
+        self._latex_task_title = ""
         self.parameter_table.setRowCount(0)
         self.mode_combo.setCurrentIndex(0)
         self.single_frequency_edit.setText("1")
@@ -715,8 +728,11 @@ class FrequencyDomainWorkspace(QWidget):
         self.result_tabs.setTabVisible(self.nyquist_tab_index, value.nyquist.visible)
         self._render_nyquist(value)
         self._render_worked_steps(value, value.selected_bode_index)
-        self.latex_report_edit.setPlainText(value.latex_report)
-        self.copy_latex_button.setEnabled(not running and bool(value.latex_report))
+        latex_source = prepend_latex_task_heading(
+            value.latex_report, self._latex_task_title
+        )
+        self.latex_report_edit.setPlainText(latex_source)
+        self.copy_latex_button.setEnabled(not running and bool(latex_source))
         self._render_diagnostics(value)
         self._focus_field(value.focused_field)
 

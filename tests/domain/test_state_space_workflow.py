@@ -168,6 +168,26 @@ def test_input_derivative_and_uncertain_leading_coefficient_are_rejected() -> No
     assert "Nichtnullannahme" in uncertain.diagnostics[0]
 
 
+def test_custom_output_name_is_used_in_state_definitions_and_latex() -> None:
+    result = run_state_space_workflow(
+        StateSpaceInputDraft(
+            StateSpaceTaskType.ODE_TO_CONTROLLABLE_CANONICAL,
+            output_name="phi_G",
+            output_order=2,
+            output_coefficient_texts=("2", "3", "1"),
+            input_coefficient_texts=("1",),
+        )
+    )
+
+    assert result.succeeded
+    assert result.state_definitions[:2] == (
+        "x_1(t)=phi_G(t)",
+        "x_2(t)=phi_G'(t)",
+    )
+    assert r"x_{1}(t)=\varphi_G(t)" in result.latex_source
+    assert r"x_{2}(t)=\dot{\varphi_G}(t)" in result.latex_source
+
+
 def test_unsafe_cell_is_never_executed() -> None:
     result = run_state_space_workflow(_matrix("__import__('os'),1;-2,-3"))
     assert not result.succeeded

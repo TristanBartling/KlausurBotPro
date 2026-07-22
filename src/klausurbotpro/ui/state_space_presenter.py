@@ -31,6 +31,7 @@ class StateSpacePresenter(QObject):
             self.state_changed.emit(self.state)
             return
         model = result.input_model
+        canonical_mode = result.normalized_ode is not None
         normalized = ""
         if result.normalized_ode is not None:
             normalized = (
@@ -71,10 +72,20 @@ class StateSpacePresenter(QObject):
             ),
             normalized_ode=normalized,
             matrices=(
-                f"A = A_R = {model.matrix_a.canonical_text}\n"
-                f"B = b_R = {model.vector_b.canonical_text}\n"
-                f"C = c_R^T = {model.vector_c.canonical_text}\n"
-                f"D = d = {model.scalar_d.canonical_text}"
+                (
+                    f"A_R = {model.matrix_a.canonical_text}\n"
+                    f"b_R = {model.vector_b.canonical_text}\n"
+                    f"c_R^T = {model.vector_c.canonical_text}\n"
+                    f"d = {model.scalar_d.canonical_text}\n\n"
+                    "A=A_R, B=b_R, C=c_R^T, D=d"
+                )
+                if canonical_mode
+                else (
+                    f"A = {model.matrix_a.canonical_text}\n"
+                    f"b = {model.vector_b.canonical_text}\n"
+                    f"c^T = {model.vector_c.canonical_text}\n"
+                    f"d = {model.scalar_d.canonical_text}"
+                )
             ),
             characteristic=(
                 "p_A(s) = "

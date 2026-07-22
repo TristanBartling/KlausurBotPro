@@ -18,7 +18,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from klausurbotpro.application import StateSpaceInputDraft, StateSpaceTaskType
+from klausurbotpro.application import (
+    StateSpaceInputDraft,
+    StateSpaceTaskType,
+    prepend_latex_task_heading,
+)
 from klausurbotpro.ui.state_space_presenter import StateSpacePresenter
 from klausurbotpro.ui.state_space_view_state import StateSpaceViewState
 
@@ -27,6 +31,7 @@ class StateSpaceWorkspace(QWidget):
     def __init__(self, presenter: StateSpacePresenter, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.presenter = presenter
+        self._latex_task_title = ""
         self.setObjectName("stateSpaceWorkspace")
         self._build_ui()
         presenter.state_changed.connect(self.render_state)
@@ -72,12 +77,16 @@ class StateSpaceWorkspace(QWidget):
         self.parameters_edit.setObjectName("stateSpaceParameters")
         self.assumptions_edit = QLineEdit()
         self.assumptions_edit.setObjectName("stateSpaceAssumptions")
+        self.task_title_edit = QLineEdit()
+        self.task_title_edit.setObjectName("stateSpaceTaskTitle")
+        self.task_title_edit.setPlaceholderText("z. B. Aufgabe 1a – Regelungsnormalform")
         self.preview_label = QLabel()
         self.preview_label.setObjectName("stateSpaceInputPreview")
         self.preview_label.setWordWrap(True)
         form_widget = QWidget()
         form = QFormLayout(form_widget)
         form.addRow("Aufgabentyp:", self.task_combo)
+        form.addRow("Aufgabenname / LaTeX-Überschrift:", self.task_title_edit)
         self._rows: dict[str, tuple[QLabel, QWidget]] = {}
         for key, label, widget in (
             ("output", "Ausgangsname:", self.output_name_edit),
@@ -149,7 +158,7 @@ class StateSpaceWorkspace(QWidget):
         ):
             plain_edit.textChanged.connect(self._update_preview)
         self.calculate_button.clicked.connect(self.calculate)
-        self.reset_button.clicked.connect(self.presenter.reset)
+        self.reset_button.clicked.connect(self.reset)
         self.copy_latex_button.clicked.connect(self.copy_latex)
         self._update_mode()
 
@@ -175,8 +184,16 @@ class StateSpaceWorkspace(QWidget):
 
     @Slot()
     def calculate(self) -> None:
+        self._latex_task_title = self.task_title_edit.text()
         self._clear_results()
         self.presenter.calculate(self._draft())
+
+    @Slot()
+    def reset(self) -> None:
+        self.task_title_edit.clear()
+        self._latex_task_title = ""
+        self._clear_results()
+        self.presenter.reset()
 
     @Slot()
     def copy_latex(self) -> None:
@@ -239,17 +256,17 @@ class StateSpaceWorkspace(QWidget):
             "transfer": state.transfer_function,
             "checks": state.checks,
             "steps": state.worked_steps,
-            "latex": state.latex_source,
+            "latex": prepend_latex_task_heading(state.latex_source, self._latex_task_title),
             "diagnostics": state.diagnostics,
         }
         for key, value in values.items():
             self.result_edits[key].setPlainText(value)
-        self.copy_latex_button.setEnabled(bool(state.latex_source))
+        self.copy_latex_button.setEnabled(bool(values["latex"]))
         target = (
             "diagnostics"
             if state.failed and state.diagnostics
             else "latex"
-            if state.latex_source
+            if values["latex"]
             else "summary"
         )
         self.result_tabs.setCurrentWidget(self.result_edits[target])

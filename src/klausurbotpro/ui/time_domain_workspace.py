@@ -19,7 +19,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from klausurbotpro.application import InputSignalType, TimeDomainInputDraft, TimeDomainTaskType
+from klausurbotpro.application import (
+    InputSignalType,
+    TimeDomainInputDraft,
+    TimeDomainTaskType,
+    prepend_latex_task_heading,
+)
 from klausurbotpro.ui.time_domain_presenter import TimeDomainPresenter
 from klausurbotpro.ui.time_domain_view_state import TimeDomainViewState
 
@@ -28,6 +33,7 @@ class TimeDomainWorkspace(QWidget):
     def __init__(self, presenter: TimeDomainPresenter, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.presenter = presenter
+        self._latex_task_title = ""
         self.setObjectName("timeDomainWorkspace")
         self._build_ui()
         self.presenter.state_changed.connect(self.render_state)
@@ -74,6 +80,11 @@ class TimeDomainWorkspace(QWidget):
         self.assumptions_edit = QLineEdit()
         self.assumptions_edit.setObjectName("timeDomainAssumptions")
         self.assumptions_edit.setPlaceholderText("z. B. T > 0; omega > 0")
+        self.task_title_edit = QLineEdit()
+        self.task_title_edit.setObjectName("timeDomainTaskTitle")
+        self.task_title_edit.setPlaceholderText(
+            "z. B. Aufgabe 1a – Regelungsnormalform"
+        )
         self.output_name_edit = QLineEdit("y")
         self.output_name_edit.setObjectName("timeDomainOdeOutputName")
         self.input_name_edit = QLineEdit("u")
@@ -149,6 +160,7 @@ class TimeDomainWorkspace(QWidget):
         form_widget = QWidget()
         form = QFormLayout(form_widget)
         form.addRow("Aufgabentyp:", self.task_combo)
+        form.addRow("Aufgabenname / LaTeX-Überschrift:", self.task_title_edit)
         self._rows: dict[str, tuple[QLabel, QWidget]] = {}
         for key, label, widget in (
             ("time", "f(t):", self.time_edit),
@@ -234,6 +246,7 @@ class TimeDomainWorkspace(QWidget):
 
     @Slot()
     def calculate(self) -> None:
+        self._latex_task_title = self.task_title_edit.text()
         try:
             task_type = TimeDomainTaskType(_combo_value(self.task_combo))
         except (TypeError, ValueError):
@@ -331,6 +344,8 @@ class TimeDomainWorkspace(QWidget):
         self.exponential_amplitude_edit.setText("1")
         self.exponential_exponent_edit.setText("0")
         self.assumptions_edit.clear()
+        self.task_title_edit.clear()
+        self._latex_task_title = ""
         self.presenter.reset()
 
     @Slot()
@@ -471,12 +486,14 @@ class TimeDomainWorkspace(QWidget):
             "checks": state.verifications,
             "short": state.short_solution,
             "steps": state.worked_steps,
-            "latex": state.latex_source,
+            "latex": prepend_latex_task_heading(
+                state.latex_source, self._latex_task_title
+            ),
             "diagnostics": state.diagnostics,
         }
         for key, value in values.items():
             self.result_edits[key].setPlainText(value)
-        self.copy_latex_button.setEnabled(bool(state.latex_source))
+        self.copy_latex_button.setEnabled(bool(values["latex"]))
 
 
 def _combo_value(combo: QComboBox) -> str:

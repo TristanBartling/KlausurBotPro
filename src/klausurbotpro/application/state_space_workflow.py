@@ -118,16 +118,17 @@ def _from_ode(draft: StateSpaceInputDraft, parameters: tuple[str, ...]) -> State
     c[0, 0] = 1
     model = _model(a, b, c, sp.Integer(0), draft)
     definitions = tuple(
-        f"x_{index + 1} = {draft.output_name.strip()}^{index}" for index in range(n)
+        f"x_{index + 1}(t)={_derivative_plain(draft.output_name.strip(), index)}"
+        for index in range(n)
+    )
+    state_symbols = sp.Matrix(
+        sp.symbols(" ".join(f"x_{index + 1}" for index in range(n)), seq=True)
     )
     equations = tuple(
         [f"dot(x_{index + 1}) = x_{index + 2}" for index in range(n - 1)]
         + [
             f"dot(x_{n}) = "
-            + _plain(
-                a.row(n - 1).dot(sp.Matrix(sp.symbols(f"x1:{n + 1}")))
-                + beta * sp.Symbol(draft.input_name.strip())
-            )
+            + _plain(a.row(n - 1).dot(state_symbols) + beta * sp.Symbol(draft.input_name.strip()))
         ]
     )
     return _analyze(model, draft, normalized, definitions, equations)
@@ -157,7 +158,7 @@ def _from_matrices(
     if d_matrix.shape != (1, 1):
         raise ValueError(f"d muss skalar (1×1) sein; erhalten: {d_matrix.rows}×{d_matrix.cols}.")
     model = _model(a, b, c, d_matrix[0, 0], draft)
-    state_vector = sp.Matrix(sp.symbols(f"x1:{n + 1}"))
+    state_vector = sp.Matrix(sp.symbols(" ".join(f"x_{index + 1}" for index in range(n)), seq=True))
     derivative = a * state_vector + b * sp.Symbol(draft.input_name.strip())
     equations = tuple(f"dot(x_{row + 1}) = {_plain(derivative[row])}" for row in range(n))
     definitions = tuple(f"x_{index + 1}" for index in range(n))
@@ -593,16 +594,16 @@ def _worked_steps(
         f"Ergebnis: A={model.matrix_a.canonical_text}, G(s)={_plain(reduced)}.",
     ]
     if task is StateSpaceTaskType.ODE_TO_CONTROLLABLE_CANONICAL:
+        steps = [
+            "Gegebene strukturierte DGL.",
+            "Leitkoeffizient geprüft und DGL normiert.",
+            "Koeffizienten identifiziert.",
+            "Zustandswahl x_1=y bis x_n=y^(n-1).",
+            "Ableitungskette und letzte Zustandsgleichung aufgebaut.",
+            "A_R, b_R, c_R^T und d aufgebaut.",
+        ] + common[3:]
         return tuple(
-            [
-                "Gegebene strukturierte DGL.",
-                "Leitkoeffizient geprüft und DGL normiert.",
-                "Koeffizienten identifiziert.",
-                "Zustandswahl x_1=y bis x_n=y^(n-1).",
-                "Ableitungskette und letzte Zustandsgleichung aufgebaut.",
-                "A_R, b_R, c_R^T und d aufgebaut.",
-            ]
-            + common[3:]
+            (*steps[:-1], f"Ergebnis: A_R={model.matrix_a.canonical_text}, G(s)={_plain(reduced)}.")
         )
     return tuple(common)
 
@@ -621,6 +622,7 @@ def _latex(
     cancellation: str,
     checks: tuple[StateSpaceCheck, ...],
 ) -> str:
+    canonical_mode = normalized_ode is not None
     given = (
         rf"A={model.matrix_a.latex},\quad b={model.vector_b.latex},\quad "
         rf"c^T={model.vector_c.latex},\quad d={model.scalar_d.latex}"
@@ -629,21 +631,27 @@ def _latex(
     if normalized_ode is not None:
         original_ode = _parse_ode(draft, _parameters(draft.decision_parameters_text))
         given = format_ode_latex(original_ode)
-        output_symbol = sp.latex(sp.Symbol(draft.output_name.strip()))
-        definitions = r",\quad ".join(
-            (
-                rf"x_{{{index + 1}}}={output_symbol}"
-                if index == 0
-                else rf"x_{{{index + 1}}}={output_symbol}^{{({index})}}"
+        definitions = r"\\".join(
+            rf"x_{{{index + 1}}}(t)={_derivative_latex(draft.output_name.strip(), index)}"
+            for index in range(model.state_dimension)
+        )
+        a = _sympy_matrix(model.matrix_a)
+        b = _sympy_matrix(model.vector_b)
+        state_symbols = sp.Matrix(
+            sp.symbols(
+                " ".join(f"x_{index + 1}" for index in range(model.state_dimension)),
+                seq=True,
             )
+        )
+        derivative = a * state_symbols + b * sp.Symbol(draft.input_name.strip())
+        state_equations = r"\\".join(
+            rf"\dot{{x}}_{{{index + 1}}}(t)={sp.latex(derivative[index])}"
             for index in range(model.state_dimension)
         )
         ode_lines = (
             rf"\[\text{{Normierte DGL:}}\quad {format_ode_latex(normalized_ode)}\]",
-            rf"\[\begin{{aligned}}{definitions}\\"
-            rf"\dot x&=A_Rx+b_R{sp.latex(sp.Symbol(draft.input_name.strip()))}\\"
-            rf"{output_symbol}&=c_R^Tx+d\,{sp.latex(sp.Symbol(draft.input_name.strip()))}"
-            rf"\end{{aligned}}\]",
+            rf"\[\begin{{aligned}}{definitions}\end{{aligned}}\]",
+            rf"\[\begin{{aligned}}{state_equations}\end{{aligned}}\]",
         )
     exact_text = (
         r",\ ".join(
@@ -660,10 +668,41 @@ def _latex(
         rf"\text{{{_escape_text(item.name)}: {'bestanden' if item.passed else 'fehlgeschlagen'}}}"
         for item in checks
     )
-    warning = (
-        ""
+    warning_lines = (
+        ()
         if cancellation.startswith("Keine")
-        else rf"\\\textbf{{Hinweis: }}\text{{{_escape_text(cancellation)}}}"
+        else (
+            r"\textbf{Hinweis:}\par",
+            _escape_text(cancellation),
+        )
+    )
+    matrix_line = (
+        rf"\[A_R={model.matrix_a.latex},\quad b_R={model.vector_b.latex},"
+        rf"\quad c_R^T={model.vector_c.latex},\quad d={model.scalar_d.latex}\]"
+        if canonical_mode
+        else (
+            rf"\[A={model.matrix_a.latex},\quad b={model.vector_b.latex},"
+            rf"\quad c^T={model.vector_c.latex},\quad d={model.scalar_d.latex}\]"
+        )
+    )
+    short_stability = (
+        "nicht asymptotisch stabil"
+        if "nicht asymptotisch stabil" in stability
+        else "asymptotisch stabil"
+    )
+    end_lines = (
+        (
+            rf"\[\boxed{{A_R={model.matrix_a.latex}}}\qquad"
+            rf"\boxed{{b_R={model.vector_b.latex}}}\]",
+            rf"\[\boxed{{c_R^T={model.vector_c.latex}}}\qquad"
+            rf"\boxed{{d={model.scalar_d.latex}}}\]",
+            rf"\[\boxed{{G(s)={sp.latex(reduced)}}}\]",
+        )
+        if canonical_mode
+        else (
+            rf"\[\boxed{{\text{{{short_stability}}}}}\]",
+            rf"\[\boxed{{G(s)={sp.latex(reduced)}}}\]",
+        )
     )
     return "\n".join(
         (
@@ -673,18 +712,16 @@ def _latex(
             r"\[A,B,C,D,\quad p_A(s),\quad \lambda_i,\quad G(s),\quad \text{Zustandsstabilität}\]",
             r"\textbf{Lösung}",
             *ode_lines,
-            rf"\[A=A_R={model.matrix_a.latex},\quad B=b_R={model.vector_b.latex},"
-            rf"\quad C=c_R^T={model.vector_c.latex},\quad D=d={model.scalar_d.latex}\]",
+            matrix_line,
             rf"\[sI-A={sp.latex(si_minus_a)},\qquad p_A(s)=\det(sI-A)={sp.latex(characteristic)}\]",
             rf"\[\lambda_i\in\left\{{{exact_text}\right\}},\qquad "
             rf"\lambda_i\approx\left\{{{numeric_text}\right\}}\]",
             rf"\[\text{{{_escape_text(stability)}}}\]",
             rf"\[G(s)=c^T(sI-A)^{{-1}}b+d={sp.latex(raw)}\]",
-            rf"\[G_{{\mathrm{{red}}}}(s)={sp.latex(reduced)}{warning}\]",
+            rf"\[G_{{\mathrm{{red}}}}(s)={sp.latex(reduced)}\]",
+            *warning_lines,
             rf"\[\begin{{aligned}}{check_lines}\end{{aligned}}\]",
-            rf"\[\boxed{{A={model.matrix_a.latex},\quad B={model.vector_b.latex},"
-            rf"\quad C={model.vector_c.latex},\quad D={model.scalar_d.latex},"
-            rf"\quad G(s)={sp.latex(reduced)}}}\]",
+            *end_lines,
         )
     )
 
@@ -753,6 +790,25 @@ def _exact(value: sp.Expr) -> ExactExpression:
 
 def _plain(value: sp.Expr) -> str:
     return str(sp.factor(value)).replace("**", "^")
+
+
+def _derivative_plain(name: str, order: int) -> str:
+    if order == 0:
+        return f"{name}(t)"
+    if order <= 3:
+        return f"{name}{chr(39) * order}(t)"
+    return f"{name}^({order})(t)"
+
+
+def _derivative_latex(name: str, order: int) -> str:
+    function = r"\varphi_G" if name == "phi_G" else sp.latex(sp.Symbol(name))
+    if order == 0:
+        return rf"{function}(t)"
+    if order == 1:
+        return rf"\dot{{{function}}}(t)"
+    if order == 2:
+        return rf"\ddot{{{function}}}(t)"
+    return rf"{function}^{{({order})}}(t)"
 
 
 def _format_complex(value: complex) -> str:

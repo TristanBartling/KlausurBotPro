@@ -29,6 +29,7 @@ from klausurbotpro.application.frequency_domain_workflow_contracts import (
 from klausurbotpro.application.frequency_domain_workflow_service import (
     FrequencyDomainWorkflowService,
 )
+from klausurbotpro.application.latex_task_heading import prepend_latex_task_heading
 from klausurbotpro.application.standard_element_bode_formatting import (
     standard_element_asymptote_plain,
     standard_element_decomposition_plain,
@@ -146,6 +147,7 @@ __all__ = [
     "OverrideProvenance",
     "OverrideLine",
     "ParameterInputDraft",
+    "prepend_latex_task_heading",
     "RawTransferFunctionOverride",
     "ReducedTransferFunctionOverride",
     "ReportDiagnostic",
