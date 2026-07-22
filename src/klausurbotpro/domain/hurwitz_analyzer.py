@@ -26,6 +26,13 @@ from klausurbotpro.domain.parameter_core_contracts import (
 )
 from klausurbotpro.domain.stability_numeric import check_numeric_poles
 
+_NUMERICAL_CHECK_LABELS = {
+    "consistent": "konsistent",
+    "inconsistent": "widersprüchlich",
+    "numerically_inconclusive": "numerisch nicht entscheidbar",
+    "not_performed": "nicht durchgeführt",
+}
+
 
 def _exact(value: sp.Expr) -> ExactExpression:
     return ExactExpression._from_sympy(sp.sympify(value))
@@ -407,8 +414,9 @@ def _matrix_text(matrix: tuple[tuple[ExactExpression, ...], ...]) -> str:
 
 def _numeric_text(check: NumericalPoleCheck | None) -> str:
     if check is None:
-        return "keine Kontrolle verfügbar"
-    return f"{check.status.value}; Pole: {', '.join(check.poles) or 'nicht verfügbar'}"
+        return "nicht verfügbar"
+    status = _NUMERICAL_CHECK_LABELS.get(check.status.value, "nicht verfügbar")
+    return f"{status}; Pole: {', '.join(check.poles) or 'nicht verfügbar'}"
 
 
 def _latex(

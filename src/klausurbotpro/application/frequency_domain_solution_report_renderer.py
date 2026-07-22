@@ -44,6 +44,22 @@ _STATUS_LATEX = {
     FrequencyResponsePointStatus.NUMERIC_UNDETERMINED: (r"\text{numerisch unbestimmt}"),
 }
 
+_PRESENTATION_STATUS_LABELS = {
+    "complete_in_proven_range": "vollständig im nachgewiesenen Frequenzbereich",
+    "band_limited": "auf den untersuchten Frequenzbereich begrenzt",
+    "segment_incomplete": "mindestens ein Frequenzsegment ist unvollständig",
+    "numerically_ambiguous": "numerisch nicht eindeutig",
+    "complete": "vollständiges Nyquist-Kriterium",
+    "simplified": "vereinfachtes Standard-Nyquist-Kriterium",
+    "not_applicable": "nicht anwendbar",
+}
+
+_DEDUPLICATED_MESSAGE_MARKERS = (
+    "Voraussetzungen des Standard-Nyquist-Kriteriums",
+    "Das Kriterium ist für diesen Fall nicht direkt anwendbar",
+    r"\text{Hinweis:}",
+)
+
 
 def render_frequency_domain_solution_latex(
     result: FrequencyDomainWorkflowResult,
@@ -157,20 +173,19 @@ def _bode_report(
             ),
         )
     )
-    return "\n\n".join(
-        (
-            *given_lines,
-            *_standard_element_section(result),
-            r"\section*{Wertetabelle}",
-            table,
-            *selected,
-            *_unwrap_explanation(result, selected_index),
-            *_reserve_section(result),
-            *_nyquist_section(result),
-            *_singularity_lines(result, added_frequencies),
-            *_workflow_notices(result),
-        )
+    report_lines = (
+        *given_lines,
+        *_standard_element_section(result),
+        r"\section*{Wertetabelle}",
+        table,
+        *selected,
+        *_unwrap_explanation(result, selected_index),
+        *_reserve_section(result),
+        *_nyquist_section(result),
+        *_singularity_lines(result, added_frequencies),
+        *_workflow_notices(result),
     )
+    return "\n\n".join(_deduplicate_normal_messages(report_lines))
 
 
 def _standard_element_section(
@@ -469,7 +484,7 @@ def _reserve_section(
         return ()
     lines = [
         r"\section*{Durchtritte und Reserven}",
-        rf"\[\text{{Bandstatus: }}{literal_text(crossovers.completeness.value).latex}\]",
+        rf"\[\mbox{{Bandstatus: {_presentation_status(crossovers.completeness.value)}}}\]",
         r"\[L(\omega_g)=0\,\mathrm{dB},\qquad "
         r"\mathrm{PM}=180^\circ+\varphi_{\mathrm{entf}}(\omega_g)\]",
     ]
@@ -549,6 +564,12 @@ def _nyquist_section(result: FrequencyDomainWorkflowResult) -> tuple[str, ...]:
     lhp_count = sum(item.multiplicity for item in poles.lhp_poles)
     imag_count = sum(item.multiplicity for item in poles.imaginary_axis_poles)
     prerequisites = "erfüllt" if stability.prerequisites_met else "nicht erfüllt"
+    criterion = _presentation_status(stability.criterion.value)
+    criterion_statement = (
+        "Das Kriterium ist für diesen Fall nicht direkt anwendbar."
+        if stability.criterion.value == "not_applicable"
+        else f"Verwendetes Kriterium: {criterion}."
+    )
     lines = [
         r"\section*{Nyquist-Analyse}",
         r"\[\text{Konvention: Uhrzeigersinn positiv,}\qquad Z=P+N_{\mathrm{cw}}\]",
@@ -559,8 +580,9 @@ def _nyquist_section(result: FrequencyDomainWorkflowResult) -> tuple[str, ...]:
         rf"\[d_{{\min}}=\min_\omega |1+G(\mathrm{{j}}\omega)|="
         rf"{winding.critical_point.minimum_distance:.8g},\quad "
         rf"\omega={winding.critical_point.frequency:.8g}\,\mathrm{{rad/s}}\]",
-        rf"\[\text{{Voraussetzungen: {prerequisites}; "
-        rf"Kriterium: {stability.criterion.value}}}\]",
+        rf"\[\mbox{{Voraussetzungen des Standard-Nyquist-Kriteriums: "
+        rf"{prerequisites}.}}\]",
+        rf"\[\mbox{{{criterion_statement}}}\]",
         rf"\[\boxed{{\text{{{literal_text(stability.statement).latex}}}}}\]",
     ]
     gain = analysis.scalar_gain_range
@@ -617,14 +639,32 @@ def _workflow_notices(
     if not result.diagnostics:
         return ()
     lines = [r"\section*{Workflow-Hinweise}"]
+    messages = tuple(dict.fromkeys(diagnostic.message for diagnostic in result.diagnostics))
     lines.extend(
         (
             r"\[\text{Hinweis:}\quad "
-            rf"{literal_text(diagnostic.message).latex}\]"
+            rf"{literal_text(message).latex}\]"
         )
-        for diagnostic in result.diagnostics
+        for message in messages
     )
     return tuple(lines)
+
+
+def _presentation_status(value: str) -> str:
+    return _PRESENTATION_STATUS_LABELS.get(value, "Status nicht verfügbar")
+
+
+def _deduplicate_normal_messages(lines: tuple[str, ...]) -> tuple[str, ...]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        is_message = any(marker in line for marker in _DEDUPLICATED_MESSAGE_MARKERS)
+        if is_message and line in seen:
+            continue
+        if is_message:
+            seen.add(line)
+        unique.append(line)
+    return tuple(unique)
 
 
 def _unavailable_report(result: FrequencyDomainWorkflowResult) -> str:

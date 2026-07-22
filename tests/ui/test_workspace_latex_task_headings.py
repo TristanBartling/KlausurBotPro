@@ -62,7 +62,7 @@ def test_frequency_heading_is_displayed_and_copied_once() -> None:
     window = MainWindow()
     workspace = window.frequency_workspace
     workspace.common_expression_edit.setPlainText("1/(s+1)")
-    workspace.task_title_edit.setText("Aufgabe Frequenz")
+    workspace.task_title_edit.setText("Aufgabe 3")
     completed = QSignalSpy(window.frequency_worker.completed)
     loop = QEventLoop()
     window.frequency_worker.completed.connect(loop.quit)
@@ -71,8 +71,8 @@ def test_frequency_heading_is_displayed_and_copied_once() -> None:
     _wait(completed, loop)
 
     latex = workspace.latex_report_edit.toPlainText()
-    assert latex.startswith(r"\section*{Aufgabe Frequenz}")
-    assert latex.count(r"\section*{Aufgabe Frequenz}") == 1
+    assert latex.startswith(r"\section*{Aufgabe 3}")
+    assert latex.count(r"\section*{Aufgabe 3}") == 1
     QTest.mouseClick(workspace.copy_latex_button, Qt.MouseButton.LeftButton)
     assert QApplication.clipboard().text() == latex
     assert window.shutdown()
@@ -84,11 +84,12 @@ def test_sync_workspaces_capture_heading_and_error_does_not_leave_heading() -> N
     window = MainWindow()
 
     stability = window.stability_workspace
-    stability.task_title_edit.setText("Aufgabe Stabilität")
+    stability.task_title_edit.setText("Aufgabe 4")
     stability.polynomial_edit.setPlainText("s+1")
     QTest.mouseClick(stability.analyze_button, Qt.MouseButton.LeftButton)
     stability_latex = stability.result_edits["latex"].toPlainText()
-    assert stability_latex.startswith(r"\section*{Aufgabe Stabilität}")
+    assert stability_latex.startswith(r"\section*{Aufgabe 4}")
+    assert stability_latex.count(r"\section*{Aufgabe 4}") == 1
     QTest.mouseClick(stability.copy_latex_button, Qt.MouseButton.LeftButton)
     assert QApplication.clipboard().text() == stability_latex
 
