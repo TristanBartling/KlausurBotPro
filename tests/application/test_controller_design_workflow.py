@@ -1,9 +1,16 @@
 """Focused application tests for controller-design orchestration."""
 
+from dataclasses import replace
+
 import pytest
 
-from klausurbotpro.application import ControllerDesignInputDraft, ControllerDesignWorkflowService
+from klausurbotpro.application import (
+    ControllerDesignInputDraft,
+    ControllerDesignWorkflowService,
+    decide_p_phase_margin_outcome,
+)
 from klausurbotpro.domain import (
+    ControllerDesignCandidateStatus,
     ControllerDesignMethod,
     ControllerDesignStatus,
     ControllerType,
@@ -12,16 +19,16 @@ from klausurbotpro.domain import (
 
 
 def draft(method: ControllerDesignMethod, **values: str) -> ControllerDesignInputDraft:
-    defaults = dict(
-        task_name="Aufgabe Reglerauslegung",
-        process_gain_text="1.8",
-        dead_time_text="12",
-        lag_time_text="72",
-        critical_gain_text="1.62",
-        critical_period_text="3",
+    return ControllerDesignInputDraft(
+        method,
+        ControllerType.PID,
+        values.get("task_name", "Aufgabe Reglerauslegung"),
+        process_gain_text=values.get("process_gain_text", "1.8"),
+        dead_time_text=values.get("dead_time_text", "12"),
+        lag_time_text=values.get("lag_time_text", "72"),
+        critical_gain_text=values.get("critical_gain_text", "1.62"),
+        critical_period_text=values.get("critical_period_text", "3"),
     )
-    defaults.update(values)
-    return ControllerDesignInputDraft(method, ControllerType.PID, **defaults)
 
 
 def test_g1_uses_reused_frequency_reserve_and_nyquist_kernels() -> None:
@@ -47,6 +54,8 @@ def test_g1_uses_reused_frequency_reserve_and_nyquist_kernels() -> None:
     assert candidate.frequency_analysis.crossover_analysis is not None
     assert candidate.frequency_analysis.reserve_analysis is not None
     assert candidate.frequency_analysis.nyquist_analysis is not None
+    assert candidate.status is ControllerDesignCandidateStatus.TARGET_MET
+    assert result.input.task_name == "SS 2025 Aufgabe 2e"
     assert result.latex.count(r"\section*{") == 1
 
 
@@ -58,6 +67,66 @@ def test_g2_workflow_exact_values_and_latex() -> None:
     assert result.controller_parameters.k_i.exact == ExactRationalValue(1, 6)  # type: ignore[union-attr]
     assert "Keine Zwischenrundung" not in result.latex
     assert "Zwischenrundung" in result.latex
+
+
+def test_blank_task_name_is_optional_and_adds_no_latex_heading() -> None:
+    result = ControllerDesignWorkflowService().run(
+        draft(ControllerDesignMethod.ZIEGLER_NICHOLS_OPEN_LOOP, task_name="   ")
+    )
+    assert result.status is ControllerDesignStatus.COMPLETE
+    assert result.has_copyable_solution
+    assert r"\section*{" not in result.latex
+
+
+@pytest.mark.parametrize(
+    "method",
+    (ControllerDesignMethod.ZIEGLER_NICHOLS_OPEN_LOOP, ControllerDesignMethod.COHEN_COON),
+)
+def test_pi_latex_contains_no_derivative_zero_terms(method: ControllerDesignMethod) -> None:
+    result = ControllerDesignWorkflowService().run(
+        replace(draft(method), controller_type=ControllerType.PI)
+    )
+    assert result.status is ControllerDesignStatus.COMPLETE
+    assert "k_D" not in result.latex
+    assert "T_D" not in result.latex
+    assert "+0" not in result.latex
+
+
+@pytest.mark.parametrize(
+    ("statuses", "expected"),
+    (
+        ((ControllerDesignCandidateStatus.TARGET_NOT_MET,), ControllerDesignStatus.FAILED),
+        (
+            (
+                ControllerDesignCandidateStatus.TARGET_MET,
+                ControllerDesignCandidateStatus.TARGET_NOT_MET,
+            ),
+            ControllerDesignStatus.SELECTION_REQUIRED,
+        ),
+        (
+            (
+                ControllerDesignCandidateStatus.TARGET_NOT_MET,
+                ControllerDesignCandidateStatus.TARGET_CROSSING_MET_GLOBAL_MARGIN_NOT_MET,
+            ),
+            ControllerDesignStatus.FAILED,
+        ),
+    ),
+)
+def test_p_outcome_decision_uses_successful_candidate_statuses(
+    statuses: tuple[ControllerDesignCandidateStatus, ...],
+    expected: ControllerDesignStatus,
+) -> None:
+    decision = decide_p_phase_margin_outcome(statuses)
+    assert decision.status is expected
+    assert decision.selected_candidate_index is None
+    assert decision.diagnostic is not None
+
+
+def test_p_outcome_decision_selects_only_successful_single_candidate() -> None:
+    decision = decide_p_phase_margin_outcome((ControllerDesignCandidateStatus.TARGET_MET,))
+    assert decision.status is ControllerDesignStatus.COMPLETE
+    assert decision.selected_candidate_index == 0
+    assert decision.diagnostic is None
 
 
 def test_g3_workflow_preserves_exact_fractions() -> None:

@@ -86,18 +86,25 @@ def _parameters(
     ti = None if ki == 0 else kp / ki
     td = None if kd == 0 else kd / kp
     kp_text, ki_text, kd_text = map(_plain, (kp, ki, kd))
-    parallel = rf"G_R(s)={_latex(kp)}+{_latex(ki)}\frac{{1}}{{s}}+{_latex(kd)}s"
     if controller_type is ControllerType.P:
-        canonical = kp_text
+        canonical = f"G_R(s)={kp_text}"
         parallel = rf"G_R(s)={_latex(kp)}"
         ideal = parallel
-    else:
+    elif controller_type is ControllerType.PI:
         assert ti is not None
-        canonical = f"{kp_text}+({ki_text})/s+({kd_text})*s"
-        derivative = "" if td is None else rf"+{_latex(td)}s"
+        canonical = f"G_R(s)={kp_text}+({ki_text})/s"
+        parallel = rf"G_R(s)={_latex(kp)}+{_latex(ki)}\frac{{1}}{{s}}"
         ideal = (
             rf"G_R(s)={_latex(kp)}\left(1+"
-            rf"\frac{{1}}{{\left({_latex(ti)}\right)s}}{derivative}\right)"
+            rf"\frac{{1}}{{\left({_latex(ti)}\right)s}}\right)"
+        )
+    else:
+        assert ti is not None and td is not None
+        canonical = f"G_R(s)={kp_text}+({ki_text})/s+({kd_text})*s"
+        parallel = rf"G_R(s)={_latex(kp)}+{_latex(ki)}\frac{{1}}{{s}}+{_latex(kd)}s"
+        ideal = (
+            rf"G_R(s)={_latex(kp)}\left(1+"
+            rf"\frac{{1}}{{\left({_latex(ti)}\right)s}}+{_latex(td)}s\right)"
         )
     return ControllerParameters(
         controller_type,

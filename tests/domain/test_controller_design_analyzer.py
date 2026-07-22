@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from klausurbotpro.domain import (
+    ControllerParameters,
     ControllerType,
     ExactRationalValue,
     design_cohen_coon,
@@ -17,8 +18,10 @@ def q(numerator: int, denominator: int = 1) -> ExactRationalValue:
     return ExactRationalValue(numerator, denominator)
 
 
-def exacts(parameters: object) -> tuple[ExactRationalValue, ...]:
-    return (parameters.k_p.exact, parameters.k_i.exact, parameters.k_d.exact)  # type: ignore[attr-defined,return-value]
+def exacts(
+    parameters: ControllerParameters,
+) -> tuple[ExactRationalValue | None, ...]:
+    return (parameters.k_p.exact, parameters.k_i.exact, parameters.k_d.exact)
 
 
 def test_g2_ziegler_nichols_open_pid_is_exact() -> None:
@@ -68,6 +71,22 @@ def test_all_cohen_coon_rows_are_positive(controller_type: ControllerType) -> No
 def test_zn_open_pi_keeps_course_decimal_333() -> None:
     parameters = design_ziegler_nichols_open(ControllerType.PI, q(1), q(2), q(10))
     assert parameters.ideal_t_i.exact == q(333, 50)  # type: ignore[union-attr]
+
+
+def test_zn_open_pi_representation_omits_derivative_zero_term() -> None:
+    parameters = design_ziegler_nichols_open(ControllerType.PI, q(1), q(2), q(10))
+    assert parameters.k_d.exact == q(0)
+    assert "*s" not in parameters.canonical_transfer_function
+    assert "+0" not in parameters.parallel_latex
+    assert parameters.ideal_t_d is None
+
+
+def test_cohen_coon_pi_representation_omits_derivative_zero_term() -> None:
+    _, parameters = design_cohen_coon(ControllerType.PI, q(9, 5), q(12), q(72))
+    assert parameters.k_d.exact == q(0)
+    assert "*s" not in parameters.canonical_transfer_function
+    assert "+0" not in parameters.parallel_latex
+    assert parameters.ideal_t_d is None
 
 
 @pytest.mark.parametrize("dead,lag", ((q(1), q(2)), (q(3), q(5))))

@@ -33,6 +33,7 @@ from klausurbotpro.application.transfer_function_request_factory import (
 )
 from klausurbotpro.application.transfer_function_workflow_contracts import WorkflowInputForm
 from klausurbotpro.domain import (
+    ControllerDesignCandidateStatus,
     ControllerDesignControl,
     ControllerDesignDiagnostic,
     ControllerDesignMethod,
@@ -87,8 +88,12 @@ class ControllerDesignCandidate:
     frequency_analysis: FrequencyDomainWorkflowResult
     achieved_phase_margin_degrees: float
     controls: tuple[ControllerDesignControl, ...]
-    status: str
+    status: ControllerDesignCandidateStatus
     diagnostics: tuple[ControllerDesignDiagnostic, ...] = ()
+
+    def __post_init__(self) -> None:
+        if type(self.status) is not ControllerDesignCandidateStatus:
+            raise TypeError("status must be ControllerDesignCandidateStatus.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,10 +117,75 @@ class ControllerDesignResult:
 
     @property
     def has_copyable_solution(self) -> bool:
-        return bool(self.latex) and self.status in (
-            ControllerDesignStatus.COMPLETE,
-            ControllerDesignStatus.SELECTION_REQUIRED,
+        return bool(self.latex) and (
+            self.status is ControllerDesignStatus.COMPLETE
+            or (
+                self.status is ControllerDesignStatus.SELECTION_REQUIRED
+                and any(
+                    candidate.status is ControllerDesignCandidateStatus.TARGET_MET
+                    for candidate in self.candidates
+                )
+            )
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ControllerDesignOutcomeDecision:
+    status: ControllerDesignStatus
+    selected_candidate_index: int | None
+    diagnostic: ControllerDesignDiagnostic | None
+
+
+def decide_p_phase_margin_outcome(
+    candidate_statuses: tuple[ControllerDesignCandidateStatus, ...],
+) -> ControllerDesignOutcomeDecision:
+    """Decide the P-design outcome independently of numerical analysis."""
+    successful = tuple(
+        index
+        for index, status in enumerate(candidate_statuses)
+        if status is ControllerDesignCandidateStatus.TARGET_MET
+    )
+    if len(candidate_statuses) == 1 and successful:
+        return ControllerDesignOutcomeDecision(ControllerDesignStatus.COMPLETE, 0, None)
+    if len(candidate_statuses) > 1 and successful:
+        return ControllerDesignOutcomeDecision(
+            ControllerDesignStatus.SELECTION_REQUIRED,
+            None,
+            ControllerDesignDiagnostic(
+                "SELECTION_REQUIRED",
+                "Mehrere Zielphasenfrequenzen wurden gefunden und mindestens ein Kandidat "
+                "erfüllt die geforderte globale Phasenreserve. Bitte wähle einen Kandidaten aus.",
+            ),
+        )
+    return ControllerDesignOutcomeDecision(
+        ControllerDesignStatus.FAILED,
+        None,
+        ControllerDesignDiagnostic(
+            "PHASE_MARGIN_TARGET_NOT_MET",
+            "Kein berechneter Kandidat erfüllt die geforderte globale Phasenreserve.",
+        ),
+    )
+
+
+def controller_design_candidate_status_text(status: ControllerDesignCandidateStatus) -> str:
+    return {
+        ControllerDesignCandidateStatus.TARGET_MET: "Ziel vollständig erfüllt",
+        ControllerDesignCandidateStatus.TARGET_CROSSING_MET_GLOBAL_MARGIN_NOT_MET: (
+            "Zieldurchtritt erreicht, globale Phasenreserve nicht erfüllt"
+        ),
+        ControllerDesignCandidateStatus.TARGET_NOT_MET: "Ziel nicht erfüllt",
+    }[status]
+
+
+def controller_design_method_text(method: ControllerDesignMethod) -> str:
+    return {
+        ControllerDesignMethod.P_PHASE_MARGIN: "P-Verstärkung für gewünschte Phasenreserve",
+        ControllerDesignMethod.ZIEGLER_NICHOLS_OPEN_LOOP: "Ziegler–Nichols – offener Kreis",
+        ControllerDesignMethod.ZIEGLER_NICHOLS_CLOSED_LOOP: (
+            "Ziegler–Nichols – geschlossener Kreis"
+        ),
+        ControllerDesignMethod.COHEN_COON: "Cohen–Coon",
+    }[method]
 
 
 class ControllerDesignWorkflowService:
@@ -129,8 +199,6 @@ class ControllerDesignWorkflowService:
     def run(self, draft: ControllerDesignInputDraft) -> ControllerDesignResult:
         if type(draft) is not ControllerDesignInputDraft:
             raise TypeError("draft must be ControllerDesignInputDraft.")
-        if not draft.task_name.strip():
-            return _failure(draft, "INVALID_INPUT", "Bitte gib einen Aufgabennamen ein.")
         if draft.method is ControllerDesignMethod.P_PHASE_MARGIN:
             return self._run_phase_margin(draft)
         return self._run_table(draft)
@@ -307,12 +375,12 @@ class ControllerDesignWorkflowService:
             )
             crossing_met = all(item.passed for item in controls[:4])
             candidate_status = (
-                "TARGET_MET"
+                ControllerDesignCandidateStatus.TARGET_MET
                 if crossing_met and global_margin_met
                 else (
-                    "TARGET_CROSSING_MET_GLOBAL_MARGIN_NOT_MET"
+                    ControllerDesignCandidateStatus.TARGET_CROSSING_MET_GLOBAL_MARGIN_NOT_MET
                     if crossing_met
-                    else "TARGET_NOT_MET"
+                    else ControllerDesignCandidateStatus.TARGET_NOT_MET
                 )
             )
             candidates.append(
@@ -336,24 +404,12 @@ class ControllerDesignWorkflowService:
                 "Die Zielphase wird im untersuchten Frequenzbereich nicht erreicht.",
                 before=before,
             )
-        status = (
-            ControllerDesignStatus.COMPLETE
-            if len(candidates) == 1
-            else ControllerDesignStatus.SELECTION_REQUIRED
-        )
-        diagnostics = (
-            ()
-            if len(candidates) == 1
-            else (
-                ControllerDesignDiagnostic(
-                    "SELECTION_REQUIRED",
-                    "Mehrere gültige Zielphasenfrequenzen wurden gefunden. "
-                    "Es wird keine Lösung stillschweigend ausgewählt.",
-                ),
-            )
-        )
+        decision = decide_p_phase_margin_outcome(tuple(item.status for item in candidates))
+        diagnostics = () if decision.diagnostic is None else (decision.diagnostic,)
         parameters = (
-            _numeric_p_parameters(candidates[0].positive_k_p) if len(candidates) == 1 else None
+            _numeric_p_parameters(candidates[decision.selected_candidate_index].positive_k_p)
+            if decision.selected_candidate_index is not None
+            else None
         )
         latex = prepend_latex_task_heading(
             _phase_margin_latex(draft, target, target_phase, tuple(candidates)), draft.task_name
@@ -369,12 +425,16 @@ class ControllerDesignWorkflowService:
             parameters,
             tuple(candidates),
             before,
-            candidates[0].frequency_analysis if len(candidates) == 1 else None,
+            (
+                candidates[decision.selected_candidate_index].frequency_analysis
+                if decision.selected_candidate_index is not None
+                else None
+            ),
             tuple(item for candidate in candidates for item in candidate.controls),
             tuple(_phase_margin_steps(target, target_phase, tuple(candidates))),
             latex,
             diagnostics,
-            status,
+            decision.status,
         )
 
     def _frequency_draft(
@@ -476,7 +536,7 @@ def _numeric_p_parameters(kp: float) -> ControllerParameters:
         zero,
         None,
         None,
-        format(kp, ".16g"),
+        f"G_R(s)={format(kp, '.16g')}",
         rf"G_R(s)={kp:.12g}",
         rf"G_R(s)={kp:.12g}",
         True,
@@ -522,45 +582,75 @@ def _table_steps(
         "Gegebene Werte: " + ", ".join(f"{key}={value}" for key, value in values) + ".",
         "Quellenbereich geprüft.",
         f"Tabellenzeile {parameters.controller_type.value.upper()} exakt eingesetzt.",
-        f"k_P={_display(parameters.k_p)}, k_I={_display(parameters.k_i)}, "
-        f"k_D={_display(parameters.k_d)}.",
-        "Idealparameter aus T_I=k_P/k_I und T_D=k_D/k_P bestimmt, soweit anwendbar.",
+        _parameter_summary_plain(parameters),
+        _ideal_summary_plain(parameters),
         "Parallele und ideale Reglerform symbolisch rekonstruiert.",
         "Keine Zwischenrundung verwendet.",
     )
+
+
+def _parameter_summary_plain(parameters: ControllerParameters) -> str:
+    values = [f"k_P={_display(parameters.k_p)}"]
+    if parameters.controller_type in (ControllerType.PI, ControllerType.PID):
+        values.append(f"k_I={_display(parameters.k_i)}")
+    if parameters.controller_type is ControllerType.PID:
+        values.append(f"k_D={_display(parameters.k_d)}")
+    return ", ".join(values) + "."
+
+
+def _ideal_summary_plain(parameters: ControllerParameters) -> str:
+    if parameters.controller_type is ControllerType.P:
+        return "Der P-Regler benötigt keine Idealparameter."
+    if parameters.controller_type is ControllerType.PI:
+        return "Idealparameter aus T_I=k_P/k_I bestimmt."
+    return "Idealparameter aus T_I=k_P/k_I und T_D=k_D/k_P bestimmt."
 
 
 def _table_latex(
     formula: str, values: tuple[tuple[str, str], ...], parameters: ControllerParameters
 ) -> str:
     given = r",\quad ".join(rf"\text{{{key}}}={value}" for key, value in values)
-    ti = (
-        r"\text{nicht anwendbar}"
-        if parameters.ideal_t_i is None
-        else _latex_scalar(parameters.ideal_t_i)
-    )
-    td = (
-        r"\text{nicht anwendbar}"
-        if parameters.ideal_t_d is None
-        else _latex_scalar(parameters.ideal_t_d)
-    )
+    parameter_lines: tuple[str, ...]
+    if parameters.controller_type is ControllerType.P:
+        parameter_lines = (
+            rf"\[k_P={_latex_scalar(parameters.k_p)}\]",
+            rf"\[{parameters.parallel_latex}\]",
+        )
+    elif parameters.controller_type is ControllerType.PI:
+        assert parameters.ideal_t_i is not None
+        parameter_lines = (
+            rf"\[k_P={_latex_scalar(parameters.k_p)},\quad "
+            rf"k_I={_latex_scalar(parameters.k_i)}\]",
+            rf"\[T_I={_latex_scalar(parameters.ideal_t_i)}\]",
+            rf"\[{parameters.parallel_latex}\]",
+            rf"\[{parameters.ideal_latex}\]",
+            r"\[k_P+\frac{k_I}{s}\equiv k_P\left(1+\frac{1}{T_Is}\right)\]",
+        )
+    else:
+        assert parameters.ideal_t_i is not None and parameters.ideal_t_d is not None
+        parameter_lines = (
+            rf"\[k_P={_latex_scalar(parameters.k_p)},\quad "
+            rf"k_I={_latex_scalar(parameters.k_i)},\quad "
+            rf"k_D={_latex_scalar(parameters.k_d)}\]",
+            rf"\[T_I={_latex_scalar(parameters.ideal_t_i)},\qquad "
+            rf"T_D={_latex_scalar(parameters.ideal_t_d)}\]",
+            rf"\[{parameters.parallel_latex}\]",
+            rf"\[{parameters.ideal_latex}\]",
+            r"\[k_P+\frac{k_I}{s}+k_Ds\equiv "
+            r"k_P\left(1+\frac{1}{T_Is}+T_Ds\right)\]",
+        )
     return "\n".join(
         (
             r"\textbf{Gegeben}",
             rf"\[{given}\]",
             r"\textbf{Gesucht}",
-            r"\[k_P,\;k_I,\;k_D\quad\text{und die Reglerübertragungsfunktion}\]",
+            rf"\[\text{{Parameter des {parameters.controller_type.value.upper()}-Reglers "
+            r"und seine Übertragungsfunktion}}\]",
             r"\textbf{Lösung}",
             rf"\text{{Verfahren: {formula}; Quellenbereich erfüllt.}}",
             rf"\text{{Tabellenzeile: {parameters.controller_type.value.upper()}.}}",
             _selected_formula_latex(formula, parameters.controller_type),
-            rf"\[k_P={_latex_scalar(parameters.k_p)},\quad "
-            rf"k_I={_latex_scalar(parameters.k_i)},\quad "
-            rf"k_D={_latex_scalar(parameters.k_d)}\]",
-            rf"\[T_I={ti},\qquad T_D={td}\]",
-            rf"\[{parameters.parallel_latex}\]",
-            rf"\[{parameters.ideal_latex}\]",
-            r"\[k_P+\frac{k_I}{s}+k_Ds\equiv k_P\left(1+\frac{1}{T_Is}+T_Ds\right)\]",
+            *parameter_lines,
             r"\text{Kontrolle: exakte Weiterrechnung ohne Zwischenrundung; Formen identisch.}",
             rf"\[\boxed{{{parameters.parallel_latex}}}\]",
             r"\text{Verstärkungsdimension gemäß Aufgabenstellung; nicht separat angegeben.}",
@@ -573,11 +663,11 @@ def _selected_formula_latex(formula: str, controller_type: ControllerType) -> st
         (
             "Ziegler–Nichols, offener Kreis",
             ControllerType.P,
-        ): r"\[k_P=\frac{T}{K_SL},\quad k_I=0,\quad k_D=0\]",
+        ): r"\[k_P=\frac{T}{K_SL}\]",
         (
             "Ziegler–Nichols, offener Kreis",
             ControllerType.PI,
-        ): r"\[k_P=\frac{0.9T}{K_SL},\quad T_I=3.33L,\quad k_I=\frac{k_P}{3.33L},\quad k_D=0\]",
+        ): r"\[k_P=\frac{0.9T}{K_SL},\quad T_I=3.33L,\quad k_I=\frac{k_P}{3.33L}\]",
         (
             "Ziegler–Nichols, offener Kreis",
             ControllerType.PID,
@@ -585,7 +675,7 @@ def _selected_formula_latex(formula: str, controller_type: ControllerType) -> st
         (
             "Ziegler–Nichols, geschlossener Kreis",
             ControllerType.P,
-        ): r"\[k_P=0.5K_{\mathrm{crit}},\quad k_I=0,\quad k_D=0\]",
+        ): r"\[k_P=0.5K_{\mathrm{crit}}\]",
         (
             "Ziegler–Nichols, geschlossener Kreis",
             ControllerType.PI,
@@ -642,6 +732,7 @@ def _phase_margin_steps(
                 f"k_P={candidate.positive_k_p:.12g}.",
                 "Vollständige Frequenz-, Reserven- und Nyquist-Nachrechnung: "
                 f"Φ_R,ist={candidate.achieved_phase_margin_degrees:.8g}°.",
+                f"Kandidatenstatus: {controller_design_candidate_status_text(candidate.status)}.",
             )
         )
     return steps
@@ -679,13 +770,22 @@ def _phase_margin_latex(
                 rf"{candidate.achieved_phase_margin_degrees:.8g}^\circ\]",
                 r"\text{Durchtritte und Reserven wurden vollständig neu berechnet; "
                 r"der vorhandene Nyquist-Kern wurde erneut ausgeführt.}",
+                rf"\text{{Status: {controller_design_candidate_status_text(candidate.status)}.}}",
             )
         )
-    lines.append(
-        rf"\[\boxed{{G_R(s)={candidates[0].positive_k_p:.12g}}}\]"
-        if len(candidates) == 1
-        else r"\text{Mehrere gültige Kandidaten: Eine eindeutige Auswahl ist erforderlich.}"
+    successful = tuple(
+        candidate
+        for candidate in candidates
+        if candidate.status is ControllerDesignCandidateStatus.TARGET_MET
     )
+    if len(candidates) == 1 and successful:
+        lines.append(rf"\[\boxed{{G_R(s)={successful[0].positive_k_p:.12g}}}\]")
+    elif len(candidates) > 1 and successful:
+        lines.append(
+            r"\text{Mindestens ein gültiger Kandidat ist vorhanden; eine Auswahl ist erforderlich.}"
+        )
+    else:
+        lines.append(r"\text{Kein Kandidat erfüllt die geforderte globale Phasenreserve.}")
     return "\n".join(lines)
 
 
@@ -720,7 +820,12 @@ def _exact_from_decimal(text: str) -> ExactRationalValue:
 
 __all__ = [
     "ControllerDesignCandidate",
+    "ControllerDesignCandidateStatus",
     "ControllerDesignInputDraft",
+    "ControllerDesignOutcomeDecision",
     "ControllerDesignResult",
     "ControllerDesignWorkflowService",
+    "controller_design_candidate_status_text",
+    "controller_design_method_text",
+    "decide_p_phase_margin_outcome",
 ]

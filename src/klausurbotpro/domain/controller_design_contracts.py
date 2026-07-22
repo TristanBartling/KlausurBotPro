@@ -28,6 +28,14 @@ class ControllerDesignStatus(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
+class ControllerDesignCandidateStatus(StrEnum):
+    TARGET_MET = "target_met"
+    TARGET_CROSSING_MET_GLOBAL_MARGIN_NOT_MET = (
+        "target_crossing_met_global_margin_not_met"
+    )
+    TARGET_NOT_MET = "target_not_met"
+
+
 class ControllerValueProvenance(StrEnum):
     EXACT_RATIONAL = "exact_rational"
     NUMERIC_FREQUENCY_DESIGN = "numeric_frequency_design"
@@ -104,6 +112,7 @@ def exact_scalar(value: ExactRationalValue) -> ControllerScalar:
 
 __all__ = [
     "ControllerDesignControl",
+    "ControllerDesignCandidateStatus",
     "ControllerDesignDiagnostic",
     "ControllerDesignMethod",
     "ControllerDesignStatus",

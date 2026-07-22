@@ -23,9 +23,14 @@ from klausurbotpro.application import (
     ControllerDesignMethod,
     ControllerType,
     ParameterInputDraft,
+    controller_design_candidate_status_text,
+    controller_design_method_text,
 )
 from klausurbotpro.ui.controller_design_presenter import ControllerDesignPresenter
-from klausurbotpro.ui.controller_design_view_state import ControllerDesignViewState
+from klausurbotpro.ui.controller_design_view_state import (
+    ControllerDesignUiRunStatus,
+    ControllerDesignViewState,
+)
 
 _METHODS = (
     ("P-Verstärkung für gewünschte Phasenreserve", ControllerDesignMethod.P_PHASE_MARGIN),
@@ -194,8 +199,8 @@ class ControllerDesignWorkspace(QWidget):
     def _render(self, value: object) -> None:
         if type(value) is not ControllerDesignViewState:
             return
-        running = value.run_status.value == "running"
-        self.calculate_button.setEnabled(not running)
+        running = value.run_status is ControllerDesignUiRunStatus.RUNNING
+        self._set_inputs_enabled(not running)
         if value.result is None:
             for output in self.outputs.values():
                 output.clear()
@@ -207,7 +212,7 @@ class ControllerDesignWorkspace(QWidget):
         result = value.result
         parameters = result.controller_parameters
         self.outputs["overview"].setPlainText(
-            f"Verfahren: {self.method_combo.currentText()}\n"
+            f"Verfahren: {controller_design_method_text(result.method)}\n"
             f"Status: {'Lösung erstellt' if result.has_copyable_solution else 'Keine Lösung'}"
         )
         self.outputs["inputs"].setPlainText(
@@ -226,7 +231,8 @@ class ControllerDesignWorkspace(QWidget):
             "\n".join(
                 f"Kandidat {item.candidate_index}: ω={item.target_frequency:.12g} rad/s, "
                 f"k_P={item.positive_k_p:.12g}, "
-                f"Φ_R={item.achieved_phase_margin_degrees:.8g}°"
+                f"Φ_R={item.achieved_phase_margin_degrees:.8g}°, "
+                f"Status: {controller_design_candidate_status_text(item.status)}"
                 for item in result.candidates
             )
         )
@@ -254,12 +260,31 @@ class ControllerDesignWorkspace(QWidget):
         self.presenter.reset()
         self.task_name_edit.clear()
         self.method_combo.setCurrentIndex(0)
+        self.controller_type_combo.setCurrentIndex(2)
         self.numerator_edit.setText("100")
         self.denominator_edit.setText("s*(10*s+1)")
+        self.parameters_edit.clear()
         self.target_margin_edit.setText("20")
         self.omega_min_edit.setText("1e-4")
         self.omega_max_edit.setText("1e2")
         self.points_per_decade_edit.setText("32")
+        self.process_gain_edit.setText("1.8")
+        self.dead_time_edit.setText("12")
+        self.lag_time_edit.setText("72")
+        self.critical_gain_edit.setText("1.62")
+        self.critical_period_edit.setText("3")
+        self._method_changed()
+
+    def _set_inputs_enabled(self, enabled: bool) -> None:
+        for widget in (
+            self.task_name_edit,
+            self.method_combo,
+            self.controller_type_combo,
+            *(row[1] for row in self.rows.values()),
+            self.calculate_button,
+            self.reset_button,
+        ):
+            widget.setEnabled(enabled)
 
     @Slot()
     def _copy(self) -> None:

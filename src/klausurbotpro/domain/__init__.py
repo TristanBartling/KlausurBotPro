@@ -37,6 +37,7 @@ from klausurbotpro.domain.controller_design_analyzer import (
     design_ziegler_nichols_open,
 )
 from klausurbotpro.domain.controller_design_contracts import (
+    ControllerDesignCandidateStatus,
     ControllerDesignControl,
     ControllerDesignDiagnostic,
     ControllerDesignMethod,
@@ -260,6 +261,7 @@ from klausurbotpro.domain.transfer_function_stability_analyzer import (
 )
 
 __all__ = [
+    "ControllerDesignCandidateStatus",
     "ControllerDesignControl",
     "ControllerDesignDiagnostic",
     "ControllerDesignMethod",
