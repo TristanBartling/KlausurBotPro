@@ -384,6 +384,11 @@ def _worked_steps(
             "4. Kanonische Koeffizientenfolge",
             ", ".join(item.canonical_text for item in canonical.coefficients),
         ),
+        (
+            "Hurwitz-Skriptkonvention",
+            "Bei einer Hurwitz-Gegenkontrolle beginnt die erste Matrixzeile "
+            "mit a_1, a_3, a_5, ...",
+        ),
     ]
     for result in results:
         steps.append(
@@ -559,6 +564,8 @@ def _latex(
         + _escape_latex_text(_concept(canonical))
         + "}",
         r"\textbf{Lösung}",
+        r"\text{Hurwitz-Skriptkonvention bei Gegenkontrolle: erste Zeile }"
+        r"a_1,a_3,a_5,\ldots",
     ]
     for result in results:
         if result.rows:

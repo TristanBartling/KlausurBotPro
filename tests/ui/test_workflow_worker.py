@@ -19,9 +19,16 @@ from klausurbotpro.application import (
     TransferFunctionWorkflowRequest,
     WorkflowInputForm,
 )
+from klausurbotpro.application.stability_workflow import (
+    StabilityInputDraft,
+    StabilityInputMode,
+    StabilityWorkflowResult,
+)
 from klausurbotpro.domain import ExactRationalValue
+from klausurbotpro.domain.parameter_core_contracts import AnalysisTarget
 from klausurbotpro.ui import (
     FrequencyDomainWorkflowWorker,
+    StabilityWorkflowWorker,
     TransferFunctionWorkflowExecutionResult,
     TransferFunctionWorkflowWorker,
     WorkflowWorkerFailure,
@@ -83,6 +90,37 @@ def test_worker_reports_unexpected_failure_without_traceback_text() -> None:
     failure = failed.at(0)[0]
     assert type(failure) is WorkflowWorkerFailure
     assert "Traceback" not in failure.message
+
+
+def test_stability_worker_runs_transfer_input_in_persistent_qthread() -> None:
+    application = _app()
+    thread = QThread()
+    worker = StabilityWorkflowWorker()
+    worker.moveToThread(thread)
+    completed = QSignalSpy(worker.completed)
+    trigger = _Trigger()
+    trigger.requested.connect(worker.execute)
+    thread.start()
+    loop = QEventLoop()
+    worker.completed.connect(loop.quit)
+    trigger.requested.emit(
+        StabilityInputDraft(
+            decision_parameters_text="K",
+            analysis_target=AnalysisTarget.EXTERNAL_BIBO,
+            input_mode=StabilityInputMode.TRANSFER_FUNCTION,
+            transfer_function_text="(s+K)/(s^2+3*s+K)",
+        )
+    )
+    QTimer.singleShot(15_000, loop.quit)
+    loop.exec()
+    application.processEvents()
+
+    assert completed.count() == 1
+    result = completed.at(0)[0]
+    assert type(result) is StabilityWorkflowResult
+    assert result.analysis is not None
+    thread.quit()
+    assert thread.wait(10_000)
 
 
 def test_frequency_worker_runs_existing_service_once_in_qthread(

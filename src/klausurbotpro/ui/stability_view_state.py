@@ -1,10 +1,19 @@
 """Widget-free state for the direct stability workspace."""
 
 from dataclasses import dataclass
+from enum import StrEnum
+
+
+class StabilityUiRunStatus(StrEnum):
+    IDLE = "idle"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
 class StabilityViewState:
+    run_status: StabilityUiRunStatus = StabilityUiRunStatus.IDLE
     method: str = "hurwitz"
     summary: str = "Bereit."
     canonical_cases: str = ""
@@ -18,4 +27,4 @@ class StabilityViewState:
     failed: bool = False
 
 
-__all__ = ["StabilityViewState"]
+__all__ = ["StabilityUiRunStatus", "StabilityViewState"]

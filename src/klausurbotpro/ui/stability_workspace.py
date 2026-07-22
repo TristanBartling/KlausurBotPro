@@ -23,10 +23,11 @@ from klausurbotpro.application.stability_workflow import (
     AnalysisTarget,
     PolynomialRole,
     StabilityInputDraft,
+    StabilityInputMode,
     StabilityMethod,
 )
 from klausurbotpro.ui.stability_presenter import StabilityPresenter
-from klausurbotpro.ui.stability_view_state import StabilityViewState
+from klausurbotpro.ui.stability_view_state import StabilityUiRunStatus, StabilityViewState
 
 
 class StabilityWorkspace(QWidget):
@@ -40,6 +41,16 @@ class StabilityWorkspace(QWidget):
         self.render_state(self.presenter.state)
 
     def _build_ui(self) -> None:
+        self.input_mode_combo = QComboBox()
+        self.input_mode_combo.setObjectName("stabilityInputMode")
+        self.input_mode_combo.addItem(
+            "Charakteristisches Polynom",
+            StabilityInputMode.CHARACTERISTIC_POLYNOMIAL.value,
+        )
+        self.input_mode_combo.addItem(
+            "Führungsübertragungsfunktion",
+            StabilityInputMode.TRANSFER_FUNCTION.value,
+        )
         self.method_combo = QComboBox()
         self.method_combo.setObjectName("stabilityMethod")
         self.method_combo.addItem("Hurwitz", StabilityMethod.HURWITZ.value)
@@ -92,9 +103,11 @@ class StabilityWorkspace(QWidget):
         actions.addWidget(self.copy_latex_button)
         form_widget = QWidget()
         form = QFormLayout(form_widget)
+        form.addRow("Eingabeart:", self.input_mode_combo)
         form.addRow("Verfahren:", self.method_combo)
         form.addRow("Aufgabenname / LaTeX-Überschrift:", self.task_title_edit)
-        form.addRow("Polynom:", self.polynomial_edit)
+        self.input_label = QLabel("Polynom:")
+        form.addRow(self.input_label, self.polynomial_edit)
         form.addRow("Variable:", self.variable_edit)
         form.addRow("Entscheidungsparameter:", self.parameters_edit)
         form.addRow("Annahmen:", self.assumptions_edit)
@@ -102,6 +115,8 @@ class StabilityWorkspace(QWidget):
         form.addRow("Analyseziel:", self.target_combo)
         form.addRow("Provenienznotiz:", self.provenance_edit)
         form.addRow("Kürzungsstatus/-hinweis:", self.cancellation_edit)
+        self.role_label = form.labelForField(self.role_combo)
+        self.cancellation_label = form.labelForField(self.cancellation_edit)
         form.addRow(actions)
 
         self.result_tabs = QTabWidget()
@@ -134,13 +149,16 @@ class StabilityWorkspace(QWidget):
         self.reset_button.clicked.connect(self.reset)
         self.copy_latex_button.clicked.connect(self.copy_latex)
         self.method_combo.currentIndexChanged.connect(self._method_changed)
+        self.input_mode_combo.currentIndexChanged.connect(self._input_mode_changed)
         self._method_changed()
+        self._input_mode_changed()
 
     @Slot()
     def analyze(self) -> None:
         self._latex_task_title = self.task_title_edit.text()
         try:
             method = StabilityMethod(_combo_value(self.method_combo))
+            input_mode = StabilityInputMode(_combo_value(self.input_mode_combo))
             role = PolynomialRole(_combo_value(self.role_combo))
             analysis_target = AnalysisTarget(_combo_value(self.target_combo))
         except (TypeError, ValueError):
@@ -151,9 +169,14 @@ class StabilityWorkspace(QWidget):
             self.result_edits["latex"].clear()
             self.copy_latex_button.setEnabled(False)
             return
-        self.presenter.analyze(
+        source_text = self.polynomial_edit.toPlainText()
+        self.presenter.submit(
             StabilityInputDraft(
-                polynomial_text=self.polynomial_edit.toPlainText(),
+                polynomial_text=(
+                    source_text
+                    if input_mode is StabilityInputMode.CHARACTERISTIC_POLYNOMIAL
+                    else ""
+                ),
                 variable_name=self.variable_edit.text(),
                 decision_parameters_text=self.parameters_edit.text(),
                 assumptions_text=self.assumptions_edit.toPlainText(),
@@ -162,17 +185,27 @@ class StabilityWorkspace(QWidget):
                 provenance_note=self.provenance_edit.text(),
                 cancellation_note=self.cancellation_edit.text(),
                 method=method,
+                input_mode=input_mode,
+                transfer_function_text=(
+                    source_text
+                    if input_mode is StabilityInputMode.TRANSFER_FUNCTION
+                    else ""
+                ),
             )
         )
 
     @Slot()
     def reset(self) -> None:
         self.polynomial_edit.clear()
+        self.variable_edit.setText("s")
         self.parameters_edit.clear()
         self.assumptions_edit.clear()
         self.provenance_edit.clear()
         self.cancellation_edit.clear()
         self.method_combo.setCurrentIndex(0)
+        self.input_mode_combo.setCurrentIndex(0)
+        self.role_combo.setCurrentIndex(0)
+        self.target_combo.setCurrentIndex(0)
         self.task_title_edit.clear()
         self._latex_task_title = ""
         self.presenter.reset()
@@ -187,6 +220,23 @@ class StabilityWorkspace(QWidget):
     def render_state(self, state: object) -> None:
         if type(state) is not StabilityViewState:
             return
+        running = state.run_status is StabilityUiRunStatus.RUNNING
+        for widget in (
+            self.input_mode_combo,
+            self.method_combo,
+            self.task_title_edit,
+            self.polynomial_edit,
+            self.variable_edit,
+            self.parameters_edit,
+            self.assumptions_edit,
+            self.role_combo,
+            self.target_combo,
+            self.provenance_edit,
+            self.cancellation_edit,
+            self.analyze_button,
+            self.reset_button,
+        ):
+            widget.setEnabled(not running)
         self.result_edits["summary"].setPlainText(state.summary)
         self.result_edits["cases"].setPlainText(state.canonical_cases)
         self.result_edits["hurwitz"].setPlainText(state.hurwitz_details)
@@ -197,7 +247,7 @@ class StabilityWorkspace(QWidget):
         latex_source = prepend_latex_task_heading(state.latex_source, self._latex_task_title)
         self.result_edits["latex"].setPlainText(latex_source)
         self.result_edits["diagnostics"].setPlainText(state.diagnostics)
-        self.copy_latex_button.setEnabled(bool(latex_source))
+        self.copy_latex_button.setEnabled(not running and bool(latex_source))
         self._set_method_tabs(state.method)
 
     @Slot()
@@ -210,6 +260,28 @@ class StabilityWorkspace(QWidget):
             "Hurwitz analysieren" if method is StabilityMethod.HURWITZ else "Routh analysieren"
         )
         self._set_method_tabs(method.value)
+
+    @Slot()
+    def _input_mode_changed(self) -> None:
+        try:
+            mode = StabilityInputMode(_combo_value(self.input_mode_combo))
+        except (TypeError, ValueError):
+            return
+        transfer = mode is StabilityInputMode.TRANSFER_FUNCTION
+        self.input_label.setText(
+            "Führungsübertragungsfunktion:" if transfer else "Polynom:"
+        )
+        self.polynomial_edit.setPlaceholderText(
+            "(s+K)^2 / (((s+3)*(s+2*a)*(s+5)+8*K)*(s+K))"
+            if transfer
+            else "z. B. s^3 + 4*s^2 + 5*s + K_P"
+        )
+        self.role_combo.setVisible(not transfer)
+        self.cancellation_edit.setVisible(not transfer)
+        if self.role_label is not None:
+            self.role_label.setVisible(not transfer)
+        if self.cancellation_label is not None:
+            self.cancellation_label.setVisible(not transfer)
 
     def _set_method_tabs(self, method: str) -> None:
         hurwitz_index = self.result_tabs.indexOf(self.result_edits["hurwitz"])

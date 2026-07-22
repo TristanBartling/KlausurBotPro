@@ -4,16 +4,18 @@ from __future__ import annotations
 
 from typing import Protocol
 
-import sympy as sp
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 
+from klausurbotpro.application import HurwitzAnalysisResult, RouthDegreeCaseResult
 from klausurbotpro.application.stability_workflow import (
     StabilityInputDraft,
+    StabilityInputMode,
     StabilityMethod,
+    format_stability_expression,
     run_stability_workflow,
 )
-from klausurbotpro.domain.hurwitz_contracts import HurwitzAnalysisResult
-from klausurbotpro.ui.stability_view_state import StabilityViewState
+from klausurbotpro.ui.stability_view_state import StabilityUiRunStatus, StabilityViewState
+from klausurbotpro.ui.workflow_worker import WorkflowWorkerFailure
 
 
 class _DisplayExpression(Protocol):
@@ -22,18 +24,50 @@ class _DisplayExpression(Protocol):
 
 
 class StabilityPresenter(QObject):
+    execution_requested = Signal(object)
     state_changed = Signal(object)
 
-    def __init__(self) -> None:
+    def __init__(self, *, asynchronous: bool = False) -> None:
         super().__init__()
+        self._asynchronous = asynchronous
         self.state = StabilityViewState()
 
+    def submit(self, draft: StabilityInputDraft) -> bool:
+        if self.state.run_status is StabilityUiRunStatus.RUNNING:
+            return False
+        if (
+            not self._asynchronous
+            or draft.input_mode is StabilityInputMode.CHARACTERISTIC_POLYNOMIAL
+        ):
+            self.analyze(draft)
+            return True
+        self._set_state(
+            StabilityViewState(
+                run_status=StabilityUiRunStatus.RUNNING,
+                method=draft.method.value,
+                summary="Berechnung läuft …",
+            )
+        )
+        self.execution_requested.emit(draft)
+        return True
+
     def analyze(self, draft: StabilityInputDraft) -> None:
-        result = run_stability_workflow(draft)
+        self.accept_result(run_stability_workflow(draft), method=draft.method)
+
+    @Slot(object)
+    def accept_result(
+        self, value: object, *, method: StabilityMethod | None = None
+    ) -> None:
+        from klausurbotpro.application.stability_workflow import StabilityWorkflowResult
+
+        if type(value) is not StabilityWorkflowResult:
+            raise TypeError("value must be a StabilityWorkflowResult.")
+        result = value
         if result.analysis is None:
             self._set_state(
                 StabilityViewState(
-                    method=draft.method.value,
+                    run_status=StabilityUiRunStatus.FAILED,
+                    method=(method.value if method is not None else self.state.method),
                     summary="Eingabe ungültig.",
                     diagnostics="\n".join(result.errors),
                     failed=True,
@@ -70,9 +104,13 @@ class StabilityPresenter(QObject):
             )
         regions = "\n".join(item.parameter_region.exact_text for item in analysis.case_results)
         diagnostics = "\n".join((*analysis.diagnostics, analysis.cancellation_notice))
-        steps = "\n".join(f"{name}: {value}" for name, value in analysis.worked_steps)
+        steps = "\n".join(
+            f"{name}: {item_value}"
+            for name, item_value in (*result.source_steps, *analysis.worked_steps)
+        )
         self._set_state(
             StabilityViewState(
+                run_status=StabilityUiRunStatus.COMPLETE,
                 method=(
                     StabilityMethod.HURWITZ.value
                     if isinstance(analysis, HurwitzAnalysisResult)
@@ -85,13 +123,29 @@ class StabilityPresenter(QObject):
                 parameter_region=regions,
                 short_solution=f"{analysis.statement}\nNumerische Kontrolle: {checks}",
                 worked_steps=steps,
-                latex_source=analysis.latex_source,
+                latex_source=result.latex_preamble or analysis.latex_source,
                 diagnostics=diagnostics.strip(),
                 failed=False,
             )
         )
 
+    @Slot(object)
+    def accept_failure(self, value: object) -> None:
+        if type(value) is not WorkflowWorkerFailure:
+            raise TypeError("value must be WorkflowWorkerFailure.")
+        self._set_state(
+            StabilityViewState(
+                run_status=StabilityUiRunStatus.FAILED,
+                method=self.state.method,
+                summary="Berechnung fehlgeschlagen.",
+                diagnostics=value.message,
+                failed=True,
+            )
+        )
+
     def reset(self) -> None:
+        if self.state.run_status is StabilityUiRunStatus.RUNNING:
+            return
         self._set_state(StabilityViewState())
 
     def _set_state(self, state: StabilityViewState) -> None:
@@ -105,8 +159,6 @@ def _matrix(matrix: tuple[tuple[_DisplayExpression, ...], ...]) -> str:
 
 
 def _routh_case(item: object) -> str:
-    from klausurbotpro.domain.routh_contracts import RouthDegreeCaseResult
-
     assert isinstance(item, RouthDegreeCaseResult)
     if not item.rows:
         return item.statement
@@ -143,8 +195,6 @@ def _routh_case(item: object) -> str:
 
 
 def _routh_check(item: object) -> str:
-    from klausurbotpro.domain.routh_contracts import RouthDegreeCaseResult
-
     assert isinstance(item, RouthDegreeCaseResult)
     changes = str(item.sign_changes) if item.sign_changes is not None else "nicht bestimmbar"
     routh_count = (
@@ -169,13 +219,7 @@ def _routh_check(item: object) -> str:
 
 
 def _routh_expression(value: object) -> str:
-    from klausurbotpro.domain.expression import ExactExpression
-
-    assert isinstance(value, ExactExpression)
-    numerator, denominator = value._as_sympy().as_numer_denom()
-    if denominator != 1:
-        return f"({str(sp.expand(numerator)).replace(' ', '')})/{denominator}"
-    return value.canonical_text
+    return format_stability_expression(value)
 
 
 def _check_status(value: str) -> str:

@@ -363,6 +363,11 @@ def _worked_steps(
             or "keine",
         ),
         ("4. Kanonisierung", canonical.expanded_polynomial.canonical_text),
+        (
+            "Hurwitz-Konvention",
+            "Hurwitz-Matrix nach der Konvention des Vorlesungsskripts: "
+            "erste Zeile a_1, a_3, a_5, ...",
+        ),
     ]
     for result in results:
         steps.extend(
@@ -431,6 +436,8 @@ def _latex(
         r"\text{Stabilitätsbegriff:}\quad \text{"
         + _escape_latex_text(_concept(canonical))
         + r"}.",
+        r"\text{Hurwitz-Matrix nach der Konvention des Vorlesungsskripts: "
+        r"erste Zeile }a_1,a_3,a_5,\ldots.",
     ]
     for result in results:
         matrix_latex = sp.latex(

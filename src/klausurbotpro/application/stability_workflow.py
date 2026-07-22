@@ -1,4 +1,4 @@
-"""Direct safe-input workflow for the Hurwitz stability workspace."""
+"""Safe orchestration for polynomial and transfer-function stability input."""
 
 from __future__ import annotations
 
@@ -8,6 +8,16 @@ from enum import StrEnum
 
 import sympy as sp
 
+from klausurbotpro.application.transfer_function_preparation_contracts import (
+    TransferFunctionPreparationResult,
+)
+from klausurbotpro.application.transfer_function_preparation_service import (
+    TransferFunctionPreparationService,
+)
+from klausurbotpro.application.transfer_function_workflow_contracts import (
+    TransferFunctionWorkflowRequest,
+    WorkflowInputForm,
+)
 from klausurbotpro.domain.expression import ExactExpression
 from klausurbotpro.domain.hurwitz_analyzer import analyze_hurwitz
 from klausurbotpro.domain.hurwitz_contracts import HurwitzAnalysisResult
@@ -25,6 +35,9 @@ from klausurbotpro.domain.parameter_core_contracts import (
 )
 from klausurbotpro.domain.routh_analyzer import analyze_routh
 from klausurbotpro.domain.routh_contracts import RouthAnalysisResult
+from klausurbotpro.domain.transfer_function_reduction_contracts import (
+    TransferFunctionReductionStepKind,
+)
 from klausurbotpro.parsing import ParserConfig, SafeExpressionParser
 
 _RELATION_PATTERN = re.compile(r"(<=|>=|!=|=|<|>)")
@@ -43,9 +56,14 @@ class StabilityMethod(StrEnum):
     ROUTH = "routh"
 
 
+class StabilityInputMode(StrEnum):
+    CHARACTERISTIC_POLYNOMIAL = "characteristic_polynomial"
+    TRANSFER_FUNCTION = "transfer_function"
+
+
 @dataclass(frozen=True, slots=True)
 class StabilityInputDraft:
-    polynomial_text: str
+    polynomial_text: str = ""
     variable_name: str = "s"
     decision_parameters_text: str = ""
     assumptions_text: str = ""
@@ -54,16 +72,21 @@ class StabilityInputDraft:
     provenance_note: str = ""
     cancellation_note: str = ""
     method: StabilityMethod = StabilityMethod.HURWITZ
+    input_mode: StabilityInputMode = StabilityInputMode.CHARACTERISTIC_POLYNOMIAL
+    transfer_function_text: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class StabilityWorkflowResult:
     analysis: HurwitzAnalysisResult | RouthAnalysisResult | None
     errors: tuple[str, ...] = ()
+    source_steps: tuple[tuple[str, str], ...] = ()
+    latex_preamble: str = ""
+    transfer_preparation: TransferFunctionPreparationResult | None = None
 
 
 def run_stability_workflow(draft: StabilityInputDraft) -> StabilityWorkflowResult:
-    """Parse a direct request without eval and run the vertical Hurwitz workflow."""
+    """Prepare one safe input and run the unchanged Hurwitz/Routh consumers."""
     variable = draft.variable_name.strip()
     parameters = tuple(
         item.strip() for item in draft.decision_parameters_text.split(",") if item.strip()
@@ -79,12 +102,25 @@ def run_stability_workflow(draft: StabilityInputDraft) -> StabilityWorkflowResul
         )
     allowed = frozenset((variable, *parameters))
     parser = SafeExpressionParser(ParserConfig(allowed_symbols=allowed))
-    parsed = parser.parse(draft.polynomial_text, "polynomial")
-    if not parsed.succeeded or parsed.value is None:
-        return StabilityWorkflowResult(None, tuple(item.message for item in parsed.diagnostics))
     assumptions, errors = _parse_assumptions(draft.assumptions_text, parameters, parser)
     if errors:
         return StabilityWorkflowResult(None, errors)
+
+    if draft.input_mode is StabilityInputMode.TRANSFER_FUNCTION:
+        return _run_transfer_function(draft, variable, parameters, assumptions)
+    return _run_polynomial(draft, variable, parameters, assumptions, parser)
+
+
+def _run_polynomial(
+    draft: StabilityInputDraft,
+    variable: str,
+    parameters: tuple[str, ...],
+    assumptions: tuple[AtomicParameterCondition, ...],
+    parser: SafeExpressionParser,
+) -> StabilityWorkflowResult:
+    parsed = parser.parse(draft.polynomial_text, "polynomial")
+    if not parsed.succeeded or parsed.value is None:
+        return StabilityWorkflowResult(None, tuple(item.message for item in parsed.diagnostics))
     cancellation = None
     if draft.role is PolynomialRole.REDUCED_TRANSFER_DENOMINATOR:
         cancellation = CancellationReport(
@@ -107,13 +143,207 @@ def run_stability_workflow(draft: StabilityInputDraft) -> StabilityWorkflowResul
         ),
         cancellation,
     )
+    return StabilityWorkflowResult(_analyze(value, draft.method))
+
+
+def _run_transfer_function(
+    draft: StabilityInputDraft,
+    variable: str,
+    parameters: tuple[str, ...],
+    assumptions: tuple[AtomicParameterCondition, ...],
+) -> StabilityWorkflowResult:
+    if draft.analysis_target is AnalysisTarget.STATE_ASYMPTOTIC:
+        return StabilityWorkflowResult(
+            None,
+            (
+                "Eine Führungsübertragungsfunktion reicht für den Nachweis der "
+                "Zustandsstabilität nicht aus.",
+            ),
+        )
+    source_text = draft.transfer_function_text or draft.polynomial_text
+    preparation = TransferFunctionPreparationService().prepare(
+        TransferFunctionWorkflowRequest(
+            WorkflowInputForm.COMMON,
+            common_expression_text=source_text,
+            variable_name=variable,
+            allowed_parameter_names=tuple(sorted(parameters)),
+            field="transfer_function",
+        )
+    )
+    if not preparation.succeeded:
+        return StabilityWorkflowResult(
+            None, tuple(item.message for item in preparation.diagnostics)
+        )
+    raw = preparation.raw_value
+    reduced = preparation.reduced_value
+    reduction = preparation.reduction_result
+    assert raw is not None and reduced is not None and reduction is not None
+    assert reduction.report is not None
+
+    factors = tuple(
+        step.factor
+        for step in reduction.report.steps
+        if step.factor is not None
+        and step.kind
+        in (
+            TransferFunctionReductionStepKind.REMOVE_COMMON_NUMERIC_FACTOR,
+            TransferFunctionReductionStepKind.REMOVE_COMMON_POLYNOMIAL_FACTOR,
+        )
+    )
+    was_reduced = reduction.report.was_reduced
+    cancellation = CancellationReport(
+        CancellationStatus.FACTORS_REMOVED if factors else CancellationStatus.NONE,
+        _cancellation_note(factors, was_reduced),
+        factors,
+    )
+    external = draft.analysis_target is AnalysisTarget.EXTERNAL_BIBO
+    selected = reduced.denominator if external else raw.denominator
+    role = (
+        PolynomialRole.REDUCED_TRANSFER_DENOMINATOR
+        if external
+        else PolynomialRole.RAW_CLOSED_LOOP_CHARACTERISTIC
+    )
+    value = CharacteristicPolynomialInput(
+        selected.expression,
+        variable,
+        parameters,
+        (),
+        assumptions,
+        (),
+        role,
+        draft.analysis_target,
+        SourceProvenance(
+            "Rationalfunktionspipeline",
+            draft.provenance_note.strip(),
+            "Vollständige Führungsübertragungsfunktion",
+        ),
+        cancellation,
+    )
+    analysis = _analyze(value, draft.method)
+    steps = _transfer_steps(
+        source_text, raw, reduced, factors, external, selected.expression
+    )
+    latex = _transfer_latex(
+        raw, reduced, factors, external, selected.expression, analysis
+    )
+    return StabilityWorkflowResult(
+        analysis,
+        source_steps=steps,
+        latex_preamble=latex,
+        transfer_preparation=preparation,
+    )
+
+
+def _analyze(
+    value: CharacteristicPolynomialInput, method: StabilityMethod
+) -> HurwitzAnalysisResult | RouthAnalysisResult:
     canonical = canonicalize_characteristic_polynomial(value)
-    analysis = (
+    return (
         analyze_hurwitz(canonical)
-        if draft.method is StabilityMethod.HURWITZ
+        if method is StabilityMethod.HURWITZ
         else analyze_routh(canonical)
     )
-    return StabilityWorkflowResult(analysis)
+
+
+def format_stability_expression(value: object) -> str:
+    """Render an exact rational Routh entry without leaking CAS work into UI."""
+    if type(value) is not ExactExpression:
+        raise TypeError("value must be ExactExpression.")
+    numerator, denominator = value._as_sympy().as_numer_denom()
+    if denominator != 1:
+        return f"({str(sp.expand(numerator)).replace(' ', '')})/{denominator}"
+    return value.canonical_text
+
+
+def _cancellation_note(
+    factors: tuple[ExactExpression, ...], was_reduced: bool
+) -> str:
+    if factors:
+        return "Entfernte gemeinsame Faktoren: " + ", ".join(
+            item.canonical_text for item in factors
+        )
+    return "Algebraisch reduziert." if was_reduced else "Keine gemeinsamen Faktoren entfernt."
+
+
+def _transfer_steps(
+    source_text: str,
+    raw: object,
+    reduced: object,
+    factors: tuple[ExactExpression, ...],
+    external: bool,
+    selected: ExactExpression,
+) -> tuple[tuple[str, str], ...]:
+    from klausurbotpro.domain.raw_transfer_function import RawTransferFunction
+    from klausurbotpro.domain.reduced_transfer_function import ReducedTransferFunction
+
+    assert isinstance(raw, RawTransferFunction)
+    assert isinstance(reduced, ReducedTransferFunction)
+    factor_text = ", ".join(item.canonical_text for item in factors) or "keine"
+    target = "E/A-asymptotische Stabilität" if external else "Interne asymptotische Stabilität"
+    selection = "reduzierter Nenner" if external else "roher Nenner"
+    return (
+        ("1. Eingegebene Führungsübertragungsfunktion", " ".join(source_text.split())),
+        ("2. Roher Zähler", raw.numerator.expression.canonical_text),
+        ("3. Roher Nenner", raw.denominator.expression.canonical_text),
+        ("4. Erkannte gemeinsame Faktoren", factor_text),
+        ("5. Reduzierte Führungsübertragungsfunktion", _fraction_text(reduced)),
+        ("6. Gewähltes Analyseziel", target),
+        ("7. Auswahl des Analyseobjekts", f"{selection}: {selected.canonical_text}"),
+    )
+
+
+def _fraction_text(value: object) -> str:
+    from klausurbotpro.domain.reduced_transfer_function import ReducedTransferFunction
+
+    assert isinstance(value, ReducedTransferFunction)
+    return (
+        f"({value.numerator.expression.canonical_text}) / "
+        f"({value.denominator.expression.canonical_text})"
+    )
+
+
+def _transfer_latex(
+    raw: object,
+    reduced: object,
+    factors: tuple[ExactExpression, ...],
+    external: bool,
+    selected: ExactExpression,
+    analysis: HurwitzAnalysisResult | RouthAnalysisResult,
+) -> str:
+    from klausurbotpro.domain.raw_transfer_function import RawTransferFunction
+    from klausurbotpro.domain.reduced_transfer_function import ReducedTransferFunction
+
+    assert isinstance(raw, RawTransferFunction)
+    assert isinstance(reduced, ReducedTransferFunction)
+    raw_num = raw.numerator.expression
+    raw_den = raw.denominator.expression
+    reduced_num = reduced.numerator.expression
+    reduced_den = reduced.denominator.expression
+    factored_num = ExactExpression._from_sympy(sp.factor(raw_num._as_sympy()))
+    factor_latex = r",\;".join(item.latex for item in factors) or r"\text{keine}"
+    target = (
+        r"\text{E/A-asymptotische Stabilität; reduzierter Nenner}"
+        if external
+        else r"\text{interne asymptotische Stabilität; roher Nenner}"
+    )
+    warning = (
+        r"\[\textbf{Warnung: }\text{Gekürzte Faktoren bleiben für die interne Dynamik relevant.}\]"
+        if factors
+        else ""
+    )
+    blocks = (
+        r"\[\textbf{Gegeben}\quad G_w(s)=\frac{" + raw_num.latex + "}{" + raw_den.latex + r"}\]",
+        r"\[\text{Zählerfaktorisierung:}\quad " + factored_num.latex + r"\]",
+        r"\[\text{Roher Nenner:}\quad " + raw_den.latex + r"\]",
+        r"\[\text{Entfernte gemeinsame Faktoren:}\quad " + factor_latex + r"\]",
+        r"\[\text{Reduzierte Führungsübertragungsfunktion:}\quad G_{w,\mathrm{red}}(s)=\frac{"
+        + reduced_num.latex + "}{" + reduced_den.latex + r"}\]",
+        r"\[\textbf{Gesucht}\quad " + target + r"\]",
+        r"\[\text{Ausgewähltes charakteristisches Polynom:}\quad p(s)="
+        + selected.latex + r"\]",
+        warning,
+    )
+    return "\n\n".join((*filter(None, blocks), analysis.latex_source))
 
 
 def _parse_assumptions(
@@ -158,8 +388,10 @@ def _parse_assumptions(
 __all__ = [
     "AnalysisTarget",
     "PolynomialRole",
+    "StabilityInputMode",
     "StabilityMethod",
     "StabilityInputDraft",
     "StabilityWorkflowResult",
+    "format_stability_expression",
     "run_stability_workflow",
 ]

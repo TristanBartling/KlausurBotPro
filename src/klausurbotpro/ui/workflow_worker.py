@@ -23,6 +23,11 @@ from klausurbotpro.application import (
     render_solution_report_latex,
     render_solution_report_plaintext,
 )
+from klausurbotpro.application.stability_workflow import (
+    StabilityInputDraft,
+    StabilityWorkflowResult,
+    run_stability_workflow,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _DEFAULT_WORKFLOW_LIMITS = TransferFunctionWorkflowLimits()
@@ -158,6 +163,41 @@ class FrequencyDomainWorkflowWorker(QObject):
             self._running = False
 
 
+class StabilityWorkflowWorker(QObject):
+    """Run stability preparation and analysis in the persistent worker thread."""
+
+    completed = Signal(object)
+    failed = Signal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._running = False
+
+    @Slot(object)
+    def execute(self, request: object) -> None:
+        if self._running:
+            return
+        self._running = True
+        try:
+            if type(request) is not StabilityInputDraft:
+                raise TypeError("request must be StabilityInputDraft.")
+            result = run_stability_workflow(request)
+            if type(result) is not StabilityWorkflowResult:
+                raise TypeError("stability workflow returned an invalid result.")
+        except Exception:
+            _LOGGER.exception("Unexpected stability worker failure.")
+            self.failed.emit(
+                WorkflowWorkerFailure(
+                    "Die Stabilitätsberechnung ist unerwartet fehlgeschlagen. "
+                    "Technische Details wurden protokolliert."
+                )
+            )
+        else:
+            self.completed.emit(result)
+        finally:
+            self._running = False
+
+
 class ControllerDesignWorkflowWorker(QObject):
     """Run controller design in the existing persistent worker thread."""
 
@@ -195,6 +235,7 @@ class ControllerDesignWorkflowWorker(QObject):
 __all__ = [
     "ControllerDesignWorkflowWorker",
     "FrequencyDomainWorkflowWorker",
+    "StabilityWorkflowWorker",
     "TransferFunctionWorkflowExecutionResult",
     "TransferFunctionWorkflowWorker",
     "WorkflowWorkerFailure",
