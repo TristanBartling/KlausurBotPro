@@ -32,6 +32,38 @@ class NumericalQuality(StrEnum):
     AMBIGUOUS = "ambiguous"
 
 
+@dataclass(frozen=True, slots=True)
+class UnwrappedPhaseTargetRoot:
+    """One locally verified root of an arbitrary unwrapped-phase target."""
+
+    frequency: float
+    target_phase_degrees: float
+    actual_phase_degrees: float
+    segment_index: int
+    bracket: tuple[float, float]
+    detection_method: CrossoverDetectionMethod
+    residual_degrees: float
+
+    def __post_init__(self) -> None:
+        values = (
+            self.frequency,
+            self.target_phase_degrees,
+            self.actual_phase_degrees,
+            self.residual_degrees,
+            *self.bracket,
+        )
+        if any(type(value) is not float or not isfinite(value) for value in values):
+            raise ValueError("Phase-target root values must be finite floats.")
+        if self.frequency <= 0 or self.residual_degrees < 0:
+            raise ValueError("A phase-target root must be positive and verified.")
+        if type(self.segment_index) is not int or self.segment_index < 0:
+            raise ValueError("segment_index must be nonnegative.")
+        if self.bracket[0] > self.frequency or self.frequency > self.bracket[1]:
+            raise ValueError("The root must lie inside its bracket.")
+        if type(self.detection_method) is not CrossoverDetectionMethod:
+            raise TypeError("detection_method has an invalid type.")
+
+
 class BandCompletenessStatus(StrEnum):
     COMPLETE_IN_PROVEN_RANGE = "complete_in_proven_range"
     BAND_LIMITED = "band_limited"

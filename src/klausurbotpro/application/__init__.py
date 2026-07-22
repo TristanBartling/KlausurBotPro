@@ -1,5 +1,13 @@
 """Public application-service facade."""
 
+from klausurbotpro.application.controller_design_workflow import (
+    ControllerDesignCandidate,
+    ControllerDesignInputDraft,
+    ControllerDesignMethod,
+    ControllerDesignResult,
+    ControllerDesignWorkflowService,
+    ControllerType,
+)
 from klausurbotpro.application.frequency_domain_request_factory import (
     FrequencyDomainInputDraft,
     FrequencyDomainRequestCreationResult,
@@ -123,6 +131,12 @@ from klausurbotpro.domain.state_space_contracts import (
 from klausurbotpro.domain.time_domain_contracts import InputSignalType, TimeDomainTaskType
 
 __all__ = [
+    "ControllerDesignCandidate",
+    "ControllerDesignInputDraft",
+    "ControllerDesignMethod",
+    "ControllerDesignResult",
+    "ControllerType",
+    "ControllerDesignWorkflowService",
     "ExactMatrix",
     "ConditionLine",
     "EquationLine",

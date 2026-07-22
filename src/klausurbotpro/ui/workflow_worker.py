@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from PySide6.QtCore import QObject, Signal, Slot
 
 from klausurbotpro.application import (
+    ControllerDesignInputDraft,
+    ControllerDesignWorkflowService,
     FrequencyDomainWorkflowLimits,
     FrequencyDomainWorkflowRequest,
     FrequencyDomainWorkflowService,
@@ -93,9 +95,7 @@ class TransferFunctionWorkflowWorker(QObject):
         self._running = True
         try:
             if type(request) is not TransferFunctionWorkflowRequest:
-                raise TypeError(
-                    "request must be a TransferFunctionWorkflowRequest."
-                )
+                raise TypeError("request must be a TransferFunctionWorkflowRequest.")
             state = self._service.run(request)
             report = self._builder.build(state)
             result = TransferFunctionWorkflowExecutionResult(
@@ -142,9 +142,7 @@ class FrequencyDomainWorkflowWorker(QObject):
         self._running = True
         try:
             if type(request) is not FrequencyDomainWorkflowRequest:
-                raise TypeError(
-                    "request must be FrequencyDomainWorkflowRequest."
-                )
+                raise TypeError("request must be FrequencyDomainWorkflowRequest.")
             result = self._service.run(request)
         except Exception:
             _LOGGER.exception("Unexpected frequency-domain worker failure.")
@@ -160,7 +158,42 @@ class FrequencyDomainWorkflowWorker(QObject):
             self._running = False
 
 
+class ControllerDesignWorkflowWorker(QObject):
+    """Run controller design in the existing persistent worker thread."""
+
+    completed = Signal(object)
+    failed = Signal(object)
+
+    def __init__(self, limits: FrequencyDomainWorkflowLimits = _DEFAULT_FREQUENCY_LIMITS) -> None:
+        super().__init__()
+        self._service = ControllerDesignWorkflowService(limits)
+        self._running = False
+
+    @Slot(object)
+    def execute(self, request: object) -> None:
+        if self._running:
+            return
+        self._running = True
+        try:
+            if type(request) is not ControllerDesignInputDraft:
+                raise TypeError("request must be ControllerDesignInputDraft.")
+            result = self._service.run(request)
+        except Exception:
+            _LOGGER.exception("Unexpected controller-design worker failure.")
+            self.failed.emit(
+                WorkflowWorkerFailure(
+                    "Die Reglerauslegung ist unerwartet fehlgeschlagen. "
+                    "Technische Details wurden protokolliert."
+                )
+            )
+        else:
+            self.completed.emit(result)
+        finally:
+            self._running = False
+
+
 __all__ = [
+    "ControllerDesignWorkflowWorker",
     "FrequencyDomainWorkflowWorker",
     "TransferFunctionWorkflowExecutionResult",
     "TransferFunctionWorkflowWorker",

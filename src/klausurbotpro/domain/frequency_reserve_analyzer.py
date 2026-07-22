@@ -11,7 +11,10 @@ import sympy as sp
 from scipy.optimize import brentq, minimize_scalar
 
 from klausurbotpro.domain.bode_data_contracts import TransferFunctionBodeDataResult
-from klausurbotpro.domain.bode_phase_unwrap_contracts import BodePhaseUnwrapResult
+from klausurbotpro.domain.bode_phase_unwrap_contracts import (
+    BodePhaseUnwrapResult,
+    BodeUnwrappedPhaseSegment,
+)
 from klausurbotpro.domain.frequency_reserve_contracts import (
     BandCompletenessStatus,
     CrossoverDetectionMethod,
@@ -24,6 +27,7 @@ from klausurbotpro.domain.frequency_reserve_contracts import (
     StabilityReserve,
     StabilityReserveAnalysis,
     StabilityReserveType,
+    UnwrappedPhaseTargetRoot,
 )
 from klausurbotpro.domain.frequency_response_contracts import FrequencySampleSet
 from klausurbotpro.domain.parameter_substitutions import ExactRationalValue, ParameterSubstitutions
@@ -42,6 +46,53 @@ _AXIS_TOL = 2e-7
 class FrequencyReserveAnalyzer:
     """Find and verify all sampled-band crossovers without crossing gaps."""
 
+    def find_unwrapped_phase_target_roots(
+        self,
+        transfer_function: ReducedTransferFunction,
+        substitutions: ParameterSubstitutions,
+        bode: TransferFunctionBodeDataResult,
+        unwrapped: BodePhaseUnwrapResult,
+        target_phase_degrees: float,
+        *,
+        field: str | None = "transfer_function",
+    ) -> tuple[UnwrappedPhaseTargetRoot, ...]:
+        """Find all isolated target roots segment-locally with the crossover refiner."""
+
+        if unwrapped.source_bode_data is not bode:
+            raise ValueError("Unwrapped phases must belong to the supplied Bode data.")
+        if type(target_phase_degrees) is not float or not isfinite(target_phase_degrees):
+            raise ValueError("target_phase_degrees must be a finite float.")
+        evaluator = _Evaluator(transfer_function, substitutions, field)
+        roots: list[UnwrappedPhaseTargetRoot] = []
+        for segment in unwrapped.segments:
+            samples = _segment_samples(segment)
+            if len(samples) < 2 or any(not all(isfinite(v) for v in row) for row in samples):
+                continue
+            for omega, interval, method in _target_phase_roots(
+                samples, target_phase_degrees, evaluator
+            ):
+                actual = evaluator.phase_at(omega, target_phase_degrees)
+                residual = abs(actual - target_phase_degrees)
+                if residual <= _PHASE_TOL:
+                    roots.append(
+                        UnwrappedPhaseTargetRoot(
+                            float(omega),
+                            target_phase_degrees,
+                            float(actual),
+                            segment.segment_index,
+                            (float(interval[0]), float(interval[1])),
+                            method,
+                            float(residual),
+                        )
+                    )
+        result: list[UnwrappedPhaseTargetRoot] = []
+        for root in sorted(roots, key=lambda item: item.frequency):
+            if not result or abs(root.frequency - result[-1].frequency) > (
+                1e-5 * max(1.0, root.frequency)
+            ):
+                result.append(root)
+        return tuple(result)
+
     def analyze(
         self,
         transfer_function: ReducedTransferFunction,
@@ -58,16 +109,7 @@ class FrequencyReserveAnalyzer:
         phases: list[FrequencyCrossover] = []
         incomplete: set[int] = set()
         for segment in unwrapped.segments:
-            samples = tuple(
-                (
-                    float(point.source_point.evaluation_frequency.numerator)
-                    / point.source_point.evaluation_frequency.denominator,
-                    float(point.source_point.numerical_decibel.decimal_value or "nan"),
-                    float(point.unwrapped_phase_degrees),
-                )
-                for point in segment.points
-                if point.source_point.numerical_decibel is not None
-            )
+            samples = _segment_samples(segment)
             if len(samples) < 2 or any(not all(isfinite(v) for v in row) for row in samples):
                 incomplete.add(segment.segment_index)
                 continue
@@ -197,51 +239,7 @@ class FrequencyReserveAnalyzer:
         results: list[FrequencyCrossover] = []
         for branch in range(m_min, m_max + 1):
             target = -180.0 - 360.0 * branch
-            phase_residuals = tuple(row[2] - target for row in samples)
-            if phase_residuals and max(abs(value) for value in phase_residuals) <= (_PHASE_TOL):
-                # A whole interval on the target line has no isolated crossing.
-                continue
-            candidates: list[tuple[float, tuple[float, float], CrossoverDetectionMethod]] = []
-            for index, (omega, _, phase) in enumerate(samples):
-                residual = phase - target
-                if abs(residual) <= _GRID_TOL:
-                    candidates.append((omega, (omega, omega), CrossoverDetectionMethod.GRID_HIT))
-                if index + 1 < len(samples):
-                    nxt = samples[index + 1]
-                    next_residual = nxt[2] - target
-                    if residual * next_residual < 0:
-                        root = brentq(
-                            lambda value, target=target: evaluator.phase_at(value, target) - target,
-                            omega,
-                            nxt[0],
-                            xtol=1e-12,
-                        )
-                        candidates.append(
-                            (root, (omega, nxt[0]), CrossoverDetectionMethod.BRACKETED_SIGN_CHANGE)
-                        )
-            for index in range(1, len(samples) - 1):
-                left, middle, right = samples[index - 1], samples[index], samples[index + 1]
-                if abs(middle[2] - target) < abs(left[2] - target) and abs(
-                    middle[2] - target
-                ) < abs(right[2] - target):
-                    fit = minimize_scalar(
-                        lambda value, target=target: (
-                            (evaluator.phase_at(value, target) - target) ** 2
-                        ),
-                        bounds=(left[0], right[0]),
-                        method="bounded",
-                    )
-                    if (
-                        fit.success
-                        and abs(evaluator.phase_at(float(fit.x), target) - target) <= _PHASE_TOL
-                    ):
-                        candidates.append(
-                            (
-                                float(fit.x),
-                                (left[0], right[0]),
-                                CrossoverDetectionMethod.TANGENTIAL_CANDIDATE,
-                            )
-                        )
+            candidates = _target_phase_roots(samples, target, evaluator)
             for omega, interval, method in candidates:
                 values = evaluator.at(omega)
                 phase = evaluator.phase_at(omega, target)
@@ -263,6 +261,66 @@ class FrequencyReserveAnalyzer:
                         )
                     )
         return results
+
+
+def _segment_samples(
+    segment: BodeUnwrappedPhaseSegment,
+) -> tuple[tuple[float, float, float], ...]:
+    return tuple(
+        (
+            float(point.source_point.evaluation_frequency.numerator)
+            / point.source_point.evaluation_frequency.denominator,
+            float(point.source_point.numerical_decibel.decimal_value or "nan"),
+            float(point.unwrapped_phase_degrees),
+        )
+        for point in segment.points
+        if point.source_point.numerical_decibel is not None
+    )
+
+
+def _target_phase_roots(
+    samples: tuple[tuple[float, float, float], ...],
+    target: float,
+    evaluator: _Evaluator,
+) -> list[tuple[float, tuple[float, float], CrossoverDetectionMethod]]:
+    residuals = tuple(row[2] - target for row in samples)
+    if residuals and max(abs(value) for value in residuals) <= _PHASE_TOL:
+        return []
+    candidates: list[tuple[float, tuple[float, float], CrossoverDetectionMethod]] = []
+    for index, (omega, _, phase) in enumerate(samples):
+        residual = phase - target
+        if abs(residual) <= _GRID_TOL:
+            candidates.append((omega, (omega, omega), CrossoverDetectionMethod.GRID_HIT))
+        if index + 1 < len(samples):
+            nxt = samples[index + 1]
+            if residual * (nxt[2] - target) < 0:
+                root = brentq(
+                    lambda value: evaluator.phase_at(value, target) - target,
+                    omega,
+                    nxt[0],
+                    xtol=1e-12,
+                )
+                candidates.append(
+                    (root, (omega, nxt[0]), CrossoverDetectionMethod.BRACKETED_SIGN_CHANGE)
+                )
+    for index in range(1, len(samples) - 1):
+        left, middle, right = samples[index - 1], samples[index], samples[index + 1]
+        if abs(middle[2] - target) < min(abs(left[2] - target), abs(right[2] - target)):
+            fit = minimize_scalar(
+                lambda value: (evaluator.phase_at(value, target) - target) ** 2,
+                bounds=(left[0], right[0]),
+                method="bounded",
+                options={"xatol": 1e-13},
+            )
+            if fit.success and abs(evaluator.phase_at(float(fit.x), target) - target) <= _PHASE_TOL:
+                candidates.append(
+                    (
+                        float(fit.x),
+                        (left[0], right[0]),
+                        CrossoverDetectionMethod.TANGENTIAL_CANDIDATE,
+                    )
+                )
+    return candidates
 
 
 class _Evaluator:
