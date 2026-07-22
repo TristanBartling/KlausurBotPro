@@ -25,6 +25,8 @@ from klausurbotpro.ui.frequency_domain_workspace import (
 )
 from klausurbotpro.ui.stability_presenter import StabilityPresenter
 from klausurbotpro.ui.stability_workspace import StabilityWorkspace
+from klausurbotpro.ui.state_space_presenter import StateSpacePresenter
+from klausurbotpro.ui.state_space_workspace import StateSpaceWorkspace
 from klausurbotpro.ui.time_domain_presenter import TimeDomainPresenter
 from klausurbotpro.ui.time_domain_workspace import TimeDomainWorkspace
 from klausurbotpro.ui.transfer_function_presenter import (
@@ -83,6 +85,8 @@ class MainWindow(QMainWindow):
         self.stability_workspace = StabilityWorkspace(self.stability_presenter)
         self.time_domain_presenter = TimeDomainPresenter()
         self.time_domain_workspace = TimeDomainWorkspace(self.time_domain_presenter)
+        self.state_space_presenter = StateSpacePresenter()
+        self.state_space_workspace = StateSpaceWorkspace(self.state_space_presenter)
         self.workspace_tabs = QTabWidget()
         self.workspace_tabs.setObjectName("mainWorkspaceTabs")
         self.workspace_tabs.addTab(self.workspace, "Transferfunktion")
@@ -92,6 +96,7 @@ class MainWindow(QMainWindow):
         )
         self.workspace_tabs.addTab(self.stability_workspace, "Stabilität")
         self.workspace_tabs.addTab(self.time_domain_workspace, "Zeitbereich")
+        self.workspace_tabs.addTab(self.state_space_workspace, "Zustandsraum")
         self.setCentralWidget(self.workspace_tabs)
 
         self.worker_thread = QThread(self)
