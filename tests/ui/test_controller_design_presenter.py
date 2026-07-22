@@ -5,6 +5,7 @@ from PySide6.QtTest import QSignalSpy
 from klausurbotpro.application import (
     ControllerDesignInputDraft,
     ControllerDesignMethod,
+    ControllerDesignWorkflowService,
     ControllerType,
 )
 from klausurbotpro.ui.controller_design_presenter import ControllerDesignPresenter
@@ -41,3 +42,21 @@ def test_reset_does_not_replace_running_snapshot_state() -> None:
     presenter.calculate(_draft())
     presenter.reset()
     assert presenter.state.run_status is ControllerDesignUiRunStatus.RUNNING
+
+
+def test_source_domain_failure_exposes_plain_german_message() -> None:
+    result = ControllerDesignWorkflowService().run(
+        ControllerDesignInputDraft(
+            ControllerDesignMethod.ZIEGLER_NICHOLS_OPEN_LOOP,
+            ControllerType.PI,
+            "",
+            process_gain_text="1.8",
+            dead_time_text="36",
+            lag_time_text="72",
+        )
+    )
+    presenter = ControllerDesignPresenter()
+    presenter.accept_result(result)
+    assert presenter.state.run_status is ControllerDesignUiRunStatus.FAILED
+    assert presenter.state.message.startswith("Ziegler–Nichols für den offenen Kreis")
+    assert "OUTSIDE_SOURCE_DOMAIN" not in presenter.state.message

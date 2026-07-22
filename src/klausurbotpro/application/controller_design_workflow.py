@@ -609,12 +609,14 @@ def _ideal_summary_plain(parameters: ControllerParameters) -> str:
 def _table_latex(
     formula: str, values: tuple[tuple[str, str], ...], parameters: ControllerParameters
 ) -> str:
-    given = r",\quad ".join(rf"\text{{{key}}}={value}" for key, value in values)
+    given = r",\quad ".join(rf"{_input_symbol_latex(key)}={value}" for key, value in values)
+    parallel_latex = _controller_parallel_latex(parameters)
+    ideal_latex = _controller_ideal_latex(parameters)
     parameter_lines: tuple[str, ...]
     if parameters.controller_type is ControllerType.P:
         parameter_lines = (
             rf"\[k_P={_latex_scalar(parameters.k_p)}\]",
-            rf"\[{parameters.parallel_latex}\]",
+            rf"\[{parallel_latex}\]",
         )
     elif parameters.controller_type is ControllerType.PI:
         assert parameters.ideal_t_i is not None
@@ -622,8 +624,8 @@ def _table_latex(
             rf"\[k_P={_latex_scalar(parameters.k_p)},\quad "
             rf"k_I={_latex_scalar(parameters.k_i)}\]",
             rf"\[T_I={_latex_scalar(parameters.ideal_t_i)}\]",
-            rf"\[{parameters.parallel_latex}\]",
-            rf"\[{parameters.ideal_latex}\]",
+            rf"\[{parallel_latex}\]",
+            rf"\[{ideal_latex}\]",
             r"\[k_P+\frac{k_I}{s}\equiv k_P\left(1+\frac{1}{T_Is}\right)\]",
         )
     else:
@@ -634,8 +636,8 @@ def _table_latex(
             rf"k_D={_latex_scalar(parameters.k_d)}\]",
             rf"\[T_I={_latex_scalar(parameters.ideal_t_i)},\qquad "
             rf"T_D={_latex_scalar(parameters.ideal_t_d)}\]",
-            rf"\[{parameters.parallel_latex}\]",
-            rf"\[{parameters.ideal_latex}\]",
+            rf"\[{parallel_latex}\]",
+            rf"\[{ideal_latex}\]",
             r"\[k_P+\frac{k_I}{s}+k_Ds\equiv "
             r"k_P\left(1+\frac{1}{T_Is}+T_Ds\right)\]",
         )
@@ -645,17 +647,96 @@ def _table_latex(
             rf"\[{given}\]",
             r"\textbf{Gesucht}",
             rf"\[\text{{Parameter des {parameters.controller_type.value.upper()}-Reglers "
-            r"und seine Übertragungsfunktion}}\]",
+            r"und seine Übertragungsfunktion}\]",
             r"\textbf{Lösung}",
-            rf"\text{{Verfahren: {formula}; Quellenbereich erfüllt.}}",
-            rf"\text{{Tabellenzeile: {parameters.controller_type.value.upper()}.}}",
+            rf"\par\noindent Verfahren: {formula}; Quellenbereich erfüllt.\par",
+            rf"\par\noindent Tabellenzeile: {parameters.controller_type.value.upper()}.\par",
             _selected_formula_latex(formula, parameters.controller_type),
             *parameter_lines,
-            r"\text{Kontrolle: exakte Weiterrechnung ohne Zwischenrundung; Formen identisch.}",
-            rf"\[\boxed{{{parameters.parallel_latex}}}\]",
-            r"\text{Verstärkungsdimension gemäß Aufgabenstellung; nicht separat angegeben.}",
+            r"\par\noindent Kontrolle: exakte Weiterrechnung ohne Zwischenrundung; "
+            r"Formen identisch.\par",
+            rf"\[\boxed{{{parallel_latex}}}\]",
+            r"\par\noindent Verstärkungsdimension gemäß Aufgabenstellung; "
+            r"nicht separat angegeben.\par",
         )
     )
+
+
+_SYMBOL_LATEX = {
+    "K_S": r"K_S",
+    "K_crit": r"K_{\mathrm{crit}}",
+    "T_crit": r"T_{\mathrm{crit}}",
+    "k_P": r"k_P",
+    "k_I": r"k_I",
+    "k_D": r"k_D",
+    "T_I": r"T_I",
+    "T_D": r"T_D",
+    "L": "L",
+    "T": "T",
+    "r": r"r=\frac{L}{T}",
+}
+
+_INPUT_SYMBOL_KEYS = {
+    "K_S": "K_S",
+    "L [s]": "L",
+    "T [s]": "T",
+    "K_crit": "K_crit",
+    "T_crit [s]": "T_crit",
+    "r=L/T": "r",
+}
+
+
+def _input_symbol_latex(name: str) -> str:
+    try:
+        return _SYMBOL_LATEX[_INPUT_SYMBOL_KEYS[name]]
+    except KeyError as error:
+        raise ValueError(f"Unsupported controller input symbol: {name}") from error
+
+
+def _controller_parallel_latex(parameters: ControllerParameters) -> str:
+    kp = _latex_scalar(parameters.k_p)
+    if parameters.controller_type is ControllerType.P:
+        return rf"G_R(s)={kp}"
+    integral_term = _parallel_integral_term_latex(parameters.k_i)
+    if parameters.controller_type is ControllerType.PI:
+        return rf"G_R(s)={kp}+{integral_term}"
+    kd = _latex_scalar(parameters.k_d)
+    return rf"G_R(s)={kp}+{integral_term}+{kd}s"
+
+
+def _controller_ideal_latex(parameters: ControllerParameters) -> str:
+    kp = _latex_scalar(parameters.k_p)
+    if parameters.controller_type is ControllerType.P:
+        return rf"G_R(s)={kp}"
+    assert parameters.ideal_t_i is not None
+    integral_term = _ideal_integral_term_latex(parameters.ideal_t_i)
+    if parameters.controller_type is ControllerType.PI:
+        return rf"G_R(s)={kp}\left(1+{integral_term}\right)"
+    assert parameters.ideal_t_d is not None
+    return (
+        rf"G_R(s)={kp}\left(1+{integral_term}"
+        rf"+{_latex_scalar(parameters.ideal_t_d)}s\right)"
+    )
+
+
+def _ideal_integral_term_latex(value: ControllerScalar) -> str:
+    if value.exact is None:
+        return rf"\frac{{1}}{{({value.numerical})s}}"
+    numerator = value.exact.denominator
+    denominator = value.exact.numerator
+    if denominator == 1:
+        return rf"\frac{{{numerator}}}{{s}}"
+    return rf"\frac{{{numerator}}}{{{denominator}s}}"
+
+
+def _parallel_integral_term_latex(value: ControllerScalar) -> str:
+    if value.exact is None:
+        return rf"\frac{{{value.numerical}}}{{s}}"
+    numerator = value.exact.numerator
+    denominator = value.exact.denominator
+    if denominator == 1:
+        return rf"\frac{{{numerator}}}{{s}}"
+    return rf"\frac{{{numerator}}}{{{denominator}s}}"
 
 
 def _selected_formula_latex(formula: str, controller_type: ControllerType) -> str:
@@ -663,15 +744,15 @@ def _selected_formula_latex(formula: str, controller_type: ControllerType) -> st
         (
             "Ziegler–Nichols, offener Kreis",
             ControllerType.P,
-        ): r"\[k_P=\frac{T}{K_SL}\]",
+        ): r"\[k_P=\frac{T}{K_S L}\]",
         (
             "Ziegler–Nichols, offener Kreis",
             ControllerType.PI,
-        ): r"\[k_P=\frac{0.9T}{K_SL},\quad T_I=3.33L,\quad k_I=\frac{k_P}{3.33L}\]",
+        ): r"\[k_P=\frac{0.9T}{K_S L},\quad T_I=3.33L,\quad k_I=\frac{k_P}{3.33L}\]",
         (
             "Ziegler–Nichols, offener Kreis",
             ControllerType.PID,
-        ): r"\[k_P=\frac{1.2T}{K_SL},\quad k_I=\frac{k_P}{2L},\quad k_D=0.5k_PL\]",
+        ): r"\[k_P=\frac{1.2T}{K_S L},\quad k_I=\frac{k_P}{2L},\quad k_D=0.5k_P L\]",
         (
             "Ziegler–Nichols, geschlossener Kreis",
             ControllerType.P,
@@ -752,25 +833,32 @@ def _phase_margin_latex(
         r"\[G_R(s)=k_P,\qquad k_P>0\]",
         r"\textbf{Lösung}",
         rf"\[\varphi_{{\mathrm{{ziel}}}}=-180^\circ+{target:.12g}^\circ={target_phase:.12g}^\circ\]",
-        r"\text{Die entfaltete Phase wird in jedem regulären Frequenzsegment getrennt durchsucht.}",
+        r"\par\noindent Die entfaltete Phase wird in jedem regulären Frequenzsegment "
+        r"getrennt durchsucht.\par",
     ]
     for candidate in candidates:
+        frequency_symbol = (
+            r"\omega_\ast"
+            if len(candidates) == 1
+            else rf"\omega_{{{candidate.candidate_index}}}"
+        )
         lines.extend(
             (
                 rf"\textbf{{Kandidat {candidate.candidate_index}}}",
-                rf"\[\omega_{{{candidate.candidate_index}}}="
+                rf"\[{frequency_symbol}="
                 rf"{candidate.target_frequency:.12g}\,\mathrm{{rad/s}},\quad "
                 rf"|G_0(j\omega)|={candidate.original_magnitude:.12g}\]",
                 rf"\[k_{{P,{candidate.candidate_index}}}="
                 rf"\frac{{1}}{{|G_0(j\omega)|}}={candidate.positive_k_p:.12g}\]",
-                rf"\[G_R(s)={candidate.positive_k_p:.12g},\qquad "
-                r"L_{mathrm{neu}}(s)=k_PG_0(s)\]",
+                rf"\[G_R(s)={candidate.positive_k_p:.12g}\]",
+                r"\[L_{\mathrm{neu}}(s)=k_PG_0(s)\]",
                 rf"\[|k_PG_0(j\omega)|\approx1,\qquad "
                 rf"\Phi_{{R,\mathrm{{ist}}}}="
                 rf"{candidate.achieved_phase_margin_degrees:.8g}^\circ\]",
-                r"\text{Durchtritte und Reserven wurden vollständig neu berechnet; "
-                r"der vorhandene Nyquist-Kern wurde erneut ausgeführt.}",
-                rf"\text{{Status: {controller_design_candidate_status_text(candidate.status)}.}}",
+                r"\par\noindent Die Durchtritte und Reserven wurden vollständig neu berechnet. "
+                r"Der vorhandene Nyquist-Kern wurde erneut ausgeführt.\par",
+                rf"\par\noindent Status: "
+                rf"{controller_design_candidate_status_text(candidate.status)}.\par",
             )
         )
     successful = tuple(
@@ -782,10 +870,13 @@ def _phase_margin_latex(
         lines.append(rf"\[\boxed{{G_R(s)={successful[0].positive_k_p:.12g}}}\]")
     elif len(candidates) > 1 and successful:
         lines.append(
-            r"\text{Mindestens ein gültiger Kandidat ist vorhanden; eine Auswahl ist erforderlich.}"
+            r"\par\noindent Mindestens ein gültiger Kandidat ist vorhanden; "
+            r"eine Auswahl ist erforderlich.\par"
         )
     else:
-        lines.append(r"\text{Kein Kandidat erfüllt die geforderte globale Phasenreserve.}")
+        lines.append(
+            r"\par\noindent Kein Kandidat erfüllt die geforderte globale Phasenreserve.\par"
+        )
     return "\n".join(lines)
 
 

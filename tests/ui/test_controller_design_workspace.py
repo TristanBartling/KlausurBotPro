@@ -114,3 +114,19 @@ def test_running_uses_input_snapshot_and_reset_restores_every_default() -> None:
     assert workspace.controller_type_combo.isHidden()
     assert window.shutdown()
     window.close()
+
+
+def test_source_domain_failure_keeps_code_only_in_diagnostics_tab() -> None:
+    _app()
+    window = MainWindow()
+    workspace = window.controller_design_workspace
+    workspace.method_combo.setCurrentIndex(1)
+    workspace.controller_type_combo.setCurrentIndex(1)
+    workspace.dead_time_edit.setText("36")
+    _click_and_wait(window)
+    assert workspace.latex_output.toPlainText() == ""
+    assert not workspace.copy_button.isEnabled()
+    assert "OUTSIDE_SOURCE_DOMAIN" in workspace.outputs["diagnostics"].toPlainText()
+    assert "OUTSIDE_SOURCE_DOMAIN" not in workspace.outputs["overview"].toPlainText()
+    assert window.shutdown()
+    window.close()

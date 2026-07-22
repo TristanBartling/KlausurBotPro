@@ -57,6 +57,16 @@ def test_g1_uses_reused_frequency_reserve_and_nyquist_kernels() -> None:
     assert candidate.status is ControllerDesignCandidateStatus.TARGET_MET
     assert result.input.task_name == "SS 2025 Aufgabe 2e"
     assert result.latex.count(r"\section*{") == 1
+    assert r"\omega_\ast=0.274747741945" in result.latex
+    assert r"L_{\mathrm{neu}}(s)=k_PG_0(s)" in result.latex
+    assert "L_mathrm" not in result.latex
+    assert result.latex.count(r"\[") == result.latex.count(r"\]")
+    explanation = "Die Durchtritte und Reserven wurden vollständig neu berechnet."
+    explanation_position = result.latex.index(explanation)
+    assert result.latex.rfind(r"\]", 0, explanation_position) > result.latex.rfind(
+        r"\[", 0, explanation_position
+    )
+    assert r"\par\noindent " + explanation in result.latex
 
 
 def test_g2_workflow_exact_values_and_latex() -> None:
@@ -90,6 +100,47 @@ def test_pi_latex_contains_no_derivative_zero_terms(method: ControllerDesignMeth
     assert "k_D" not in result.latex
     assert "T_D" not in result.latex
     assert "+0" not in result.latex
+
+
+def test_zn_open_pi_latex_uses_single_symbols_and_simplified_forms() -> None:
+    result = ControllerDesignWorkflowService().run(
+        replace(
+            draft(ControllerDesignMethod.ZIEGLER_NICHOLS_OPEN_LOOP),
+            controller_type=ControllerType.PI,
+        )
+    )
+    assert r"\[K_S=9/5,\quad L=12,\quad T=72\]" in result.latex
+    assert "K_SK_S" not in result.latex
+    assert r"k_P=3,\quad k_I=\frac{25}{333}" in result.latex
+    assert r"T_I=\frac{999}{25}" in result.latex
+    assert r"G_R(s)=3+\frac{25}{333s}" in result.latex
+    assert r"G_R(s)=3\left(1+\frac{25}{999s}\right)" in result.latex
+    assert "None" not in result.latex
+    assert result.latex.count(r"\[") == result.latex.count(r"\]")
+
+
+def test_cohen_coon_pid_latex_has_readable_exact_forms() -> None:
+    result = ControllerDesignWorkflowService().run(draft(ControllerDesignMethod.COHEN_COON))
+    assert r"\[K_S=9/5,\quad L=12,\quad T=72" in result.latex
+    assert "K_SK_S" not in result.latex
+    assert r"k_P=\frac{49}{9}" in result.latex
+    assert r"k_I=\frac{2107}{10692}" in result.latex
+    assert r"k_D=\frac{392}{17}" in result.latex
+    assert r"T_I=\frac{1188}{43},\qquad T_D=\frac{72}{17}" in result.latex
+    assert r"\frac{2107}{10692s}" in result.latex
+    assert r"\frac{43}{1188s}" in result.latex
+    assert "None" not in result.latex
+    assert result.latex.count(r"\[") == result.latex.count(r"\]")
+
+
+def test_closed_loop_symbols_use_braced_crit_subscripts() -> None:
+    result = ControllerDesignWorkflowService().run(
+        draft(ControllerDesignMethod.ZIEGLER_NICHOLS_CLOSED_LOOP)
+    )
+    assert r"K_{\mathrm{crit}}=81/50" in result.latex
+    assert r"T_{\mathrm{crit}}=3" in result.latex
+    assert "K_crit" not in result.latex
+    assert "T_crit" not in result.latex
 
 
 @pytest.mark.parametrize(
@@ -183,3 +234,5 @@ def test_source_boundaries_are_rejected() -> None:
     )
     assert zn.diagnostics[0].code == "OUTSIDE_SOURCE_DOMAIN"
     assert cc.diagnostics[0].code == "OUTSIDE_SOURCE_DOMAIN"
+    assert zn.latex == ""
+    assert "OUTSIDE_SOURCE_DOMAIN" not in zn.diagnostics[0].message
