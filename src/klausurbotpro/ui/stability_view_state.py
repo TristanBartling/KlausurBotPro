@@ -5,9 +5,11 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class StabilityViewState:
+    method: str = "hurwitz"
     summary: str = "Bereit."
     canonical_cases: str = ""
     hurwitz_details: str = ""
+    routh_details: str = ""
     parameter_region: str = ""
     short_solution: str = ""
     worked_steps: str = ""

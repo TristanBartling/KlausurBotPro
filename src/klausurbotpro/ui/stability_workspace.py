@@ -1,4 +1,4 @@
-"""Direct characteristic-polynomial Hurwitz workspace."""
+"""Direct characteristic-polynomial stability workspace."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from klausurbotpro.application.stability_workflow import (
     AnalysisTarget,
     PolynomialRole,
     StabilityInputDraft,
+    StabilityMethod,
 )
 from klausurbotpro.ui.stability_presenter import StabilityPresenter
 from klausurbotpro.ui.stability_view_state import StabilityViewState
@@ -37,6 +38,10 @@ class StabilityWorkspace(QWidget):
         self.render_state(self.presenter.state)
 
     def _build_ui(self) -> None:
+        self.method_combo = QComboBox()
+        self.method_combo.setObjectName("stabilityMethod")
+        self.method_combo.addItem("Hurwitz", StabilityMethod.HURWITZ.value)
+        self.method_combo.addItem("Routh", StabilityMethod.ROUTH.value)
         self.polynomial_edit = QPlainTextEdit()
         self.polynomial_edit.setObjectName("stabilityPolynomial")
         self.polynomial_edit.setPlaceholderText("z. B. s^3 + 4*s^2 + 5*s + K_P")
@@ -82,6 +87,7 @@ class StabilityWorkspace(QWidget):
         actions.addWidget(self.copy_latex_button)
         form_widget = QWidget()
         form = QFormLayout(form_widget)
+        form.addRow("Verfahren:", self.method_combo)
         form.addRow("Polynom:", self.polynomial_edit)
         form.addRow("Variable:", self.variable_edit)
         form.addRow("Entscheidungsparameter:", self.parameters_edit)
@@ -99,6 +105,7 @@ class StabilityWorkspace(QWidget):
             ("summary", "Übersicht"),
             ("cases", "Kanonisches Polynom und Gradfälle"),
             ("hurwitz", "Hurwitz-Matrix und Determinanten"),
+            ("routh", "Routh-Schema"),
             ("region", "Stabilitätsbedingungen und Parameterbereich"),
             ("short", "Numerische Kurzlösung"),
             ("steps", "Worked Steps"),
@@ -115,15 +122,18 @@ class StabilityWorkspace(QWidget):
         splitter.addWidget(self.result_tabs)
         splitter.setSizes((410, 790))
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Direkte charakteristische Polynomeingabe – Hurwitz"))
+        layout.addWidget(QLabel("Direkte charakteristische Polynomeingabe – Stabilität"))
         layout.addWidget(splitter, 1)
         self.analyze_button.clicked.connect(self.analyze)
         self.reset_button.clicked.connect(self.reset)
         self.copy_latex_button.clicked.connect(self.copy_latex)
+        self.method_combo.currentIndexChanged.connect(self._method_changed)
+        self._method_changed()
 
     @Slot()
     def analyze(self) -> None:
         try:
+            method = StabilityMethod(_combo_value(self.method_combo))
             role = PolynomialRole(_combo_value(self.role_combo))
             analysis_target = AnalysisTarget(_combo_value(self.target_combo))
         except (TypeError, ValueError):
@@ -142,6 +152,7 @@ class StabilityWorkspace(QWidget):
                 analysis_target=analysis_target,
                 provenance_note=self.provenance_edit.text(),
                 cancellation_note=self.cancellation_edit.text(),
+                method=method,
             )
         )
 
@@ -152,6 +163,7 @@ class StabilityWorkspace(QWidget):
         self.assumptions_edit.clear()
         self.provenance_edit.clear()
         self.cancellation_edit.clear()
+        self.method_combo.setCurrentIndex(0)
         self.presenter.reset()
 
     @Slot()
@@ -167,12 +179,31 @@ class StabilityWorkspace(QWidget):
         self.result_edits["summary"].setPlainText(state.summary)
         self.result_edits["cases"].setPlainText(state.canonical_cases)
         self.result_edits["hurwitz"].setPlainText(state.hurwitz_details)
+        self.result_edits["routh"].setPlainText(state.routh_details)
         self.result_edits["region"].setPlainText(state.parameter_region)
         self.result_edits["short"].setPlainText(state.short_solution)
         self.result_edits["steps"].setPlainText(state.worked_steps)
         self.result_edits["latex"].setPlainText(state.latex_source)
         self.result_edits["diagnostics"].setPlainText(state.diagnostics)
         self.copy_latex_button.setEnabled(bool(state.latex_source))
+        self._set_method_tabs(state.method)
+
+    @Slot()
+    def _method_changed(self) -> None:
+        try:
+            method = StabilityMethod(_combo_value(self.method_combo))
+        except (TypeError, ValueError):
+            return
+        self.analyze_button.setText(
+            "Hurwitz analysieren" if method is StabilityMethod.HURWITZ else "Routh analysieren"
+        )
+        self._set_method_tabs(method.value)
+
+    def _set_method_tabs(self, method: str) -> None:
+        hurwitz_index = self.result_tabs.indexOf(self.result_edits["hurwitz"])
+        routh_index = self.result_tabs.indexOf(self.result_edits["routh"])
+        self.result_tabs.setTabVisible(hurwitz_index, method == StabilityMethod.HURWITZ.value)
+        self.result_tabs.setTabVisible(routh_index, method == StabilityMethod.ROUTH.value)
 
 
 def _combo_value(combo: QComboBox) -> str:

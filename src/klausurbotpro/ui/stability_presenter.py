@@ -1,15 +1,18 @@
-"""Presenter for direct Hurwitz requests."""
+"""Method-neutral presenter for direct stability requests."""
 
 from __future__ import annotations
 
 from typing import Protocol
 
+import sympy as sp
 from PySide6.QtCore import QObject, Signal
 
 from klausurbotpro.application.stability_workflow import (
     StabilityInputDraft,
+    StabilityMethod,
     run_stability_workflow,
 )
+from klausurbotpro.domain.hurwitz_contracts import HurwitzAnalysisResult
 from klausurbotpro.ui.stability_view_state import StabilityViewState
 
 
@@ -30,6 +33,7 @@ class StabilityPresenter(QObject):
         if result.analysis is None:
             self._set_state(
                 StabilityViewState(
+                    method=draft.method.value,
                     summary="Eingabe ungültig.",
                     diagnostics="\n".join(result.errors),
                     failed=True,
@@ -42,26 +46,42 @@ class StabilityPresenter(QObject):
             f"p={item.degree_case.polynomial.canonical_text}"
             for item in analysis.case_results
         )
-        details = "\n\n".join(
-            f"Grad {item.degree_case.degree}\nH={_matrix(item.matrix)}\n"
-            + ", ".join(
-                f"Delta_{value.order}={value.expression.canonical_text}"
-                for value in item.determinants
+        hurwitz_details = ""
+        routh_details = ""
+        if isinstance(analysis, HurwitzAnalysisResult):
+            hurwitz_details = "\n\n".join(
+                f"Grad {item.degree_case.degree}\nH={_matrix(item.matrix)}\n"
+                + ", ".join(
+                    f"Delta_{value.order}={value.expression.canonical_text}"
+                    for value in item.determinants
+                )
+                for item in analysis.case_results
             )
-            for item in analysis.case_results
-        )
+            checks = "\n".join(
+                _check_status(item.numerical_check.status.value)
+                if item.numerical_check is not None
+                else "keine"
+                for item in analysis.case_results
+            )
+        else:
+            routh_details = "\n\n".join(_routh_case(item) for item in analysis.case_results)
+            checks = "\n".join(
+                _routh_check(item) for item in analysis.case_results
+            )
         regions = "\n".join(item.parameter_region.exact_text for item in analysis.case_results)
-        checks = "\n".join(
-            item.numerical_check.status.value if item.numerical_check is not None else "keine"
-            for item in analysis.case_results
-        )
         diagnostics = "\n".join((*analysis.diagnostics, analysis.cancellation_notice))
         steps = "\n".join(f"{name}: {value}" for name, value in analysis.worked_steps)
         self._set_state(
             StabilityViewState(
+                method=(
+                    StabilityMethod.HURWITZ.value
+                    if isinstance(analysis, HurwitzAnalysisResult)
+                    else StabilityMethod.ROUTH.value
+                ),
                 summary=analysis.statement,
                 canonical_cases=cases,
-                hurwitz_details=details,
+                hurwitz_details=hurwitz_details,
+                routh_details=routh_details,
                 parameter_region=regions,
                 short_solution=f"{analysis.statement}\nNumerische Kontrolle: {checks}",
                 worked_steps=steps,
@@ -82,6 +102,88 @@ class StabilityPresenter(QObject):
 def _matrix(matrix: tuple[tuple[_DisplayExpression, ...], ...]) -> str:
     rows = matrix
     return "[" + "; ".join(", ".join(value.canonical_text for value in row) for row in rows) + "]"
+
+
+def _routh_case(item: object) -> str:
+    from klausurbotpro.domain.routh_contracts import RouthDegreeCaseResult
+
+    assert isinstance(item, RouthDegreeCaseResult)
+    if not item.rows:
+        return item.statement
+    headers = ["Zeile", "1. Spalte (erste Spalte)"] + [
+        f"{index}. Spalte" for index in range(2, len(item.rows[0].entries) + 1)
+    ]
+    rows = [" | ".join(headers)]
+    rows.extend(
+        " | ".join((row.power_label, *(_routh_expression(value) for value in row.entries)))
+        for row in item.rows
+    )
+    conditions = ", ".join(
+        condition.label for condition in item.full_conditions[: len(item.first_column)]
+    )
+    point = ", ".join(f"{name}={value}" for name, value in item.control_point) or "parameterfrei"
+    rows.extend(
+        (
+            "Erste Spalte: " + ", ".join(_routh_expression(value) for value in item.first_column),
+            "Strikte Bedingungen: " + conditions,
+            f"Vorzeichenfolge bei {point}: " + ", ".join(item.sign_sequence),
+            "Vorzeichenwechsel: "
+            + (str(item.sign_changes) if item.sign_changes is not None else "nicht bestimmbar"),
+            "RHP-Polzahl: "
+            + (
+                str(item.rhp_roots_routh)
+                if item.rhp_roots_routh is not None
+                else "nicht bestimmbar"
+            ),
+        )
+    )
+    if item.special_case.value != "none":
+        rows.append("Sonderfall: " + item.statement)
+    return "\n".join(rows)
+
+
+def _routh_check(item: object) -> str:
+    from klausurbotpro.domain.routh_contracts import RouthDegreeCaseResult
+
+    assert isinstance(item, RouthDegreeCaseResult)
+    changes = str(item.sign_changes) if item.sign_changes is not None else "nicht bestimmbar"
+    routh_count = (
+        str(item.rhp_roots_routh)
+        if item.rhp_roots_routh is not None
+        else "nicht bestimmbar"
+    )
+    numeric_count = (
+        str(item.numerical_rhp_roots)
+        if item.numerical_rhp_roots is not None
+        else "nicht bestimmt"
+    )
+    numerical = (
+        "Numerische Kontrolle: " + _check_status(item.numerical_check.status.value)
+        if item.numerical_check is not None
+        else "Keine numerische Kontrolle verfügbar"
+    )
+    return (
+        f"Vorzeichenwechsel: {changes}; Routh-RHP-Polzahl: {routh_count}; "
+        f"Numerische RHP-Polzahl: {numeric_count}; {numerical}"
+    )
+
+
+def _routh_expression(value: object) -> str:
+    from klausurbotpro.domain.expression import ExactExpression
+
+    assert isinstance(value, ExactExpression)
+    numerator, denominator = value._as_sympy().as_numer_denom()
+    if denominator != 1:
+        return f"({str(sp.expand(numerator)).replace(' ', '')})/{denominator}"
+    return value.canonical_text
+
+
+def _check_status(value: str) -> str:
+    return {
+        "consistent": "konsistent",
+        "inconsistent": "widersprüchlich",
+        "numerically_inconclusive": "numerisch nicht entscheidbar",
+    }.get(value, value)
 
 
 __all__ = ["StabilityPresenter"]
