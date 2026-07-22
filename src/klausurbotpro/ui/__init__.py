@@ -38,6 +38,7 @@ from klausurbotpro.ui.transfer_function_workspace import (
 from klausurbotpro.ui.workflow_worker import (
     ControllerDesignWorkflowWorker,
     FrequencyDomainWorkflowWorker,
+    StabilityWorkflowWorker,
     TransferFunctionWorkflowExecutionResult,
     TransferFunctionWorkflowWorker,
     WorkflowWorkerFailure,
@@ -57,6 +58,7 @@ __all__ = [
     "FrequencyDomainUiRunStatus",
     "FrequencyDomainViewState",
     "FrequencyDomainWorkflowWorker",
+    "StabilityWorkflowWorker",
     "FrequencyDomainWorkspace",
     "MainWindow",
     "TimeDomainPresenter",

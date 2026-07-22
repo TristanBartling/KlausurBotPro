@@ -16,15 +16,26 @@ from klausurbotpro.domain.parameter_core import solve_parameter_conditions
 from klausurbotpro.domain.parameter_core_contracts import (
     AnalysisTarget,
     AtomicParameterCondition,
+    CancellationStatus,
     CanonicalCharacteristicPolynomial,
     ConditionOrigin,
     DegreeCaseKind,
     ParameterConditionProblem,
+    ParameterRegion,
     PolynomialRole,
     Relation,
     SolveStatus,
 )
 from klausurbotpro.domain.stability_numeric import check_numeric_poles
+from klausurbotpro.domain.stability_presentation import (
+    display_math,
+    format_parameter_region_plain,
+    latex_additive_equation,
+    latex_conditions,
+    latex_numerical_check,
+    latex_parameter_region,
+    paragraph,
+)
 
 _NUMERICAL_CHECK_LABELS = {
     "consistent": "konsistent",
@@ -65,15 +76,25 @@ def analyze_hurwitz(
     )
     combined_region = _combined_region(results, canonical.input.decision_parameters)
     statement = (
-        _overall_statement(results, _concept(canonical), combined_region)
+        _overall_statement(
+            results,
+            _concept(canonical),
+            combined_region,
+            canonical.input.decision_parameters,
+        )
         if trusted
         else ("Kein vertrauenswürdiges Endergebnis wegen einer schweren Diagnose.")
     )
     notice = ""
-    if canonical.input.role is PolynomialRole.REDUCED_TRANSFER_DENOMINATOR:
+    if (
+        canonical.input.role is PolynomialRole.REDUCED_TRANSFER_DENOMINATOR
+        and canonical.input.cancellation_report is not None
+        and canonical.input.cancellation_report.status
+        is CancellationStatus.FACTORS_REMOVED
+    ):
         notice = (
-            "Kürzungshinweis: Der reduzierte E/A-Nenner beweist keine interne "
-            "Stabilität; entfernte instabile Dynamik kann verdeckt sein."
+            "Der reduzierte E/A-Nenner beweist keine interne Stabilität. "
+            "Entfernte instabile Dynamik kann verdeckt sein."
         )
     steps = _worked_steps(canonical, results, statement, notice)
     return HurwitzAnalysisResult(
@@ -181,7 +202,12 @@ def _analyze_case(
     diagnostics: tuple[str, ...] = ()
     if numerical is not None and numerical.status is NumericalCheckStatus.INCONSISTENT:
         diagnostics = ("SYMBOLIC_NUMERIC_MISMATCH",)
-    statement = _case_statement(case.degree, region, _concept(canonical))
+    statement = _case_statement(
+        case.degree,
+        region,
+        _concept(canonical),
+        canonical.input.decision_parameters,
+    )
     return HurwitzDegreeCaseResult(
         case,
         tuple(tuple(_exact(value) for value in row) for row in matrix_expr),
@@ -303,22 +329,41 @@ def _concept(canonical: CanonicalCharacteristicPolynomial) -> str:
     return labels[canonical.input.analysis_target]
 
 
-def _case_statement(degree: int, region: object, concept: str) -> str:
-    from klausurbotpro.domain.parameter_core_contracts import ParameterRegion
-
-    assert isinstance(region, ParameterRegion)
+def _case_statement(
+    degree: int,
+    region: ParameterRegion,
+    concept: str,
+    parameters: tuple[str, ...],
+) -> str:
     if region.status is SolveStatus.EMPTY:
         return f"Grad {degree}: keine zulässige Einstellung für {concept}."
     if region.status is SolveStatus.SOLVED_EXACT:
-        return f"Grad {degree}: {concept} genau für {region.exact_text}."
-    return f"Grad {degree}: {concept} nicht vollständig entscheidbar ({region.status.value})."
+        return (
+            f"Grad {degree}: {concept} genau für "
+            f"{format_parameter_region_plain(region, parameters)}."
+        )
+    status = {
+        SolveStatus.PARTIALLY_SOLVED_SAFE: "teilweise gelöst",
+        SolveStatus.UNSUPPORTED: "nicht unterstützt",
+        SolveStatus.INVALID_INPUT: "ungültige Eingabe",
+        SolveStatus.INDETERMINATE: "nicht entscheidbar",
+    }.get(region.status, "nicht vollständig gelöst")
+    return f"Grad {degree}: {concept} nicht vollständig entscheidbar ({status})."
 
 
 def _overall_statement(
-    results: tuple[HurwitzDegreeCaseResult, ...], concept: str, combined_region: str
+    results: tuple[HurwitzDegreeCaseResult, ...],
+    concept: str,
+    combined_region: str,
+    parameters: tuple[str, ...],
 ) -> str:
-    if combined_region:
-        return f"{concept} genau für {combined_region}."
+    solved = tuple(
+        item.parameter_region
+        for item in results
+        if item.parameter_region.status is SolveStatus.SOLVED_EXACT
+    )
+    if combined_region and len(solved) == 1:
+        return f"{concept} genau für {format_parameter_region_plain(solved[0], parameters)}."
     statements = " ".join(result.statement for result in results)
     return f"{concept}: {statements}"
 
@@ -354,7 +399,7 @@ def _worked_steps(
 ) -> tuple[tuple[str, str], ...]:
     steps: list[tuple[str, str]] = [
         ("1. Eingabepolynom", canonical.input.polynomial.canonical_text),
-        ("2. Rolle und Analyseziel", f"{canonical.input.role.value}; {_concept(canonical)}"),
+        ("2. Rolle und Analyseziel", f"{_role_text(canonical)}; {_concept(canonical)}"),
         (
             "3. Annahmen",
             ", ".join(
@@ -363,6 +408,11 @@ def _worked_steps(
             or "keine",
         ),
         ("4. Kanonisierung", canonical.expanded_polynomial.canonical_text),
+        (
+            "Hurwitz-Konvention",
+            "Hurwitz-Matrix nach der Konvention des Vorlesungsskripts: "
+            "erste Zeile a_1, a_3, a_5, ...",
+        ),
     ]
     for result in results:
         steps.extend(
@@ -385,7 +435,12 @@ def _worked_steps(
                     ),
                 ),
                 ("9. Bedingungen", ", ".join(item.label for item in result.solver_conditions)),
-                ("10. Parametergebiet", result.parameter_region.exact_text),
+                (
+                    "10. Parametergebiet",
+                    format_parameter_region_plain(
+                        result.parameter_region, canonical.input.decision_parameters
+                    ),
+                ),
                 ("11. Offene Grenzen", "Hurwitz-Gleichheitsränder sind ausgeschlossen."),
                 ("12. Numerische Gegenkontrolle", _numeric_text(result.numerical_check)),
             )
@@ -416,7 +471,9 @@ def _numeric_text(check: NumericalPoleCheck | None) -> str:
     if check is None:
         return "nicht verfügbar"
     status = _NUMERICAL_CHECK_LABELS.get(check.status.value, "nicht verfügbar")
-    return f"{status}; Pole: {', '.join(check.poles) or 'nicht verfügbar'}"
+    point = ", ".join(f"{name}={value}" for name, value in check.parameter_point)
+    prefix = f"Kontrollpunkt {point}; " if point else ""
+    return f"{prefix}{status}; Pole: {', '.join(check.poles) or 'nicht verfügbar'}"
 
 
 def _latex(
@@ -424,39 +481,45 @@ def _latex(
     results: tuple[HurwitzDegreeCaseResult, ...],
     notice: str,
 ) -> str:
-    lines = [
-        r"\text{Charakteristisches Polynom:}\quad p(s)="
-        + canonical.expanded_polynomial.latex
-        + r".",
-        r"\text{Stabilitätsbegriff:}\quad \text{"
-        + _escape_latex_text(_concept(canonical))
-        + r"}.",
+    blocks = [
+        paragraph("Stabilitätsbegriff", _concept(canonical)),
+        latex_additive_equation(
+            f"p({canonical.input.variable})",
+            canonical.expanded_polynomial,
+            variable=canonical.input.variable,
+        ),
+        paragraph(
+            "Hurwitz-Konvention",
+            "Hurwitz-Matrix nach der Konvention des Vorlesungsskripts: "
+            "erste Zeile a_1, a_3, a_5, ...",
+        ),
     ]
     for result in results:
         matrix_latex = sp.latex(
             sp.Matrix([[item._as_sympy() for item in row] for row in result.matrix])
         )
-        lines.append(rf"\text{{Gradfall: }}\deg p={result.degree_case.degree}.")
-        lines.append(r"H=" + matrix_latex + r".")
-        lines.extend(
-            rf"\Delta_{{{item.order}}}={item.expression.latex}." for item in result.determinants
+        blocks.append(paragraph("Gradfall", f"Grad {result.degree_case.degree}."))
+        blocks.append(display_math(r"H=" + matrix_latex))
+        blocks.extend(
+            latex_additive_equation(rf"\Delta_{{{item.order}}}", item.expression)
+            for item in result.determinants
         )
-        conditions = r",\quad ".join(
-            item.expression.latex + r">0" for item in result.solver_conditions
+        blocks.append(paragraph("Bedingungssystem", "Vollständige strikte Bedingungen:"))
+        blocks.append(
+            latex_conditions(tuple(item.expression for item in result.solver_conditions))
         )
-        lines.append(r"\text{Bedingungssystem:}\quad " + conditions + r".")
-        lines.append(r"\text{Parametergebiet:}\quad " + result.parameter_region.latex + r".")
-        lines.append(
-            r"\text{Numerische Kontrolle:}\quad \text{"
-            + _escape_latex_text(_numeric_text(result.numerical_check))
-            + r"}."
+        blocks.append(paragraph("Parametergebiet", "Exaktes Ergebnis:"))
+        blocks.append(
+            latex_parameter_region(
+                result.parameter_region,
+                canonical.input.decision_parameters,
+            )
         )
+        blocks.append(latex_numerical_check(result.numerical_check))
     if notice:
-        lines.append(
-            r"\textbf{Warnung: }\text{" + _escape_latex_text(notice) + r"}"
-        )
-    lines.append(_latex_final_box(canonical, results))
-    return "\n\n".join(r"\[" + line + r"\]" for line in lines)
+        blocks.append(paragraph("Warnung", notice))
+    blocks.append(_latex_final_box(canonical, results))
+    return "\n\n".join(blocks)
 
 
 def _latex_final_box(
@@ -464,8 +527,20 @@ def _latex_final_box(
     results: tuple[HurwitzDegreeCaseResult, ...],
 ) -> str:
     if canonical.input.decision_parameters:
-        regions = tuple(item.parameter_region.latex for item in results)
-        return r"\boxed{" + r"\lor".join(regions) + "}"
+        if len(results) == 1:
+            return latex_parameter_region(
+                results[0].parameter_region,
+                canonical.input.decision_parameters,
+                boxed=True,
+            )
+        return "\n\n".join(
+            latex_parameter_region(
+                item.parameter_region,
+                canonical.input.decision_parameters,
+                boxed=True,
+            )
+            for item in results
+        )
     stable = all(
         item.parameter_region.status is SolveStatus.SOLVED_EXACT
         and item.numerical_check is not None
@@ -473,7 +548,16 @@ def _latex_final_box(
         for item in results
     )
     text = _stable_latex_text(canonical) if stable else _not_stable_latex_text(canonical)
-    return r"\boxed{\text{" + _escape_latex_text(text) + "}}"
+    return display_math(r"\boxed{\text{" + _escape_latex_text(text) + "}}")
+
+
+def _role_text(canonical: CanonicalCharacteristicPolynomial) -> str:
+    return {
+        PolynomialRole.DIRECT_CHARACTERISTIC_POLYNOMIAL: "direktes charakteristisches Polynom",
+        PolynomialRole.RAW_CLOSED_LOOP_CHARACTERISTIC: "rohes geschlossenes Polynom",
+        PolynomialRole.REDUCED_TRANSFER_DENOMINATOR: "reduzierter E/A-Nenner",
+        PolynomialRole.STATE_CHARACTERISTIC_POLYNOMIAL: "Zustandsraum-Charakteristik",
+    }[canonical.input.role]
 
 
 def _stable_latex_text(canonical: CanonicalCharacteristicPolynomial) -> str:

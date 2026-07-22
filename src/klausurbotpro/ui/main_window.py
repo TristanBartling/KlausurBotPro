@@ -30,6 +30,7 @@ from klausurbotpro.ui.frequency_domain_workspace import (
     FrequencyDomainWorkspace,
 )
 from klausurbotpro.ui.stability_presenter import StabilityPresenter
+from klausurbotpro.ui.stability_view_state import StabilityUiRunStatus, StabilityViewState
 from klausurbotpro.ui.stability_workspace import StabilityWorkspace
 from klausurbotpro.ui.state_space_presenter import StateSpacePresenter
 from klausurbotpro.ui.state_space_workspace import StateSpaceWorkspace
@@ -48,6 +49,7 @@ from klausurbotpro.ui.transfer_function_workspace import (
 from klausurbotpro.ui.workflow_worker import (
     ControllerDesignWorkflowWorker,
     FrequencyDomainWorkflowWorker,
+    StabilityWorkflowWorker,
     TransferFunctionWorkflowWorker,
 )
 
@@ -84,7 +86,7 @@ class MainWindow(QMainWindow):
             FrequencyDomainRequestFactory(frequency_limits)
         )
         self.frequency_workspace = FrequencyDomainWorkspace(self.frequency_presenter)
-        self.stability_presenter = StabilityPresenter()
+        self.stability_presenter = StabilityPresenter(asynchronous=True)
         self.stability_workspace = StabilityWorkspace(self.stability_presenter)
         self.time_domain_presenter = TimeDomainPresenter()
         self.time_domain_workspace = TimeDomainWorkspace(self.time_domain_presenter)
@@ -116,13 +118,17 @@ class MainWindow(QMainWindow):
         self.worker.moveToThread(self.worker_thread)
         self.frequency_worker = FrequencyDomainWorkflowWorker(frequency_limits)
         self.frequency_worker.moveToThread(self.worker_thread)
+        self.stability_worker = StabilityWorkflowWorker()
+        self.stability_worker.moveToThread(self.worker_thread)
         self.controller_design_worker = ControllerDesignWorkflowWorker(frequency_limits)
         self.controller_design_worker.moveToThread(self.worker_thread)
         self.worker_thread.finished.connect(self.worker.deleteLater)
         self.worker_thread.finished.connect(self.frequency_worker.deleteLater)
+        self.worker_thread.finished.connect(self.stability_worker.deleteLater)
         self.worker_thread.finished.connect(self.controller_design_worker.deleteLater)
         self.presenter.execution_requested.connect(self.worker.execute)
         self.frequency_presenter.execution_requested.connect(self.frequency_worker.execute)
+        self.stability_presenter.execution_requested.connect(self.stability_worker.execute)
         self.controller_design_presenter.execution_requested.connect(
             self.controller_design_worker.execute
         )
@@ -130,6 +136,8 @@ class MainWindow(QMainWindow):
         self.worker.failed.connect(self.presenter.accept_failure)
         self.frequency_worker.completed.connect(self.frequency_presenter.accept_result)
         self.frequency_worker.failed.connect(self.frequency_presenter.accept_failure)
+        self.stability_worker.completed.connect(self.stability_presenter.accept_result)
+        self.stability_worker.failed.connect(self.stability_presenter.accept_failure)
         self.controller_design_worker.completed.connect(
             self.controller_design_presenter.accept_result
         )
@@ -138,6 +146,7 @@ class MainWindow(QMainWindow):
         )
         self.presenter.state_changed.connect(self._state_changed)
         self.frequency_presenter.state_changed.connect(self._state_changed)
+        self.stability_presenter.state_changed.connect(self._state_changed)
         self.controller_design_presenter.state_changed.connect(self._state_changed)
         self.worker_thread.start()
         self._close_pending = False
@@ -181,6 +190,7 @@ class MainWindow(QMainWindow):
             TransferFunctionViewState,
             FrequencyDomainViewState,
             ControllerDesignViewState,
+            StabilityViewState,
         ):
             return
         if self._close_pending and not self._is_running():
@@ -191,6 +201,7 @@ class MainWindow(QMainWindow):
         return (
             self.presenter.state.run_status is TransferFunctionUiRunStatus.RUNNING
             or self.frequency_presenter.state.run_status is FrequencyDomainUiRunStatus.RUNNING
+            or self.stability_presenter.state.run_status is StabilityUiRunStatus.RUNNING
             or self.controller_design_presenter.state.run_status
             is ControllerDesignUiRunStatus.RUNNING
         )

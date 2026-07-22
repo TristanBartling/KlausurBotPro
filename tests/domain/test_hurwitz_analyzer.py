@@ -51,10 +51,10 @@ def test_exercise_09_has_strict_open_interval() -> None:
         "K_P",
         "-K_P + 20",
     ]
-    assert r"\boxed{0 < K_{P} \wedge K_{P} < 20}" in analysis.latex_source
-    assert r"\text{Numerische Kontrolle:}\quad \text{konsistent; Pole:" in (
-        analysis.latex_source
-    )
+    assert r"\boxed{0 < K_{P} < 20}" in analysis.latex_source
+    assert r"\textbf{Numerische Kontrolle.}" in analysis.latex_source
+    assert r"\(K_{P}=10\)" in analysis.latex_source
+    assert r"s_{1} &\approx" in analysis.latex_source
     assert "consistent" not in analysis.latex_source
     final_box = analysis.latex_source.rsplit(r"\boxed", maxsplit=1)[-1]
     assert " & " not in final_box

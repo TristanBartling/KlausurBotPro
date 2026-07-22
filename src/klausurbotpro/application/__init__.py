@@ -44,6 +44,7 @@ from klausurbotpro.application.frequency_domain_workflow_service import (
 )
 from klausurbotpro.application.latex_task_heading import prepend_latex_task_heading
 from klausurbotpro.application.standard_element_bode_formatting import (
+    exact_expression_decimal_text,
     standard_element_asymptote_plain,
     standard_element_decomposition_plain,
     standard_element_events_plain,
@@ -124,6 +125,12 @@ from klausurbotpro.application.transfer_function_workflow_contracts import (
 from klausurbotpro.application.transfer_function_workflow_service import (
     TransferFunctionWorkflowService,
 )
+from klausurbotpro.domain.hurwitz_contracts import HurwitzAnalysisResult
+from klausurbotpro.domain.routh_contracts import RouthDegreeCaseResult
+from klausurbotpro.domain.standard_element_bode_contributions import (
+    BodeSketchMode,
+    standard_element_contributions,
+)
 from klausurbotpro.domain.state_space_contracts import (
     ExactMatrix,
     StateSpaceAnalysisResult,
@@ -136,6 +143,7 @@ from klausurbotpro.domain.state_space_contracts import (
 from klausurbotpro.domain.time_domain_contracts import InputSignalType, TimeDomainTaskType
 
 __all__ = [
+    "BodeSketchMode",
     "ControllerDesignCandidate",
     "ControllerDesignCandidateStatus",
     "ControllerDesignInputDraft",
@@ -147,6 +155,7 @@ __all__ = [
     "controller_design_candidate_status_text",
     "controller_design_method_text",
     "decide_p_phase_margin_outcome",
+    "exact_expression_decimal_text",
     "ExactMatrix",
     "ConditionLine",
     "EquationLine",
@@ -168,6 +177,7 @@ __all__ = [
     "FrequencyDomainWorkflowStageStatus",
     "FrequencyDomainWorkflowStatus",
     "FrequencyPhasePresentation",
+    "HurwitzAnalysisResult",
     "OverrideProvenance",
     "OverrideLine",
     "ParameterInputDraft",
@@ -179,6 +189,7 @@ __all__ = [
     "ReportMathExpression",
     "ResultLine",
     "RootAnalysisOverride",
+    "RouthDegreeCaseResult",
     "SolutionLine",
     "SolutionReportLimits",
     "SolutionReportStatus",
@@ -189,6 +200,7 @@ __all__ = [
     "standard_element_asymptote_plain",
     "standard_element_decomposition_plain",
     "standard_element_events_plain",
+    "standard_element_contributions",
     "TransferFunctionExpressionPair",
     "TransferFunctionInputDraft",
     "TransferFunctionPreparationResult",

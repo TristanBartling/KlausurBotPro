@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from klausurbotpro.application._solution_report_formatting import exact_expression
 from klausurbotpro.domain import (
+    ExactExpression,
     StandardElementBodeResult,
     StandardElementFactor,
     StandardElementFactorKind,
 )
+
+
+def exact_expression_decimal_text(value: ExactExpression) -> str:
+    """Format one exact scalar for a plot marker outside the widget layer."""
+    if type(value) is not ExactExpression:
+        raise TypeError("value must be ExactExpression.")
+    return f"{float(value._as_sympy()):.12g}"
 
 
 def standard_element_decomposition_plain(result: StandardElementBodeResult) -> str:
@@ -145,6 +153,7 @@ def _require_supported(result: StandardElementBodeResult) -> None:
 
 
 __all__ = [
+    "exact_expression_decimal_text",
     "standard_element_asymptote_latex",
     "standard_element_asymptote_plain",
     "standard_element_decomposition_latex",

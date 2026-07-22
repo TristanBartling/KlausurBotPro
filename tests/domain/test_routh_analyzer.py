@@ -57,7 +57,7 @@ def test_r1_exact_table_open_region_and_cell_derivation() -> None:
     assert analysis.combined_region == "(0 < K_P) & (K_P < 20)"
     assert "4*5" in analysis.case_results[0].rows[2].cells[0].derivation
     assert "K_P" in analysis.case_results[0].rows[2].cells[0].derivation
-    assert r"\boxed{0 < K_{P} \wedge K_{P} < 20}" in analysis.latex_source
+    assert r"\boxed{0 < K_{P} < 20}" in analysis.latex_source
     final_box = analysis.latex_source.rsplit(r"\boxed", maxsplit=1)[-1]
     assert " & " not in final_box
     assert re.search(r"\\text\{[^}]*K_P", final_box) is None

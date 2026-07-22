@@ -9,6 +9,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal, Slot
 
 from klausurbotpro.application import (
+    BodeSketchMode,
     FrequencyDomainInputDraft,
     FrequencyDomainRequestFactory,
     FrequencyDomainSingularityRefinementPlanner,
@@ -16,12 +17,13 @@ from klausurbotpro.application import (
     FrequencyDomainWorkflowLimits,
     FrequencyDomainWorkflowResult,
     FrequencyDomainWorkflowStatus,
+    exact_expression_decimal_text,
     render_frequency_domain_solution_latex,
     standard_element_asymptote_plain,
+    standard_element_contributions,
     standard_element_decomposition_plain,
     standard_element_events_plain,
 )
-from klausurbotpro.domain import BodeSketchMode, standard_element_contributions
 from klausurbotpro.ui.frequency_domain_view_state import (
     FrequencyDomainDiagnosticView,
     FrequencyDomainSinglePointView,
@@ -544,7 +546,7 @@ def _plot(result: FrequencyDomainWorkflowResult) -> PlotView:
         )
         corner_markers = tuple(
             PlotMarkerView(
-                f"{float(event.corner_frequency._as_sympy()):.12g}",
+                exact_expression_decimal_text(event.corner_frequency),
                 f"ω_{{k,{index}}} – Knickfrequenz",
             )
             for index, event in enumerate(analysis.corner_events, 1)
