@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from klausurbotpro.application import (
+    StateSpaceAnalysisTarget,
     StateSpaceInputDraft,
     StateSpaceTaskType,
     prepend_latex_task_heading,
@@ -86,6 +87,15 @@ class StateSpaceWorkspace(QWidget):
         form_widget = QWidget()
         form = QFormLayout(form_widget)
         form.addRow("Aufgabentyp:", self.task_combo)
+        self.analysis_target_combo = QComboBox()
+        self.analysis_target_combo.setObjectName("stateSpaceAnalysisTarget")
+        self.analysis_target_combo.addItem(
+            "Vollständige Analyse", StateSpaceAnalysisTarget.FULL_ANALYSIS.value
+        )
+        self.analysis_target_combo.addItem(
+            "Zustandsstabilität", StateSpaceAnalysisTarget.STATE_STABILITY.value
+        )
+        form.addRow("Analyseziel:", self.analysis_target_combo)
         form.addRow("Aufgabenname / LaTeX-Überschrift:", self.task_title_edit)
         self._rows: dict[str, tuple[QLabel, QWidget]] = {}
         for key, label, widget in (
@@ -142,6 +152,7 @@ class StateSpaceWorkspace(QWidget):
         layout.addWidget(QLabel("Zustandsraum – Regelungsnormalform und Übertragungsfunktion"))
         layout.addWidget(splitter, 1)
         self.task_combo.currentIndexChanged.connect(self._update_mode)
+        self.analysis_target_combo.currentIndexChanged.connect(self._update_mode)
         self.order_combo.currentIndexChanged.connect(self._update_mode)
         for line_edit in (
             *self.coefficient_edits,
@@ -167,6 +178,7 @@ class StateSpaceWorkspace(QWidget):
         order = int(self.order_combo.currentData())
         return StateSpaceInputDraft(
             task_type=task,
+            analysis_target=StateSpaceAnalysisTarget(str(self.analysis_target_combo.currentData())),
             output_name=self.output_name_edit.text(),
             input_name=self.input_name_edit.text(),
             output_order=order,
@@ -190,6 +202,7 @@ class StateSpaceWorkspace(QWidget):
 
     @Slot()
     def reset(self) -> None:
+        self.analysis_target_combo.setCurrentIndex(0)
         self.task_title_edit.clear()
         self._latex_task_title = ""
         self._clear_results()
@@ -220,6 +233,13 @@ class StateSpaceWorkspace(QWidget):
             if label is not None:
                 label.setVisible(index <= order)
         self.result_tabs.setTabVisible(self.result_tabs.indexOf(self.result_edits["ode"]), ode_mode)
+        stability_target = (
+            StateSpaceAnalysisTarget(str(self.analysis_target_combo.currentData()))
+            is StateSpaceAnalysisTarget.STATE_STABILITY
+        )
+        self.result_tabs.setTabVisible(
+            self.result_tabs.indexOf(self.result_edits["transfer"]), not stability_target
+        )
         self._update_preview()
 
     @Slot()
@@ -262,11 +282,16 @@ class StateSpaceWorkspace(QWidget):
         for key, value in values.items():
             self.result_edits[key].setPlainText(value)
         self.copy_latex_button.setEnabled(bool(values["latex"]))
+        stability_target = state.analysis_target is StateSpaceAnalysisTarget.STATE_STABILITY
+        self.result_tabs.setTabVisible(
+            self.result_tabs.indexOf(self.result_edits["transfer"]), not stability_target
+        )
         target = (
             "diagnostics"
             if state.failed and state.diagnostics
-            else "latex"
-            if values["latex"]
+            else "eigen"
+            if stability_target and values["eigen"]
+            else "latex" if values["latex"]
             else "summary"
         )
         self.result_tabs.setCurrentWidget(self.result_edits[target])

@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from klausurbotpro.application import StateSpaceAnalysisTarget
+
 
 @dataclass(frozen=True, slots=True)
 class StateSpaceViewState:
@@ -16,6 +18,7 @@ class StateSpaceViewState:
     latex_source: str = ""
     diagnostics: str = ""
     failed: bool = False
+    analysis_target: StateSpaceAnalysisTarget = StateSpaceAnalysisTarget.FULL_ANALYSIS
 
 
 __all__ = ["StateSpaceViewState"]

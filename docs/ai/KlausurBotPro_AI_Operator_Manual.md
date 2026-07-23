@@ -37,8 +37,8 @@ Dieses Handbuch beschreibt App-Bedienung und implementiertes Verhalten. Es ist k
 | Sprung-, allgemeine und Exponentialantwort | Zeitbereich | `PARTIAL` | Systemübertragungsfunktion `G(s)` plus Eingang | Separate Reduktion von `G(s)`, Produktbildung `Y(s)=G(s)U(s)`, PBZ, Zeitfunktion, Endwertprüfung | Anfangsbedingungen/Modellannahmen prüfen; Provenienz einer Kürzung beachten | Nur Kürzungen innerhalb von `G(s)` begründen eine Warnung vor verdeckter Systemdynamik; reine Produktkürzungen in `Y(s)` nicht |
 | Lineare DGL mit Anfangswerten | Zeitbereich | `PARTIAL` | Strukturierte Koeffizienten, Signal, Anfangswerte | Laplace-DGL, freie/erzwungene Antwort, PBZ, Verifikation | Alle benötigten Anfangswerte angeben oder Nullpolitik bestätigen | Ordnung 1 bis 4; zeitvariable Koeffizienten abgelehnt |
 | Übertragungsfunktion aus DGL | Zeitbereich | `UI_VERIFIED` | Strukturierte DGL-Koeffizienten | Nullzustands-Laplace und Quotient | Vollständigen Nullzustand sichtbar bestätigen | Nichtnull-Anfangszustand ist für diesen Workflow unzulässig |
-| DGL → Regelungsnormalform | Zustandsraum | `PARTIAL` | DGL-Koeffizienten, Ordnung 1 bis 4 | Normalisierung, Matrizen, Polynom, Eigenwerte, Übertragungsfunktion | Nur nicht abgeleiteten Eingang verwenden | Unsicherer führender Koeffizient wird abgelehnt |
-| Zustandsraum → Übertragungsfunktion | Zustandsraum | `UI_VERIFIED` | `A`, `b`, `c^T`, `d` | Resolvente, rohe/reduzierte Übertragungsfunktion, Eigenwerte, verborgene Modi | Matrixdimensionen korrekt eingeben | Zustandsdimension größer als 4 nicht unterstützt |
+| DGL → Regelungsnormalform / Zustandsstabilität | Zustandsraum | `UI_VERIFIED` | DGL-Koeffizienten, Ordnung 1 bis 4, Analyseziel | Normalisierung, Matrizen, Polynom, Eigenwerte; zielabhängig Stabilitäts- oder Vollanalyse | Nur nicht abgeleiteten Eingang verwenden | Unsicherer führender Koeffizient wird abgelehnt |
+| Zustandsraum → Vollanalyse / Zustandsstabilität | Zustandsraum | `UI_VERIFIED` | `A`, `b`, `c^T`, `d`, Analyseziel | Zielabhängig Eigenwert-/Stabilitätslösung oder zusätzlich Übertragungsfunktion und verborgene Modi | Matrixdimensionen korrekt eingeben | Zustandsdimension größer als 4; keine Jordanformanalyse |
 | P-Auslegung für Phasenreserve | Reglerauslegung | `PARTIAL` | Strecke, Zielreserve, Frequenzbereich | Zielphasensuche, positiver P-Faktor, neue Reserven und Nyquist | Bei mehreren geeigneten Kandidaten auswählen; Ergebnis fachlich prüfen | Numerische Suche; Zielphase muss im Bereich erreicht werden |
 | Ziegler–Nichols / Cohen–Coon | Reglerauslegung | `PARTIAL` | Tabellenkennwerte | Exakte Tabellenrechnung und Reglerformen | Quellenbereich und Einheiten vor Eingabe prüfen | Kursbereiche `L < 0,5 T` bzw. `L < 2 T`; reine Zahlen in Sekunden |
 | Linearisierung, Wurzelortskurve, Lead/Lag, Padé, OCR, freie Blockbilder | Keine aktuelle Ansicht | `UNSUPPORTED` | — | — | Außerhalb der App bearbeiten | Keine verdrahtete UI nachgewiesen |
@@ -210,7 +210,7 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 
 **Status:** `PARTIAL`
 
-**Zweck:** Erzeugt eine Regelungsnormalform aus strukturierter DGL oder eine Übertragungsfunktion aus einem SISO-Zustandsraummodell.
+**Zweck:** Erzeugt eine Regelungsnormalform aus strukturierter DGL und analysiert wahlweise die Zustandsstabilität als Hauptworkflow oder führt die vollständige Zustandsraum- und Übertragungsfunktionsanalyse aus.
 
 **Navigation:** Tab `Zustandsraum`.
 
@@ -219,16 +219,17 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 | Sichtbare Bezeichnung | Typ | Erwartete Eingabe/Auswahl | Wirkung | Aktivierungsbedingung | relevanter Fehlerfall |
 |---|---|---|---|---|---|
 | `Aufgabentyp:` | Auswahl | `DGL → Regelungsnormalform`, `Zustandsraum → Übertragungsfunktion` | Schaltet Eingaben | Immer | — |
+| `Analyseziel:` | Auswahl | `Vollständige Analyse`, `Zustandsstabilität` | Projiziert Gesucht, Tabs, Worked Steps und LaTeX auf das gewählte Ziel; Standard nach Reset ist `Vollständige Analyse` | Immer | Das Analyseziel ändert nicht den vorhandenen mathematischen Kern |
 | Ausgangs-/Eingangsname, Ausgangsordnung, `a_0…a_4`, `b_0` | Felder/Auswahl | Ordnung 1–4, exakte Koeffizienten | Baut DGL und Normalform | DGL-Modus | Nur nicht abgeleiteter Eingang; führender Koeffizient muss sicher ungleich null sein |
 | `Matrix A:`, `Vektor b:`, `Vektor c^T:`, `Skalar d:` | Textfelder | Komma-/Semikolonmatrix | Baut SISO-Modell | Matrixmodus | Dimensionen müssen `n×n`, `n×1`, `1×n`, `1×1` sein |
 | `Entscheidungsparameter:` / `Annahmen:` | Textfelder | Namen/Relationen | Parametrische Stabilitätsanalyse | Modusabhängig | Ungültige Namen oder unzureichende Annahmen |
 | `Vorschau:` | Anzeige | — | Zeigt DGL bzw. Dimensionen | Eingabeabhängig | Nur Vorschau, keine Berechnung |
 | `Zustandsraum analysieren`, `Zurücksetzen`, `LaTeX kopieren` | Schaltflächen | — | Start/Reset/Kopieren | LaTeX nur bei Erfolg | Fehler leert fachliche Ausgabe |
-| Ergebnis-Tabs | Tabs | Übersicht, normalisierte DGL/Zustandswahl, Matrizen, charakteristisches Polynom, Eigenwerte/Stabilität, Übertragungsfunktion, Kontrollen, Worked Steps, LaTeX, Diagnosen | Wählt Ausgabe | Ergebnisabhängig | — |
+| Ergebnis-Tabs | Tabs | Übersicht, normalisierte DGL/Zustandswahl, Matrizen, charakteristisches Polynom, Eigenwerte/Stabilität, Übertragungsfunktion, Kontrollen, Worked Steps, LaTeX, Diagnosen | Wählt Ausgabe | Ziel- und ergebnisabhängig | Bei `Zustandsstabilität` ist `Übertragungsfunktion` ausgeblendet und nach Erfolg `Eigenwerte und Stabilität` aktiv |
 
-**Ausgaben:** Normalisierte DGL, Zustandsdefinitionen und Gleichungen, Matrizen, charakteristisches Polynom, Eigenwerte/Halbebenen, Zustandsstabilität, rohe/reduzierte Übertragungsfunktion, Kürzungsbericht einschließlich verborgener Modi, symbolische/numerische Kontrollen und LaTeX.
+**Ausgaben:** Beide Ziele zeigen `sI-A`, die sichtbare Determinantenbildung, das charakteristische Polynom und exakte Eigenwerte vor einer numerischen Zusatzkontrolle. Bei `Zustandsstabilität` folgen das strikte Kriterium `Re(λ_i) < 0`, die konkreten Realteilprüfungen und genau die Zustandsstabilitätsaussage beziehungsweise das Parametergebiet als primäres Endergebnis. Übertragungsfunktion, Resolvente, E/A-Pole/-Nullstellen und verborgene Modi werden in diesem Ziel nicht sichtbar projiziert. `Vollständige Analyse` behält diese E/A-Ausgaben und Kontrollen bei.
 
-**Grenzen:** SISO und Dimension 1–4. Die Matrixeingabe ist keine grafische Blockschaltbildeingabe. E/A-Stabilität der reduzierten Funktion und Zustandsstabilität können wegen verborgener Modi voneinander abweichen.
+**Grenzen:** SISO und Dimension 1–4. Die Matrixeingabe ist keine grafische Blockschaltbildeingabe. E/A-Stabilität der reduzierten Funktion und Zustandsstabilität können wegen verborgener Modi voneinander abweichen. Ein Eigenwert auf der imaginären Achse erfüllt das strikte Kriterium nicht und wird daher als nicht asymptotisch stabil ausgegeben; ohne separate Jordanblockanalyse wird nicht automatisch „grenzstabil“ behauptet. Bei Entscheidungsparametern werden keine numerischen Eigenwerte erfunden, sondern die Bedingungen des vorhandenen Hurwitz-/Parameterkerns ausgegeben. Eine allgemeine Jordanformanalyse erfolgt nicht.
 
 ### Reglerauslegung
 

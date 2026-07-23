@@ -18,6 +18,11 @@ class StateSpaceTaskType(StrEnum):
     STATE_SPACE_TO_TRANSFER_FUNCTION = "state_space_to_transfer_function"
 
 
+class StateSpaceAnalysisTarget(StrEnum):
+    FULL_ANALYSIS = "full_analysis"
+    STATE_STABILITY = "state_stability"
+
+
 class StateSpaceStatus(StrEnum):
     SOLVED = "solved"
     INVALID_INPUT = "invalid_input"
@@ -28,6 +33,7 @@ class StateSpaceStatus(StrEnum):
 @dataclass(frozen=True, slots=True)
 class StateSpaceInputDraft:
     task_type: StateSpaceTaskType
+    analysis_target: StateSpaceAnalysisTarget = StateSpaceAnalysisTarget.FULL_ANALYSIS
     output_name: str = "y"
     input_name: str = "u"
     output_order: int = 2
@@ -74,6 +80,16 @@ class StateSpaceCheck:
 
 
 @dataclass(frozen=True, slots=True)
+class StateSpaceRealPartCheck:
+    eigenvalue_text: str
+    real_part_text: str
+    comparison: str
+    eigenvalue_latex: str
+    real_part_latex: str
+    approximate: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class StateSpaceAnalysisResult:
     input_model: StateSpaceModel | None
     normalized_ode: LinearOdeInput | None
@@ -96,6 +112,11 @@ class StateSpaceAnalysisResult:
     latex_source: str
     status: StateSpaceStatus
     diagnostics: tuple[str, ...] = ()
+    analysis_target: StateSpaceAnalysisTarget = StateSpaceAnalysisTarget.FULL_ANALYSIS
+    si_minus_a: ExactMatrix | None = None
+    determinant_steps: tuple[str, ...] = ()
+    real_part_checks: tuple[StateSpaceRealPartCheck, ...] = ()
+    visible_checks: tuple[StateSpaceCheck, ...] = ()
 
     @property
     def succeeded(self) -> bool:
@@ -105,9 +126,11 @@ class StateSpaceAnalysisResult:
 __all__ = [
     "ExactMatrix",
     "StateSpaceAnalysisResult",
+    "StateSpaceAnalysisTarget",
     "StateSpaceCheck",
     "StateSpaceInputDraft",
     "StateSpaceModel",
+    "StateSpaceRealPartCheck",
     "StateSpaceStatus",
     "StateSpaceTaskType",
 ]

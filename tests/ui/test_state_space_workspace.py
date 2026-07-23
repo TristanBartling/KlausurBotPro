@@ -90,3 +90,42 @@ def test_s5_real_click_exposes_hidden_unstable_mode() -> None:
     assert workspace.result_tabs.currentWidget() is workspace.result_edits["latex"]
     assert window.shutdown()
     window.close()
+
+
+def test_stability_target_hides_transfer_and_opens_stability_tab() -> None:
+    _app()
+    window = MainWindow()
+    workspace = window.state_space_workspace
+    workspace.task_combo.setCurrentIndex(1)
+    workspace.analysis_target_combo.setCurrentIndex(1)
+    workspace.matrix_a_edit.setPlainText("0,1;-5/2,-1/6")
+    workspace.vector_b_edit.setPlainText("0;1/12")
+    workspace.vector_c_edit.setPlainText("1,0")
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    _app().processEvents()
+
+    transfer_index = workspace.result_tabs.indexOf(workspace.result_edits["transfer"])
+    assert not workspace.result_tabs.isTabVisible(transfer_index)
+    assert workspace.result_tabs.currentWidget() is workspace.result_edits["eigen"]
+    assert "-1/12 < 0" in workspace.result_edits["eigen"].toPlainText()
+    assert "G(s)" not in workspace.result_edits["summary"].toPlainText()
+    assert "G(s)" not in workspace.result_edits["latex"].toPlainText()
+    assert window.shutdown()
+    window.close()
+
+
+def test_reset_restores_full_analysis_target_and_transfer_tab() -> None:
+    _app()
+    window = MainWindow()
+    workspace = window.state_space_workspace
+    workspace.analysis_target_combo.setCurrentIndex(1)
+
+    QTest.mouseClick(workspace.reset_button, Qt.MouseButton.LeftButton)
+    _app().processEvents()
+
+    assert workspace.analysis_target_combo.currentText() == "Vollständige Analyse"
+    transfer_index = workspace.result_tabs.indexOf(workspace.result_edits["transfer"])
+    assert workspace.result_tabs.isTabVisible(transfer_index)
+    assert window.shutdown()
+    window.close()
