@@ -18,7 +18,9 @@ from klausurbotpro.domain.linear_ode_analyzer import (
     build_linear_ode,
     format_ode_latex,
     format_ode_plain,
+    solve_ode_image_equation,
     transform_ode,
+    transform_ode_equation,
     verify_ode_solution,
 )
 from klausurbotpro.domain.raw_transfer_function_factory import RawTransferFunctionFactory
@@ -37,6 +39,7 @@ from klausurbotpro.domain.time_domain_contracts import (
     InitialConditionSet,
     InputSignalType,
     LinearOdeInput,
+    OdeAnalysisGoal,
     OdeSolutionData,
     OdeTransferFunctionResult,
     OdeVerificationReport,
@@ -93,6 +96,7 @@ class TimeDomainInputDraft:
     polynomial_coefficient_texts: tuple[str, ...] = ()
     missing_initials_are_zero: bool = False
     zero_state_confirmed: bool = False
+    ode_analysis_goal: OdeAnalysisGoal = OdeAnalysisGoal.TIME_RESPONSE
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +114,7 @@ class TimeDomainPresentation:
     laplace_transformation: str = ""
     image_equation: str = ""
     free_and_forced: str = ""
+    visible_result_tabs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,6 +260,11 @@ def _compute(draft: TimeDomainInputDraft) -> TimeDomainSolution:
 
 
 def _compute_ode(draft: TimeDomainInputDraft) -> TimeDomainSolution:
+    if (
+        draft.task_type is TimeDomainTaskType.SOLVE_ODE
+        and type(draft.ode_analysis_goal) is not OdeAnalysisGoal
+    ):
+        raise TypeError("Das Analyseziel ist ungültig.")
     assumptions = tuple(item.strip() for item in draft.assumptions_text.split(";") if item.strip())
     output_texts = draft.output_coefficient_texts or tuple(
         "0" for _ in range(draft.output_order + 1)
@@ -270,8 +280,20 @@ def _compute_ode(draft: TimeDomainInputDraft) -> TimeDomainSolution:
             "DGL-Koeffizienten müssen zeitunabhängig sein.",
         )
         return _ode_failure(draft.task_type, (diagnostic,))
-    output_coefficients = tuple(_parse_coefficient(item) for item in output_texts)
-    input_coefficients = tuple(_parse_coefficient(item) for item in input_texts)
+    output_coefficients = tuple(
+        _parse_field_coefficient(
+            item,
+            f"Koeffizient vor {_derivative_field_name(draft.output_name.strip() or 'y', order)}",
+        )
+        for order, item in enumerate(output_texts)
+    )
+    input_coefficients = tuple(
+        _parse_field_coefficient(
+            item,
+            f"Koeffizient vor {_derivative_field_name(draft.input_name.strip() or 'u', order)}",
+        )
+        for order, item in enumerate(input_texts)
+    )
     ode = build_linear_ode(
         output_name=draft.output_name.strip() or "y",
         input_name=draft.input_name.strip() or "u",
@@ -286,7 +308,13 @@ def _compute_ode(draft: TimeDomainInputDraft) -> TimeDomainSolution:
     if draft.task_type is TimeDomainTaskType.TRANSFER_FUNCTION_FROM_ODE:
         return _transfer_function_from_ode(draft, ode)
 
-    output_values = tuple(_parse_optional_coefficient(item) for item in draft.output_initial_texts)
+    output_values = tuple(
+        _parse_optional_field_coefficient(
+            item,
+            f"Ausgangsanfangswert {_initial_field_name(ode.output_name, order)}",
+        )
+        for order, item in enumerate(draft.output_initial_texts)
+    )
     output_ics = build_initial_conditions(
         ode.output_name,
         ode.output_order,
@@ -294,11 +322,15 @@ def _compute_ode(draft: TimeDomainInputDraft) -> TimeDomainSolution:
         explicit_zero_policy=draft.missing_initials_are_zero,
     )
     if not output_ics.complete:
-        missing = ", ".join(str(item) for item in output_ics.missing_orders)
+        missing = ", ".join(
+            _initial_field_name(ode.output_name, item)
+            for item in output_ics.missing_orders
+        )
         diagnostic = Diagnostic(
             DiagnosticSeverity.ERROR,
             DiagnosticCode.MISSING_INITIAL_CONDITION,
-            f"Fehlende Ausgangsanfangswerte der Ableitungsordnung: {missing}.",
+            f"Fehlende Ausgangsanfangswerte: {missing}. "
+            "Gib einen exakten Wert an, z. B. 0 oder y0, oder bestätige die Nullpolitik.",
             technical_details=tuple(
                 ("missing_order", str(item)) for item in output_ics.missing_orders
             ),
@@ -329,7 +361,11 @@ def _compute_ode(draft: TimeDomainInputDraft) -> TimeDomainSolution:
             )
         else:
             supplied = tuple(
-                _parse_optional_coefficient(item) for item in draft.input_initial_texts
+                _parse_optional_field_coefficient(
+                    item,
+                    f"Eingangsanfangswert {_initial_field_name(ode.input_name or 'u', order)}",
+                )
+                for order, item in enumerate(draft.input_initial_texts)
             )
             input_ics = build_initial_conditions(
                 ode.input_name or "u",
@@ -338,24 +374,189 @@ def _compute_ode(draft: TimeDomainInputDraft) -> TimeDomainSolution:
                 explicit_zero_policy=draft.missing_initials_are_zero,
             )
         if not input_ics.complete:
-            missing = ", ".join(str(item) for item in input_ics.missing_orders)
+            missing = ", ".join(
+                _initial_field_name(ode.input_name or "u", item)
+                for item in input_ics.missing_orders
+            )
             diagnostic = Diagnostic(
                 DiagnosticSeverity.ERROR,
                 DiagnosticCode.INPUT_INITIAL_CONDITION_MISSING,
-                f"Fehlende Eingangsanfangswerte der Ableitungsordnung: {missing}.",
+                f"Fehlende Eingangsanfangswerte: {missing}. "
+                "Gib einen exakten Wert an, z. B. 0 oder u0, oder bestätige die Nullpolitik.",
             )
             return _ode_failure(draft.task_type, (diagnostic,))
     else:
         input_ics = None
-    transformed, equation, free_symbolic, forced_symbolic = transform_ode(
-        ode, output_ics, input_ics
+    transformed, equation = transform_ode_equation(ode, output_ics, input_ics)
+    output_transform_residual = sp.simplify(
+        sum(
+            (
+                item.transformed_expression._as_sympy()
+                for item in transformed
+                if item.side == "output"
+            ),
+            sp.Integer(0),
+        )
+        - equation.left_expression._as_sympy()
     )
+    input_transform_residual = sp.simplify(
+        sum(
+            (
+                item.transformed_expression._as_sympy()
+                for item in transformed
+                if item.side == "input"
+            ),
+            sp.Integer(0),
+        )
+        - equation.right_expression._as_sympy()
+    )
+    transform_checks = (
+        VerificationItem(
+            "ode_transform_output",
+            VerificationStatus.PASS
+            if output_transform_residual == 0
+            else VerificationStatus.FAIL,
+            exact(output_transform_residual),
+            "Die transformierten Ausgangsterme ergeben die linke Bildgleichungsseite.",
+        ),
+        VerificationItem(
+            "ode_transform_input",
+            VerificationStatus.PASS
+            if input_transform_residual == 0
+            else VerificationStatus.FAIL,
+            exact(input_transform_residual),
+            "Die transformierten Eingangsterme ergeben die rechte Bildgleichungsseite.",
+        ),
+    )
+    goal = draft.ode_analysis_goal
+    if goal is OdeAnalysisGoal.IMAGE_EQUATION:
+        ode_data = OdeSolutionData(
+            ode=ode,
+            output_initial_conditions=output_ics,
+            input_initial_conditions=input_ics,
+            input_signal=signal,
+            transformed_terms=transformed,
+            image_equation=equation,
+            analysis_goal=goal,
+        )
+        return TimeDomainSolution(
+            draft.task_type,
+            ComputationStatus.SUCCESS,
+            None,
+            signal.laplace_expression,
+            None,
+            None,
+            None,
+            None,
+            None,
+            (),
+            (),
+            None,
+            (),
+            VerificationReport(
+                transform_checks, None, EndValueStatus.NOT_APPLICABLE, None
+            ),
+            (),
+            input_signal=signal,
+            ode_solution=ode_data,
+        )
+    free_symbolic, forced_symbolic = solve_ode_image_equation(equation)
     u_symbol = sp.Symbol("U")
     free_expr = free_symbolic._as_sympy()
     forced_expr = sp.simplify(
         forced_symbolic._as_sympy().subs(u_symbol, signal.laplace_expression._as_sympy())
     )
     total_expr = sp.factor(sp.cancel(free_expr + forced_expr))
+    image_residual = sp.simplify(
+        equation.left_expression._as_sympy().subs(sp.Symbol("Y"), total_expr)
+        - equation.right_expression._as_sympy().subs(
+            sp.Symbol("U"), signal.laplace_expression._as_sympy()
+        )
+    )
+    image_check = VerificationItem(
+        "ode_image_equation",
+        VerificationStatus.PASS
+        if image_residual == 0
+        else VerificationStatus.FAIL,
+        exact(image_residual),
+        "Das aufgelöste Y(s) erfüllt die Bildgleichung.",
+    )
+    if goal is OdeAnalysisGoal.OUTPUT_LAPLACE:
+        ode_data = OdeSolutionData(
+            ode=ode,
+            output_initial_conditions=output_ics,
+            input_initial_conditions=input_ics,
+            input_signal=signal,
+            transformed_terms=transformed,
+            image_equation=equation,
+            analysis_goal=goal,
+            free_laplace=exact(free_expr),
+            forced_laplace=exact(forced_expr),
+            total_laplace=exact(total_expr),
+        )
+        return TimeDomainSolution(
+            draft.task_type,
+            ComputationStatus.SUCCESS
+            if image_residual == 0
+            else ComputationStatus.FAILED,
+            None,
+            signal.laplace_expression,
+            None,
+            exact(total_expr),
+            None,
+            None,
+            None,
+            (),
+            (),
+            None,
+            (),
+            VerificationReport(
+                (*transform_checks, image_check),
+                None,
+                EndValueStatus.NOT_APPLICABLE,
+                None,
+            ),
+            (),
+            input_signal=signal,
+            ode_solution=ode_data,
+        )
+    if goal is OdeAnalysisGoal.PARTIAL_FRACTIONS:
+        partial_core = inverse_rational(
+            _parse_reduction(sp.sstr(total_expr)),
+            task_type=draft.task_type,
+            input_laplace=signal.laplace_expression,
+            stop_after_partial_fractions=True,
+        )
+        ode_data = OdeSolutionData(
+            ode=ode,
+            output_initial_conditions=output_ics,
+            input_initial_conditions=input_ics,
+            input_signal=signal,
+            transformed_terms=transformed,
+            image_equation=equation,
+            analysis_goal=goal,
+            free_laplace=exact(free_expr),
+            forced_laplace=exact(forced_expr),
+            total_laplace=exact(total_expr),
+        )
+        return replace(
+            partial_core,
+            source_expression=None,
+            input_laplace=signal.laplace_expression,
+            output_laplace=exact(total_expr),
+            verification=VerificationReport(
+                (
+                    *transform_checks,
+                    image_check,
+                    *partial_core.verification.items,
+                ),
+                None,
+                EndValueStatus.NOT_APPLICABLE,
+                None,
+            ),
+            input_signal=signal,
+            ode_solution=ode_data,
+        )
     free_time, free_core = _inverse_ode_component(free_expr, draft.task_type)
     forced_time, forced_core = _inverse_ode_component(forced_expr, draft.task_type)
     total_time, total_core = _inverse_ode_component(total_expr, draft.task_type)
@@ -394,21 +595,23 @@ def _compute_ode(draft: TimeDomainInputDraft) -> TimeDomainSolution:
         equation,
     )
     ode_data = OdeSolutionData(
-        ode,
-        output_ics,
-        input_ics,
-        signal,
-        transformed,
-        equation,
-        exact(free_expr),
-        exact(forced_expr),
-        exact(total_expr),
-        free_time,
-        forced_time,
-        total_time,
-        verification,
+        ode=ode,
+        output_initial_conditions=output_ics,
+        input_initial_conditions=input_ics,
+        input_signal=signal,
+        transformed_terms=transformed,
+        image_equation=equation,
+        analysis_goal=goal,
+        free_laplace=exact(free_expr),
+        forced_laplace=exact(forced_expr),
+        total_laplace=exact(total_expr),
+        free_time=free_time,
+        forced_time=forced_time,
+        total_time=total_time,
+        verification=verification,
     )
-    checks = list(total_core.verification.items)
+    checks = list(transform_checks)
+    checks.extend(total_core.verification.items)
     checks.extend(_ode_verification_items(verification))
     diagnostics = list(total_core.diagnostics)
     if not verification.trusted:
@@ -530,18 +733,46 @@ def _parse_optional_coefficient(text: str) -> ExactExpression | None:
     return None if not text.strip() else _parse_coefficient(text)
 
 
+def _parse_optional_field_coefficient(
+    text: str, field_name: str
+) -> ExactExpression | None:
+    return None if not text.strip() else _parse_field_coefficient(text, field_name)
+
+
+def _parse_field_coefficient(text: str, field_name: str) -> ExactExpression:
+    try:
+        return _parse_coefficient(text)
+    except (TypeError, ValueError, ArithmeticError) as error:
+        raise ValueError(
+            f'Feld „{field_name}“ ist ungültig. Verwende eine Zahl oder einen '
+            "zulässigen symbolischen Ausdruck, z. B. 2 oder k."
+        ) from error
+
+
+def _parse_image_input(text: str) -> ExactExpression:
+    try:
+        return _reduced_expression(_parse_reduction(text))
+    except (TypeError, ValueError, ArithmeticError) as error:
+        raise ValueError(
+            'Feld „Bildbereichseingang U(s)“ ist ungültig. Erwartet wird ein '
+            "rationaler Ausdruck in s, z. B. 1/s oder 1/(s+2)."
+        ) from error
+
+
 def _build_ode_signal(draft: TimeDomainInputDraft) -> TypedInputSignal:
     signal_type = draft.ode_input_signal_type
     t, s = sp.symbols("t s")
-    amplitude = _parse_coefficient(draft.ode_signal_amplitude_text)
-    rate = _parse_coefficient(draft.ode_signal_rate_text)
-    a, r = amplitude._as_sympy(), rate._as_sympy()
     parameters: tuple[ExactExpression, ...]
     if signal_type is InputSignalType.ZERO:
         time_expr, image_expr, rule, parameters = sp.Integer(0), sp.Integer(0), "0 <-> 0", ()
     elif signal_type is InputSignalType.STEP:
+        amplitude = _parse_field_coefficient(draft.ode_signal_amplitude_text, "Amplitude A")
+        a = amplitude._as_sympy()
         time_expr, image_expr, rule, parameters = a, a / s, "A <-> A/s", (amplitude,)
     elif signal_type is InputSignalType.EXPONENTIAL:
+        amplitude = _parse_field_coefficient(draft.ode_signal_amplitude_text, "Amplitude A")
+        rate = _parse_field_coefficient(draft.ode_signal_rate_text, "Exponent lambda")
+        a, r = amplitude._as_sympy(), rate._as_sympy()
         time_expr, image_expr, rule, parameters = (
             a * sp.exp(r * t),
             a / (s - r),
@@ -550,7 +781,10 @@ def _build_ode_signal(draft: TimeDomainInputDraft) -> TypedInputSignal:
         )
     elif signal_type is InputSignalType.POLYNOMIAL:
         coefficients = tuple(
-            _parse_coefficient(item or "0") for item in draft.polynomial_coefficient_texts
+            _parse_field_coefficient(
+                item or "0", f"Polynomkoeffizient c_{order}"
+            )
+            for order, item in enumerate(draft.polynomial_coefficient_texts)
         )
         time_expr = sum(
             (item._as_sympy() * t**index for index, item in enumerate(coefficients)), sp.Integer(0)
@@ -564,9 +798,13 @@ def _build_ode_signal(draft: TimeDomainInputDraft) -> TypedInputSignal:
         )
         rule, parameters = "sum(c_n*t^n) <-> sum(c_n*n!/s^(n+1))", coefficients
     elif signal_type in {InputSignalType.SINUS, InputSignalType.COSINUS}:
+        amplitude = _parse_field_coefficient(draft.ode_signal_amplitude_text, "Amplitude A")
+        rate = _parse_field_coefficient(draft.ode_signal_rate_text, "Kreisfrequenz omega")
+        a, r = amplitude._as_sympy(), rate._as_sympy()
         if not _positive_frequency(r, draft.assumptions_text):
             raise ValueError(
-                "Für Sinus und Kosinus muss omega > 0 gelten oder als Annahme angegeben sein."
+                'Feld „Kreisfrequenz omega“ ist ungültig. omega muss positiv sein, '
+                "z. B. 2, oder durch eine Annahme omega > 0 abgesichert werden."
             )
         if signal_type is InputSignalType.SINUS:
             time_expr, image_expr, rule = (
@@ -582,7 +820,7 @@ def _build_ode_signal(draft: TimeDomainInputDraft) -> TypedInputSignal:
             )
         parameters = (amplitude, rate)
     elif signal_type is InputSignalType.IMAGE_EXPRESSION:
-        image_expr = _reduced_expression(_parse_reduction(draft.input_expression_text))._as_sympy()
+        image_expr = _parse_image_input(draft.input_expression_text)._as_sympy()
         return TypedInputSignal(
             signal_type,
             (),
@@ -601,6 +839,28 @@ def _build_ode_signal(draft: TimeDomainInputDraft) -> TypedInputSignal:
         rule,
         sp.sstr(time_expr),
     )
+
+
+def _derivative_field_name(name: str, order: int) -> str:
+    if order == 0:
+        return f"{name}(t)"
+    if order == 1:
+        return f"{name}'(t)"
+    if order == 2:
+        return f"{name}''(t)"
+    if order == 3:
+        return f"{name}'''(t)"
+    return f"{name}^({order})(t)"
+
+
+def _initial_field_name(name: str, order: int) -> str:
+    if order == 0:
+        return f"{name}(0+)"
+    if order == 1:
+        return f"{name}'(0+)"
+    if order == 2:
+        return f"{name}''(0+)"
+    return f"{name}^({order})(0+)"
 
 
 def _positive_frequency(value: sp.Expr, assumptions: str) -> bool:
@@ -895,11 +1155,8 @@ def _present(
 def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentation:
     data = solution.ode_solution
     assert data is not None
-    total = _plain_math(sp.expand(data.total_time.expression._as_sympy()))
-    free = _plain_math(sp.expand(data.free_time.expression._as_sympy()))
-    forced = _plain_math(sp.expand(data.forced_time.expression._as_sympy()))
     ic_lines = [
-        f"{data.ode.output_name}^({item.derivative_order})(0+) = "
+        f"{_initial_field_name(data.ode.output_name, item.derivative_order)} = "
         f"{_plain_exact(item.value)} [{_initial_origin_label(item.origin)}]"
         for item in data.output_initial_conditions.values
     ]
@@ -907,7 +1164,7 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         []
         if data.input_initial_conditions is None
         else [
-            f"{data.ode.input_name}^({item.derivative_order})(0+) = "
+            f"{_initial_field_name(data.ode.input_name or 'u', item.derivative_order)} = "
             f"{_plain_exact(item.value)} [{_initial_origin_label(item.origin)}]"
             for item in data.input_initial_conditions.values
         ]
@@ -934,16 +1191,33 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
     equation_lines = [
         _ode_image_equation_plain(data),
         f"{input_image} = {_plain_exact(data.input_signal.laplace_expression)}",
-        f"{output_image} = {_plain_exact(data.total_laplace)}",
     ]
-    split_lines = [
-        f"{output_symbol.plain}_frei(s) = {_plain_exact(data.free_laplace)}",
-        f"{output_symbol.plain}_erzwungen(s) = {_plain_exact(data.forced_laplace)}",
-        f"{output_symbol.plain}_gesamt(s) = {_plain_exact(data.total_laplace)}",
-        f"{output_time}_frei(t) = {free}",
-        f"{output_time}_erzwungen(t) = {forced}",
-        f"{output_time}(t) = {total}",
-    ]
+    laplace_split_lines: list[str] = []
+    time_split_lines: list[str] = []
+    if data.total_laplace is not None:
+        assert data.free_laplace is not None
+        assert data.forced_laplace is not None
+        equation_lines.append(
+            f"{output_image} = {_plain_exact(data.total_laplace)}"
+        )
+        laplace_split_lines = [
+            f"{output_symbol.plain}_frei(s) = {_plain_exact(data.free_laplace)}",
+            f"{output_symbol.plain}_erzwungen(s) = {_plain_exact(data.forced_laplace)}",
+            f"{output_symbol.plain}_gesamt(s) = {_plain_exact(data.total_laplace)}",
+        ]
+    if (
+        data.free_time is not None
+        and data.forced_time is not None
+        and data.total_time is not None
+    ):
+        free = _plain_math(sp.expand(data.free_time.expression._as_sympy()))
+        forced = _plain_math(sp.expand(data.forced_time.expression._as_sympy()))
+        total = _plain_math(sp.expand(data.total_time.expression._as_sympy()))
+        time_split_lines = [
+            f"{output_time}_frei(t) = {free}",
+            f"{output_time}_erzwungen(t) = {forced}",
+            f"{output_time}(t) = {total}",
+        ]
     checks = "\n".join(
         f"{_check_label(item.check_id)}: {_verification_label(item.status)} – {item.explanation}"
         for item in solution.verification.items
@@ -960,32 +1234,53 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         )
         else ""
     )
-    steps = "\n\n".join(
-        (
-            "1. Gegebene DGL\n" + data.ode.normalized_ode,
-            "2. Eingangssignal\n"
-            + data.input_signal.raw_input
-            + "\n"
-            + data.input_signal.transform_rule.replace("U(s)", input_image),
-            "3. Anfangswerte\n" + "\n".join((*ic_lines, *input_ic_lines)) + zero_note,
-            f"4. DGL-Ordnung und Vollständigkeit\nOrdnung {data.ode.output_order}; "
-            "vollständig.\n"
-            + "\n".join((*assumption_lines, *parameter_lines)),
-            "5. Termweise Laplace-Transformation\n" + "\n".join(transform_lines),
-            "6. Bildgleichung und Auflösung\n" + "\n".join(equation_lines),
-            "7. Freie und erzwungene Antwort\n" + "\n".join(split_lines[:3]),
-            "8. Rationale Analyse\n" + _rational_text(solution),
-            "9. Partialbruchzerlegung\n" + _partial_text(solution),
-            "10. Inverse Laplace\n" + "\n".join(split_lines[3:]),
-            "11. Kontrollen\n" + checks,
-            f"12. Endaussage\n{output_time}(t) = " + total,
+    partial_completed = _ode_partial_fractions_completed(solution, data)
+    visible_partial_text = (
+        _partial_text(solution)
+        if data.analysis_goal is not OdeAnalysisGoal.PARTIAL_FRACTIONS
+        or partial_completed
+        else _incomplete_partial_fraction_plain()
+    )
+    primary_plain = _ode_primary_plain(solution, data)
+    step_blocks = [
+        "Gegeben\n" + data.ode.normalized_ode,
+        "Gesucht\n" + _ode_goal_label(data.analysis_goal),
+        "Eingangssignal\n"
+        + data.input_signal.raw_input
+        + "\n"
+        + data.input_signal.transform_rule.replace("U(s)", input_image),
+        "Anfangswerte\n" + "\n".join((*ic_lines, *input_ic_lines)) + zero_note,
+        f"DGL-Ordnung und Vollständigkeit\nOrdnung {data.ode.output_order}; "
+        "vollständig.\n"
+        + "\n".join((*assumption_lines, *parameter_lines)),
+        "Termweise Laplace-Transformation\n" + "\n".join(transform_lines),
+        "Bildgleichung\n" + "\n".join(equation_lines[:2]),
+    ]
+    if data.analysis_goal is not OdeAnalysisGoal.IMAGE_EQUATION:
+        step_blocks.append("Auflösen nach Y(s)\n" + "\n".join(equation_lines[2:]))
+        step_blocks.append(
+            "Freie und erzwungene Antwort im Bildbereich\n"
+            + "\n".join(laplace_split_lines)
         )
+    if data.analysis_goal in {
+        OdeAnalysisGoal.PARTIAL_FRACTIONS,
+        OdeAnalysisGoal.TIME_RESPONSE,
+    }:
+        step_blocks.extend(
+            (
+                "Rationale Analyse\n" + _rational_text(solution),
+                "Partialbruchzerlegung\n" + visible_partial_text,
+            )
+        )
+    if data.analysis_goal is OdeAnalysisGoal.TIME_RESPONSE:
+        step_blocks.append("Inverse Laplace\n" + "\n".join(time_split_lines))
+    if checks:
+        step_blocks.append("Kontrollen\n" + checks)
+    step_blocks.append("Endaussage\n" + primary_plain)
+    steps = "\n\n".join(
+        f"{number}. {block}" for number, block in enumerate(step_blocks, start=1)
     )
-    latex_ic = r" \\ ".join(
-        rf"{_initial_condition_latex(data.ode.output_name, item.derivative_order)}"
-        rf"={item.value.latex}"
-        for item in data.output_initial_conditions.values
-    )
+    latex_initial_conditions = _ode_initial_conditions_latex(data)
     latex_rules = "\n".join(
         rf"\[{_transformed_ode_rule(item, data.ode, latex=True)}\]"
         for item in ordered_transforms
@@ -993,46 +1288,91 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
     output_time_latex = _time_name_latex(data.ode.output_name)
     input_image_latex = f"{input_symbol.latex}(s)"
     output_image_latex = f"{output_symbol.latex}(s)"
-    latex = "\n".join(
-        (
-            r"\section*{Zeitbereichslösung}",
-            r"\textbf{Gegeben}",
-            rf"\[{format_ode_latex(data.ode)}\]",
-            rf"\[{latex_ic}\]",
-            r"\textbf{Gesucht}",
-            rf"\[{output_time_latex}(t)\]",
-            r"\textbf{Lösung}",
-            latex_rules,
-            rf"\[{_ode_image_equation_latex(data)}\]",
-            rf"\[{input_image_latex}={data.input_signal.laplace_expression.latex}\]",
-            rf"\[{output_image_latex}={data.total_laplace.latex}\]",
-            rf"\[{output_symbol.latex}_{{\mathrm{{frei}}}}(s)="
-            rf"{data.free_laplace.latex},\quad "
-            rf"{output_symbol.latex}_{{\mathrm{{erzwungen}}}}(s)="
-            rf"{data.forced_laplace.latex}\]",
-            rf"\[{output_time_latex}_{{\mathrm{{frei}}}}(t)="
-            rf"{data.free_time.expression.latex},\quad "
-            rf"{output_time_latex}_{{\mathrm{{erzwungen}}}}(t)="
-            rf"{data.forced_time.expression.latex}\]",
-            r"\textbf{Kontrolle}",
-            rf"\[R_{{\mathrm{{DGL}}}}(t)={data.verification.ode_residual.latex}=0\]",
-            rf"\[\boxed{{{output_time_latex}(t)={data.total_time.expression.latex}}}\]",
+    latex_lines = [
+        r"\section*{Zeitbereichslösung}",
+        r"\textbf{Gegeben}",
+        rf"\[{format_ode_latex(data.ode)}\]",
+        latex_initial_conditions,
+        r"\textbf{Gesucht}",
+        rf"\[{_ode_goal_latex(data)}\]",
+        r"\textbf{Lösung}",
+        latex_rules,
+        rf"\[{_ode_image_equation_latex(data)}\]",
+        rf"\[{input_image_latex}={data.input_signal.laplace_expression.latex}\]",
+    ]
+    if data.total_laplace is not None:
+        assert data.free_laplace is not None
+        assert data.forced_laplace is not None
+        latex_lines.extend(
+            (
+                rf"\[{output_image_latex}={data.total_laplace.latex}\]",
+                rf"\[{output_symbol.latex}_{{\mathrm{{frei}}}}(s)="
+                rf"{data.free_laplace.latex},\quad "
+                rf"{output_symbol.latex}_{{\mathrm{{erzwungen}}}}(s)="
+                rf"{data.forced_laplace.latex}\]",
+            )
         )
+    if data.analysis_goal is OdeAnalysisGoal.TIME_RESPONSE or (
+        data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS
+        and partial_completed
+    ):
+        latex_lines.extend(_partial_fraction_latex_lines(solution))
+    if (
+        data.analysis_goal is OdeAnalysisGoal.TIME_RESPONSE
+        and data.free_time is not None
+        and data.forced_time is not None
+        and data.total_time is not None
+        and data.verification is not None
+    ):
+        latex_lines.extend(
+            (
+                rf"\[{output_time_latex}_{{\mathrm{{frei}}}}(t)="
+                rf"{data.free_time.expression.latex},\quad "
+                rf"{output_time_latex}_{{\mathrm{{erzwungen}}}}(t)="
+                rf"{data.forced_time.expression.latex}\]",
+                r"\textbf{Kontrolle}",
+                rf"\[R_{{\mathrm{{DGL}}}}(t)={data.verification.ode_residual.latex}=0\]",
+            )
+        )
+    if (
+        data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS
+        and not partial_completed
+    ):
+        latex_lines.append(
+            rf"\[\text{{{_latex_escape(_incomplete_partial_fraction_plain())}}}\]"
+        )
+    else:
+        latex_lines.append(rf"\[\boxed{{{_ode_primary_latex(solution, data)}}}\]")
+    latex = "\n".join(latex_lines)
+    rational_text = (
+        _rational_text(solution)
+        if data.analysis_goal
+        in {OdeAnalysisGoal.PARTIAL_FRACTIONS, OdeAnalysisGoal.TIME_RESPONSE}
+        else ""
+    )
+    partial_text = (
+        visible_partial_text
+        if data.analysis_goal
+        in {OdeAnalysisGoal.PARTIAL_FRACTIONS, OdeAnalysisGoal.TIME_RESPONSE}
+        else ""
+    )
+    result_label = (
+        "Endaussage"
+        if data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS
+        and not partial_completed
+        else "Endergebnis"
     )
     return TimeDomainPresentation(
         summary=(
             f"Aufgabe: lineare DGL lösen\n{data.ode.normalized_ode}\n"
-            f"{output_image} = {_plain_exact(data.total_laplace)}\n"
-            f"{output_time}(t) = {total}"
+            f"Analyseziel: {_ode_goal_label(data.analysis_goal)}\n"
+            f"{result_label}: {primary_plain}"
         ),
-        rational_analysis=_rational_text(solution),
-        partial_fractions=_partial_text(solution),
-        time_function="\n".join(split_lines[3:]),
+        rational_analysis=rational_text,
+        partial_fractions=partial_text,
+        time_function="\n".join(time_split_lines),
         verifications=checks,
-        short_solution=(
-            f"{output_image} = {_plain_exact(data.total_laplace)}\n"
-            f"{output_time}(t) = {total}"
-        ),
+        short_solution=primary_plain,
         worked_steps=steps,
         latex_source=latex,
         diagnostics=diagnostics,
@@ -1044,7 +1384,132 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         + zero_note,
         laplace_transformation="\n".join(transform_lines),
         image_equation="\n".join(equation_lines),
-        free_and_forced="\n".join(split_lines),
+        free_and_forced="\n".join((*laplace_split_lines, *time_split_lines)),
+        visible_result_tabs=_ode_visible_tabs(data.analysis_goal),
+    )
+
+
+def _ode_goal_label(goal: OdeAnalysisGoal) -> str:
+    return {
+        OdeAnalysisGoal.IMAGE_EQUATION: "Bildgleichung aufstellen",
+        OdeAnalysisGoal.OUTPUT_LAPLACE: "Bildbereichslösung Y(s)",
+        OdeAnalysisGoal.PARTIAL_FRACTIONS: "Partialbruchzerlegung von Y(s)",
+        OdeAnalysisGoal.TIME_RESPONSE: "Vollständige Zeitantwort y(t)",
+    }[goal]
+
+
+def _ode_goal_latex(data: OdeSolutionData) -> str:
+    output_symbol = _laplace_symbol_names(data.ode.output_name).latex
+    output_time = _time_name_latex(data.ode.output_name)
+    if data.analysis_goal is OdeAnalysisGoal.IMAGE_EQUATION:
+        return r"\text{transformierte Bildgleichung}"
+    if data.analysis_goal is OdeAnalysisGoal.OUTPUT_LAPLACE:
+        return f"{output_symbol}(s)"
+    if data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS:
+        return rf"\operatorname{{PBZ}}\{{{output_symbol}(s)\}}"
+    return f"{output_time}(t)"
+
+
+def _ode_primary_plain(
+    solution: TimeDomainSolution, data: OdeSolutionData
+) -> str:
+    output_symbol = _laplace_symbol_names(data.ode.output_name).plain
+    if data.analysis_goal is OdeAnalysisGoal.IMAGE_EQUATION:
+        return _ode_image_equation_plain(data)
+    if data.analysis_goal is OdeAnalysisGoal.OUTPUT_LAPLACE:
+        return f"{output_symbol}(s) = {_plain_exact(data.total_laplace)}"
+    if data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS:
+        if not _ode_partial_fractions_completed(solution, data):
+            return _incomplete_partial_fraction_plain()
+        visible = _visible_partial_fraction_terms(solution)
+        return (
+            f"{output_symbol}(s) = "
+            + _inserted_partial_fractions_plain(visible)
+        )
+    assert data.total_time is not None
+    total = _plain_math(sp.expand(data.total_time.expression._as_sympy()))
+    return f"{data.ode.output_name}(t) = {total}"
+
+
+def _ode_primary_latex(
+    solution: TimeDomainSolution, data: OdeSolutionData
+) -> str:
+    output_symbol = _laplace_symbol_names(data.ode.output_name).latex
+    if data.analysis_goal is OdeAnalysisGoal.IMAGE_EQUATION:
+        return _ode_image_equation_latex(data)
+    if data.analysis_goal is OdeAnalysisGoal.OUTPUT_LAPLACE:
+        assert data.total_laplace is not None
+        return f"{output_symbol}(s)={data.total_laplace.latex}"
+    if data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS:
+        if not _ode_partial_fractions_completed(solution, data):
+            return rf"\text{{{_latex_escape(_incomplete_partial_fraction_plain())}}}"
+        visible = _visible_partial_fraction_terms(solution)
+        return (
+            f"{output_symbol}(s)="
+            + _inserted_partial_fractions_latex(visible)
+        )
+    assert data.total_time is not None
+    return (
+        f"{_time_name_latex(data.ode.output_name)}(t)="
+        f"{data.total_time.expression.latex}"
+    )
+
+
+def _ode_partial_fractions_completed(
+    solution: TimeDomainSolution, data: OdeSolutionData
+) -> bool:
+    partial = solution.partial_fractions
+    return (
+        data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS
+        and solution.status is ComputationStatus.SUCCESS
+        and partial is not None
+        and partial.status is ComputationStatus.SUCCESS
+        and partial.reconstruction_residual._as_sympy() == 0
+        and bool(_visible_partial_fraction_terms(solution))
+    )
+
+
+def _incomplete_partial_fraction_plain() -> str:
+    return "Die verlangte Partialbruchzerlegung von Y(s) wurde nicht fertiggestellt."
+
+
+def _ode_visible_tabs(goal: OdeAnalysisGoal) -> tuple[str, ...]:
+    common = (
+        "summary",
+        "ode",
+        "laplace",
+        "equation",
+        "checks",
+        "steps",
+        "latex",
+        "diagnostics",
+    )
+    if goal is OdeAnalysisGoal.IMAGE_EQUATION:
+        return common
+    if goal is OdeAnalysisGoal.OUTPUT_LAPLACE:
+        return (*common[:4], "split", *common[4:])
+    if goal is OdeAnalysisGoal.PARTIAL_FRACTIONS:
+        return (
+            *common[:4],
+            "split",
+            "rational",
+            "partial",
+            *common[4:],
+        )
+    return (
+        "summary",
+        "ode",
+        "laplace",
+        "equation",
+        "split",
+        "rational",
+        "partial",
+        "time",
+        "checks",
+        "short",
+        "steps",
+        "latex",
+        "diagnostics",
     )
 
 
@@ -1242,6 +1707,25 @@ def _initial_condition_latex(name: str, order: int) -> str:
     return rf"{function}^{{({order})}}(0^+)"
 
 
+def _ode_initial_conditions_latex(data: OdeSolutionData) -> str:
+    conditions = data.output_initial_conditions.values
+    rendered = tuple(
+        (
+            _initial_condition_latex(data.ode.output_name, item.derivative_order),
+            item.value.latex,
+        )
+        for item in conditions
+    )
+    if len(rendered) == 1:
+        name, value = rendered[0]
+        return rf"\[{name}={value}\]"
+    rows = tuple(
+        rf"{name} &= {value}" + (r" \\" if index < len(rendered) - 1 else "")
+        for index, (name, value) in enumerate(rendered)
+    )
+    return "\n".join((r"\[", r"\begin{aligned}", *rows, r"\end{aligned}", r"\]"))
+
+
 def _ode_image_equation_latex(data: OdeSolutionData) -> str:
     output_image = f"{_laplace_symbol_names(data.ode.output_name).latex}(s)"
     input_image = f"{_laplace_symbol_names(data.ode.input_name or 'u').latex}(s)"
@@ -1261,9 +1745,17 @@ def _ode_image_equation_latex(data: OdeSolutionData) -> str:
 def _ode_image_equation_plain(data: OdeSolutionData) -> str:
     output_image = f"{_laplace_symbol_names(data.ode.output_name).plain}(s)"
     input_image = f"{_laplace_symbol_names(data.ode.input_name or 'u').plain}(s)"
-    return data.image_equation.display_equation.replace(
-        "Y(s)", output_image
-    ).replace("U(s)", input_image)
+    left = _image_side_plain(
+        data.image_equation.a_polynomial._as_sympy(),
+        output_image,
+        data.image_equation.output_initial_part._as_sympy(),
+    )
+    right = _image_side_plain(
+        data.image_equation.b_polynomial._as_sympy(),
+        input_image,
+        data.image_equation.input_initial_part._as_sympy(),
+    )
+    return f"{left} = {right}"
 
 
 def _transfer_image_equation_plain(data: OdeTransferFunctionResult) -> str:
@@ -1396,9 +1888,36 @@ def _image_side_latex(
         main = f"-{image_name}"
     else:
         main = rf"\left({sp.latex(expanded)}\right){image_name}"
-    if initial_part == 0:
-        return main
-    return rf"{main}-{sp.latex(sp.expand(initial_part))}"
+    return _append_signed_expression(main, -initial_part, latex=True)
+
+
+def _image_side_plain(
+    polynomial: sp.Expr,
+    image_name: str,
+    initial_part: sp.Expr,
+) -> str:
+    expanded = sp.expand(polynomial)
+    if expanded == 1:
+        main = image_name
+    elif expanded == -1:
+        main = f"-{image_name}"
+    else:
+        main = f"({_plain_math(expanded)})*{image_name}"
+    return _append_signed_expression(main, -initial_part, latex=False)
+
+
+def _append_signed_expression(
+    main: str, expression: sp.Expr, *, latex: bool
+) -> str:
+    result = main
+    for term in sp.expand(expression).as_ordered_terms():
+        if term == 0:
+            continue
+        negative = term.could_extract_minus_sign()
+        magnitude = -term if negative else term
+        rendered = sp.latex(magnitude) if latex else _plain_math(magnitude)
+        result += (" - " if negative else " + ") + rendered
+    return result
 
 
 def _rational_text(solution: TimeDomainSolution) -> str:
@@ -1876,6 +2395,15 @@ def _check_label(check_id: str) -> str:
         "INITIAL_VALUE": "Anfangswert",
         "END_VALUE": "Endwert",
         "PARTIAL_FRACTION_RECONSTRUCTION": "PBZ-Rückzusammenfassung",
+        "ode_transform_output": "Laplace-Ausgangsseite",
+        "ode_transform_input": "Laplace-Eingangsseite",
+        "ode_image_equation": "Bildgleichung",
+        "polynomial_division": "Polynomdivision",
+        "factor_reconstruction": "Faktorisierung",
+        "pbz_recomposition": "PBZ-Rückzusammenfassung",
+        "ode_decomposition": "Freie/erzwungene Zerlegung",
+        "ode_forward_transform": "Vorwärtstransformation",
+        "ode_residual": "DGL-Residuum",
     }
     return labels.get(check_id, "Symbolische Kontrolle")
 

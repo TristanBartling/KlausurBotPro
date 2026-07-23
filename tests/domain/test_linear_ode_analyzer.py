@@ -5,7 +5,9 @@ import sympy as sp
 from klausurbotpro.domain.linear_ode_analyzer import (
     build_initial_conditions,
     build_linear_ode,
+    solve_ode_image_equation,
     transform_ode,
+    transform_ode_equation,
 )
 from klausurbotpro.domain.time_domain_analyzer import exact
 
@@ -66,6 +68,37 @@ def test_derivative_theorem_is_visible_for_orders_one_through_four() -> None:
     assert sp.expand(equation.a_polynomial._as_sympy()) == sum(
         sp.Symbol("s") ** k for k in range(5)
     )
+
+
+def test_image_equation_and_solving_are_separate_exact_stages() -> None:
+    ode = build_linear_ode(
+        output_name="y",
+        input_name="u",
+        output_coefficients=(
+            _coefficient(0),
+            _coefficient(4),
+            _coefficient(2),
+        ),
+        input_coefficients=(_coefficient(1),),
+        output_order=2,
+        input_order=0,
+        assumptions=(),
+    )
+    y0, v0 = sp.symbols("y0 v0")
+    conditions = build_initial_conditions(
+        "y",
+        2,
+        (_coefficient(y0), _coefficient(v0)),
+        explicit_zero_policy=False,
+    )
+    transformed, equation = transform_ode_equation(ode, conditions, None)
+    assert len(transformed) == 3
+    free, forced = solve_ode_image_equation(equation)
+    s, u = sp.symbols("s U")
+    expected = (u + 2 * s * y0 + 2 * v0 + 4 * y0) / (
+        2 * s**2 + 4 * s
+    )
+    assert sp.simplify(free._as_sympy() + forced._as_sympy() - expected) == 0
 
 
 def test_symbolic_leading_coefficient_requires_nonzero_assumption() -> None:

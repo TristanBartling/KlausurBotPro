@@ -124,12 +124,12 @@ def build_initial_conditions(
     )
 
 
-def transform_ode(
+def transform_ode_equation(
     ode: LinearOdeInput,
     output_ics: InitialConditionSet,
     input_ics: InitialConditionSet | None,
-) -> tuple[tuple[TransformedOdeTerm, ...], OdeImageEquation, ExactExpression, ExactExpression]:
-    """Apply the unilateral derivative theorem term by term."""
+) -> tuple[tuple[TransformedOdeTerm, ...], OdeImageEquation]:
+    """Apply the unilateral derivative theorem without solving for the output."""
     s, y_image, u_image = sp.symbols("s Y U")
     output_values = {item.derivative_order: item.value._as_sympy() for item in output_ics.values}
     input_values = (
@@ -193,12 +193,36 @@ def transform_ode(
             input_initial,
         ),
     )
+    return tuple(transformed), equation
+
+
+def solve_ode_image_equation(
+    equation: OdeImageEquation,
+) -> tuple[ExactExpression, ExactExpression]:
+    """Solve the already transformed equation into free and forced image parts."""
+    u_image = sp.Symbol("U")
+    a_polynomial = equation.a_polynomial._as_sympy()
     return (
-        tuple(transformed),
-        equation,
-        exact(output_initial / a_polynomial),
-        exact((b_polynomial * u_image - input_initial) / a_polynomial),
+        exact(equation.output_initial_part._as_sympy() / a_polynomial),
+        exact(
+            (
+                equation.b_polynomial._as_sympy() * u_image
+                - equation.input_initial_part._as_sympy()
+            )
+            / a_polynomial
+        ),
     )
+
+
+def transform_ode(
+    ode: LinearOdeInput,
+    output_ics: InitialConditionSet,
+    input_ics: InitialConditionSet | None,
+) -> tuple[tuple[TransformedOdeTerm, ...], OdeImageEquation, ExactExpression, ExactExpression]:
+    """Compatibility wrapper for callers that require the complete image solution."""
+    transformed, equation = transform_ode_equation(ode, output_ics, input_ics)
+    free_laplace, forced_laplace = solve_ode_image_equation(equation)
+    return transformed, equation, free_laplace, forced_laplace
 
 
 def verify_ode_solution(
@@ -562,6 +586,8 @@ __all__ = [
     "build_linear_ode",
     "format_ode_latex",
     "format_ode_plain",
+    "solve_ode_image_equation",
     "transform_ode",
+    "transform_ode_equation",
     "verify_ode_solution",
 ]
