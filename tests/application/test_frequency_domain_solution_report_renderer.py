@@ -211,6 +211,10 @@ def test_unsupported_standard_elements_keep_readable_latex_reason() -> None:
     assert "numerische Wertetabelle" in latex
     assert "exakte Bode-Verlauf" in latex
     assert "bereits bestimmten Frequenzgangwerte" in latex
+    assert r"\noindent Die vollständige Standardgliederanalyse" in latex
+    assert r"\noindent Weiter verwendbar bleiben" in latex
+    assert r"\mbox{Die vollständige Standardgliederanalyse" not in latex
+    assert r"\mbox{Weiter verwendbar bleiben" not in latex
     assert r"\[K=" not in latex
     assert r"L_a(\omega)" not in latex
     assert r"\section*{Wertetabelle}" in latex

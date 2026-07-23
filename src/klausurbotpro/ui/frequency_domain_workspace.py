@@ -432,6 +432,7 @@ class FrequencyDomainWorkspace(QWidget):
         plot_controls.addStretch(1)
         self.bode_mode_notice = QLabel()
         self.bode_mode_notice.setObjectName("bodeModeNotice")
+        self.bode_mode_notice.setWordWrap(True)
         self.bode_decomposition_label = QLabel()
         self.bode_decomposition_label.setWordWrap(True)
         self.standard_element_table = QTableWidget(0, len(_STANDARD_ELEMENT_HEADERS))
@@ -812,9 +813,24 @@ class FrequencyDomainWorkspace(QWidget):
             linewidth=1.6,
             zorder=1,
         )
+        modes_available = bool(state.plot.component_curves)
+        self.bode_display_mode_combo.setEnabled(modes_available)
+        self.show_component_checkbox.setEnabled(modes_available)
+        if not modes_available and self.bode_display_mode_combo.currentIndex() != 0:
+            signals_were_blocked = self.bode_display_mode_combo.blockSignals(True)
+            self.bode_display_mode_combo.setCurrentIndex(0)
+            self.bode_display_mode_combo.blockSignals(signals_were_blocked)
         mode_index = self.bode_display_mode_combo.currentIndex()
         notice = (
-            "Exakter Verlauf"
+            (
+                "Nur exakter Verlauf verfügbar – "
+                + (
+                    state.plot.decomposition_message
+                    or "keine unterstützte Standardgliederzerlegung vorhanden."
+                )
+            )
+            if not modes_available
+            else "Exakter Verlauf"
             if mode_index == 0
             else "Asymptotische Näherung"
             if mode_index == 1
@@ -851,12 +867,15 @@ class FrequencyDomainWorkspace(QWidget):
                         label=component.label,
                     )
         if self.show_total_checkbox.isChecked():
-            if mode_index == 0 or not selected_components:
+            if mode_index == 0:
                 total_magnitude = state.plot.magnitude_segments
                 total_phase = (
                     *state.plot.principal_phase_segments,
                     *state.plot.unwrapped_phase_segments,
                 )
+            elif not selected_components:
+                total_magnitude = ()
+                total_phase = ()
             else:
                 total_magnitude = (self._sum_component_segments(selected_components, 0),)
                 total_phase = (self._sum_component_segments(selected_components, 1),)
