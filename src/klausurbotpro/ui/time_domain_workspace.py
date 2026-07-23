@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from klausurbotpro.application import (
     InputSignalType,
+    OdeAnalysisGoal,
     TimeDomainInputDraft,
     TimeDomainTaskType,
     prepend_latex_task_heading,
@@ -116,16 +117,22 @@ class TimeDomainWorkspace(QWidget):
             )
             self.input_coefficient_edits[order].setObjectName(f"timeDomainInputCoefficient{order}")
             output_coefficients_form.addRow(
-                f"a_{order} für y^({order})(t):", self.output_coefficient_edits[order]
+                f"a_{order} · {_derivative_label('y', order)}",
+                self.output_coefficient_edits[order],
             )
             input_coefficients_form.addRow(
-                f"b_{order} für u^({order})(t):", self.input_coefficient_edits[order]
+                f"b_{order} · {_derivative_label('u', order)}",
+                self.input_coefficient_edits[order],
             )
         for order in range(4):
             self.output_initial_edits[order].setObjectName(f"timeDomainOutputInitial{order}")
             self.input_initial_edits[order].setObjectName(f"timeDomainInputInitial{order}")
-            output_initials_form.addRow(f"y^({order})(0+):", self.output_initial_edits[order])
-            input_initials_form.addRow(f"u^({order})(0+):", self.input_initial_edits[order])
+            output_initials_form.addRow(
+                f"{_initial_label('y', order)}:", self.output_initial_edits[order]
+            )
+            input_initials_form.addRow(
+                f"{_initial_label('u', order)}:", self.input_initial_edits[order]
+            )
         self.ode_signal_combo = QComboBox()
         self.ode_signal_combo.setObjectName("timeDomainOdeSignalType")
         for label, signal_type in (
@@ -138,6 +145,18 @@ class TimeDomainWorkspace(QWidget):
             ("Direkte Eingabe U(s)", InputSignalType.IMAGE_EXPRESSION),
         ):
             self.ode_signal_combo.addItem(label, signal_type.value)
+        self.ode_analysis_goal_combo = QComboBox()
+        self.ode_analysis_goal_combo.setObjectName("timeDomainOdeAnalysisGoal")
+        for label, goal in (
+            ("Bildgleichung aufstellen", OdeAnalysisGoal.IMAGE_EQUATION),
+            ("Bildbereichslösung Y(s)", OdeAnalysisGoal.OUTPUT_LAPLACE),
+            ("Partialbruchzerlegung von Y(s)", OdeAnalysisGoal.PARTIAL_FRACTIONS),
+            ("Vollständige Zeitantwort y(t)", OdeAnalysisGoal.TIME_RESPONSE),
+        ):
+            self.ode_analysis_goal_combo.addItem(label, goal.value)
+        self.ode_analysis_goal_combo.setCurrentIndex(
+            self.ode_analysis_goal_combo.findData(OdeAnalysisGoal.TIME_RESPONSE.value)
+        )
         self.ode_amplitude_edit = QLineEdit("1")
         self.ode_amplitude_edit.setObjectName("timeDomainOdeSignalAmplitude")
         self.ode_rate_edit = QLineEdit("1")
@@ -166,7 +185,7 @@ class TimeDomainWorkspace(QWidget):
             ("time", "f(t):", self.time_edit),
             ("image", "F(s):", self.image_edit),
             ("system", "G(s):", self.system_edit),
-            ("input", "U(s):", self.input_edit),
+            ("input", "Bildbereichseingang U(s):", self.input_edit),
             ("step", "Sprunghöhe A:", self.step_amplitude_edit),
             ("exp_amp", "Exponentialamplitude:", self.exponential_amplitude_edit),
             ("exp_lambda", "Exponentialexponent:", self.exponential_exponent_edit),
@@ -178,6 +197,7 @@ class TimeDomainWorkspace(QWidget):
             ("input_order", "Eingangsordnung:", self.input_order_combo),
             ("input_coefficients", "Eingangskoeffizienten:", input_coefficients),
             ("ode_signal", "Eingangsart:", self.ode_signal_combo),
+            ("ode_goal", "Analyseziel:", self.ode_analysis_goal_combo),
             ("ode_amplitude", "Amplitude A:", self.ode_amplitude_edit),
             ("ode_rate", "lambda / omega:", self.ode_rate_edit),
             ("polynomial", "Polynomkoeffizienten:", polynomial_widget),
@@ -213,7 +233,7 @@ class TimeDomainWorkspace(QWidget):
             ("partial", "Partialbruchzerlegung"),
             ("time", "Zeitfunktion"),
             ("checks", "Kontrollen"),
-            ("short", "Numerische Kurzlösung"),
+            ("short", "Kurzlösung"),
             ("steps", "Worked Steps"),
             ("latex", "LaTeX-Lösung"),
             ("diagnostics", "Diagnosen"),
@@ -234,6 +254,9 @@ class TimeDomainWorkspace(QWidget):
         self.output_order_combo.currentIndexChanged.connect(self._update_ode_fields)
         self.input_order_combo.currentIndexChanged.connect(self._update_ode_fields)
         self.ode_signal_combo.currentIndexChanged.connect(self._update_ode_fields)
+        self.ode_analysis_goal_combo.currentIndexChanged.connect(
+            self._update_result_tabs_for_selection
+        )
         for coefficient_edit in (
             *self.output_coefficient_edits,
             *self.input_coefficient_edits,
@@ -311,6 +334,9 @@ class TimeDomainWorkspace(QWidget):
                     else ()
                 ),
                 ode_input_signal_type=InputSignalType(_combo_value(self.ode_signal_combo)),
+                ode_analysis_goal=OdeAnalysisGoal(
+                    _combo_value(self.ode_analysis_goal_combo)
+                ),
                 ode_signal_amplitude_text=self.ode_amplitude_edit.text(),
                 ode_signal_rate_text=self.ode_rate_edit.text(),
                 polynomial_coefficient_texts=tuple(
@@ -379,6 +405,7 @@ class TimeDomainWorkspace(QWidget):
                 "input_order",
                 "input_coefficients",
                 "ode_signal",
+                "ode_goal",
                 "ode_amplitude",
                 "ode_rate",
                 "polynomial",
@@ -404,6 +431,11 @@ class TimeDomainWorkspace(QWidget):
         for key, widgets in self._rows.items():
             for widget in widgets:
                 widget.setVisible(key in visible)
+        self._rows["input"][0].setText(
+            "Bildbereichseingang U(s):"
+            if task_type is TimeDomainTaskType.SOLVE_ODE
+            else "U(s):"
+        )
         ode_mode = task_type in {
             TimeDomainTaskType.SOLVE_ODE,
             TimeDomainTaskType.TRANSFER_FUNCTION_FROM_ODE,
@@ -417,6 +449,7 @@ class TimeDomainWorkspace(QWidget):
             task_type is TimeDomainTaskType.SOLVE_ODE,
         )
         self._update_ode_fields()
+        self._update_result_tabs_for_selection()
 
     @Slot()
     def _update_ode_fields(self) -> None:
@@ -434,6 +467,14 @@ class TimeDomainWorkspace(QWidget):
             self._update_ode_preview()
             return
         signal_type = InputSignalType(_combo_value(self.ode_signal_combo))
+        amplitude_visible = signal_type in {
+            InputSignalType.STEP,
+            InputSignalType.EXPONENTIAL,
+            InputSignalType.SINUS,
+            InputSignalType.COSINUS,
+        }
+        self._rows["ode_amplitude"][0].setVisible(amplitude_visible)
+        self._rows["ode_amplitude"][1].setVisible(amplitude_visible)
         self._rows["ode_rate"][0].setVisible(
             signal_type
             in {InputSignalType.EXPONENTIAL, InputSignalType.SINUS, InputSignalType.COSINUS}
@@ -446,7 +487,79 @@ class TimeDomainWorkspace(QWidget):
         self._rows["polynomial"][1].setVisible(signal_type is InputSignalType.POLYNOMIAL)
         self._rows["input"][0].setVisible(signal_type is InputSignalType.IMAGE_EXPRESSION)
         self._rows["input"][1].setVisible(signal_type is InputSignalType.IMAGE_EXPRESSION)
+        input_initials_visible = (
+            signal_type is InputSignalType.IMAGE_EXPRESSION and input_order > 0
+        )
+        self._rows["input_initials"][0].setVisible(input_initials_visible)
+        self._rows["input_initials"][1].setVisible(input_initials_visible)
+        self._rows["ode_rate"][0].setText(
+            "Exponent lambda:"
+            if signal_type is InputSignalType.EXPONENTIAL
+            else "Kreisfrequenz omega:"
+        )
         self._update_ode_preview()
+
+    @Slot()
+    def _update_result_tabs_for_selection(self) -> None:
+        try:
+            task_type = TimeDomainTaskType(_combo_value(self.task_combo))
+        except (TypeError, ValueError):
+            return
+        if task_type is TimeDomainTaskType.SOLVE_ODE:
+            goal = OdeAnalysisGoal(_combo_value(self.ode_analysis_goal_combo))
+            visible = {
+                OdeAnalysisGoal.IMAGE_EQUATION: {
+                    "summary",
+                    "ode",
+                    "laplace",
+                    "equation",
+                    "checks",
+                    "steps",
+                    "latex",
+                    "diagnostics",
+                },
+                OdeAnalysisGoal.OUTPUT_LAPLACE: {
+                    "summary",
+                    "ode",
+                    "laplace",
+                    "equation",
+                    "split",
+                    "checks",
+                    "steps",
+                    "latex",
+                    "diagnostics",
+                },
+                OdeAnalysisGoal.PARTIAL_FRACTIONS: {
+                    "summary",
+                    "ode",
+                    "laplace",
+                    "equation",
+                    "split",
+                    "rational",
+                    "partial",
+                    "checks",
+                    "steps",
+                    "latex",
+                    "diagnostics",
+                },
+                OdeAnalysisGoal.TIME_RESPONSE: set(self.result_edits),
+            }[goal]
+        else:
+            visible = set(self.result_edits)
+            if task_type not in {
+                TimeDomainTaskType.SOLVE_ODE,
+                TimeDomainTaskType.TRANSFER_FUNCTION_FROM_ODE,
+            }:
+                visible -= {"ode", "laplace", "equation", "split"}
+            elif task_type is TimeDomainTaskType.TRANSFER_FUNCTION_FROM_ODE:
+                visible -= {"split"}
+        self._set_visible_result_tabs(visible)
+
+    def _set_visible_result_tabs(self, visible: set[str]) -> None:
+        for key, edit in self.result_edits.items():
+            self.result_tabs.setTabVisible(
+                self.result_tabs.indexOf(edit), key in visible
+            )
 
     @Slot()
     def _update_ode_preview(self) -> None:
@@ -493,6 +606,8 @@ class TimeDomainWorkspace(QWidget):
         }
         for key, value in values.items():
             self.result_edits[key].setPlainText(value)
+        if state.visible_result_tabs:
+            self._set_visible_result_tabs(set(state.visible_result_tabs))
         self.copy_latex_button.setEnabled(bool(values["latex"]))
 
 
@@ -514,6 +629,28 @@ def _set_form_field_visible(field: QLineEdit, visible: bool) -> None:
     label = layout.labelForField(field)
     if label is not None:
         label.setVisible(visible)
+
+
+def _derivative_label(name: str, order: int) -> str:
+    if order == 0:
+        return f"{name}(t)"
+    if order == 1:
+        return f"{name}'(t)"
+    if order == 2:
+        return f"{name}''(t)"
+    if order == 3:
+        return f"{name}'''(t)"
+    return f"{name}^({order})(t)"
+
+
+def _initial_label(name: str, order: int) -> str:
+    if order == 0:
+        return f"{name}(0+)"
+    if order == 1:
+        return f"{name}'(0+)"
+    if order == 2:
+        return f"{name}''(0+)"
+    return f"{name}^({order})(0+)"
 
 
 __all__ = ["TimeDomainWorkspace"]

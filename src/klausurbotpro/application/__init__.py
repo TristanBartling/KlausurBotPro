@@ -140,7 +140,11 @@ from klausurbotpro.domain.state_space_contracts import (
     StateSpaceStatus,
     StateSpaceTaskType,
 )
-from klausurbotpro.domain.time_domain_contracts import InputSignalType, TimeDomainTaskType
+from klausurbotpro.domain.time_domain_contracts import (
+    InputSignalType,
+    OdeAnalysisGoal,
+    TimeDomainTaskType,
+)
 
 __all__ = [
     "BodeSketchMode",
@@ -230,6 +234,7 @@ __all__ = [
     "TransformationLine",
     "TimeDomainInputDraft",
     "InputSignalType",
+    "OdeAnalysisGoal",
     "TimeDomainPresentation",
     "TimeDomainTaskType",
     "TimeDomainWorkflowResult",

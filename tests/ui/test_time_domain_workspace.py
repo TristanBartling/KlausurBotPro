@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication
 
 from klausurbotpro.application import (
     InputSignalType,
+    OdeAnalysisGoal,
     TimeDomainInputDraft,
     TimeDomainTaskType,
 )
@@ -83,6 +84,169 @@ def test_rf03_real_calculate_button_click_solves_structured_ode() -> None:
     assert "exp(2*t)" in workspace.result_edits["summary"].toPlainText()
     assert "DGL-Residuum" in workspace.result_edits["checks"].toPlainText()
     assert "Traceback" not in workspace.result_edits["diagnostics"].toPlainText()
+    workspace.close()
+
+
+def test_ode_analysis_goal_is_visible_only_for_solve_ode_and_defaults_to_time() -> None:
+    _app()
+    workspace = TimeDomainWorkspace(TimeDomainPresenter())
+    workspace.show()
+    workspace.task_combo.setCurrentIndex(
+        workspace.task_combo.findData(TimeDomainTaskType.SOLVE_ODE.value)
+    )
+    assert workspace.ode_analysis_goal_combo.isVisible()
+    assert (
+        workspace.ode_analysis_goal_combo.currentData()
+        == OdeAnalysisGoal.TIME_RESPONSE.value
+    )
+
+    workspace.task_combo.setCurrentIndex(
+        workspace.task_combo.findData(
+            TimeDomainTaskType.TRANSFER_FUNCTION_FROM_ODE.value
+        )
+    )
+    assert not workspace.ode_analysis_goal_combo.isVisible()
+    workspace.close()
+
+
+def test_ode_signal_fields_are_visible_only_when_relevant() -> None:
+    _app()
+    workspace = TimeDomainWorkspace(TimeDomainPresenter())
+    workspace.show()
+    workspace.task_combo.setCurrentIndex(
+        workspace.task_combo.findData(TimeDomainTaskType.SOLVE_ODE.value)
+    )
+    expected = {
+        InputSignalType.ZERO: (False, False, False, False),
+        InputSignalType.STEP: (True, False, False, False),
+        InputSignalType.EXPONENTIAL: (True, True, False, False),
+        InputSignalType.POLYNOMIAL: (False, False, True, False),
+        InputSignalType.SINUS: (True, True, False, False),
+        InputSignalType.COSINUS: (True, True, False, False),
+        InputSignalType.IMAGE_EXPRESSION: (False, False, False, True),
+    }
+    for signal_type, visibility in expected.items():
+        workspace.ode_signal_combo.setCurrentIndex(
+            workspace.ode_signal_combo.findData(signal_type.value)
+        )
+        actual = (
+            workspace.ode_amplitude_edit.isVisible(),
+            workspace.ode_rate_edit.isVisible(),
+            workspace._rows["polynomial"][1].isVisible(),
+            workspace.input_edit.isVisible(),
+        )
+        assert actual == visibility
+    assert workspace._rows["input"][0].text() == "Bildbereichseingang U(s):"
+    workspace.close()
+
+
+def test_ode_coefficient_and_initial_labels_are_readable() -> None:
+    _app()
+    workspace = TimeDomainWorkspace(TimeDomainPresenter())
+    output_layout = workspace.output_coefficient_edits[0].parentWidget().layout()
+    initial_layout = workspace.output_initial_edits[0].parentWidget().layout()
+    assert output_layout.labelForField(workspace.output_coefficient_edits[0]).text() == (
+        "a_0 · y(t)"
+    )
+    assert output_layout.labelForField(workspace.output_coefficient_edits[2]).text() == (
+        "a_2 · y''(t)"
+    )
+    assert output_layout.labelForField(workspace.output_coefficient_edits[4]).text() == (
+        "a_4 · y^(4)(t)"
+    )
+    assert initial_layout.labelForField(workspace.output_initial_edits[0]).text() == (
+        "y(0+):"
+    )
+    assert initial_layout.labelForField(workspace.output_initial_edits[1]).text() == (
+        "y'(0+):"
+    )
+    workspace.close()
+
+
+def test_ode_result_tabs_follow_selected_goal() -> None:
+    _app()
+    workspace = TimeDomainWorkspace(TimeDomainPresenter())
+    workspace.show()
+    workspace.task_combo.setCurrentIndex(
+        workspace.task_combo.findData(TimeDomainTaskType.SOLVE_ODE.value)
+    )
+
+    workspace.ode_analysis_goal_combo.setCurrentIndex(
+        workspace.ode_analysis_goal_combo.findData(
+            OdeAnalysisGoal.IMAGE_EQUATION.value
+        )
+    )
+    assert workspace.result_tabs.isTabVisible(
+        workspace.result_tabs.indexOf(workspace.result_edits["equation"])
+    )
+    assert not workspace.result_tabs.isTabVisible(
+        workspace.result_tabs.indexOf(workspace.result_edits["partial"])
+    )
+    assert not workspace.result_tabs.isTabVisible(
+        workspace.result_tabs.indexOf(workspace.result_edits["time"])
+    )
+
+    workspace.ode_analysis_goal_combo.setCurrentIndex(
+        workspace.ode_analysis_goal_combo.findData(
+            OdeAnalysisGoal.PARTIAL_FRACTIONS.value
+        )
+    )
+    assert workspace.result_tabs.isTabVisible(
+        workspace.result_tabs.indexOf(workspace.result_edits["partial"])
+    )
+    assert not workspace.result_tabs.isTabVisible(
+        workspace.result_tabs.indexOf(workspace.result_edits["time"])
+    )
+    workspace.close()
+
+
+def test_direct_image_input_output_goal_click_ends_at_y_of_s() -> None:
+    application = _app()
+    presenter = TimeDomainPresenter()
+    workspace = TimeDomainWorkspace(presenter)
+    workspace.show()
+    workspace.task_combo.setCurrentIndex(
+        workspace.task_combo.findData(TimeDomainTaskType.SOLVE_ODE.value)
+    )
+    workspace.ode_analysis_goal_combo.setCurrentIndex(
+        workspace.ode_analysis_goal_combo.findData(
+            OdeAnalysisGoal.OUTPUT_LAPLACE.value
+        )
+    )
+    workspace.output_order_combo.setCurrentIndex(
+        workspace.output_order_combo.findData(2)
+    )
+    for edit, text in zip(
+        workspace.output_coefficient_edits, ("0", "4", "2"), strict=False
+    ):
+        edit.setText(text)
+    workspace.input_coefficient_edits[0].setText("1")
+    workspace.output_initial_edits[0].setText("y0")
+    workspace.output_initial_edits[1].setText("v0")
+    workspace.ode_signal_combo.setCurrentIndex(
+        workspace.ode_signal_combo.findData(
+            InputSignalType.IMAGE_EXPRESSION.value
+        )
+    )
+    workspace.input_edit.setPlainText("1/(s-8)^2")
+
+    assert not workspace.ode_amplitude_edit.isVisible()
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    application.processEvents()
+
+    assert not presenter.state.failed
+    assert "Endergebnis: Y(s) =" in workspace.result_edits[
+        "summary"
+    ].toPlainText()
+    assert not workspace.result_tabs.isTabVisible(
+        workspace.result_tabs.indexOf(workspace.result_edits["partial"])
+    )
+    assert not workspace.result_tabs.isTabVisible(
+        workspace.result_tabs.indexOf(workspace.result_edits["time"])
+    )
+    assert "inverse Laplace" not in workspace.result_edits[
+        "steps"
+    ].toPlainText().lower()
     workspace.close()
 
 

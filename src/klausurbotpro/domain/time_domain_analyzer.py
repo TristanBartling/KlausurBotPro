@@ -135,6 +135,7 @@ def inverse_rational(
     system_poles: tuple[PoleRecord, ...] = (),
     input_poles: tuple[PoleRecord, ...] = (),
     calculate_end_value: bool = False,
+    stop_after_partial_fractions: bool = False,
 ) -> TimeDomainSolution:
     """Run exact division, real-factor PBZ, inverse mapping and checks."""
     if not reduction.succeeded or reduction.reduced is None or reduction.report is None:
@@ -311,6 +312,49 @@ def inverse_rational(
             None,
             (*system_poles, *input_poles),
             VerificationReport(tuple(base_checks), None, EndValueStatus.INCONCLUSIVE, None),
+            tuple(diagnostics),
+        )
+    if stop_after_partial_fractions:
+        base_checks.extend(
+            (
+                VerificationItem(
+                    "factor_reconstruction",
+                    _residual_status(
+                        factor_structure.reconstruction_residual._as_sympy()
+                    ),
+                    factor_structure.reconstruction_residual,
+                    "Das Faktorprodukt rekonstruiert den Nenner.",
+                ),
+                VerificationItem(
+                    "pbz_recomposition",
+                    _residual_status(partial.reconstruction_residual._as_sympy()),
+                    partial.reconstruction_residual,
+                    "Original minus Summe der PBZ-Terme ist exakt null.",
+                    _numeric_samples(
+                        partial.proper_fraction._as_sympy(),
+                        partial.recomposed._as_sympy(),
+                        s,
+                    ),
+                ),
+            )
+        )
+        return TimeDomainSolution(
+            task_type,
+            ComputationStatus.SUCCESS,
+            source_expression,
+            input_laplace,
+            system_laplace,
+            exact(reduced_expression),
+            rational,
+            factor_structure,
+            partial,
+            (),
+            (),
+            None,
+            (*system_poles, *input_poles),
+            VerificationReport(
+                tuple(base_checks), None, EndValueStatus.NOT_APPLICABLE, None
+            ),
             tuple(diagnostics),
         )
     mappings, time_expression = _inverse_terms(partial.terms, s, t)

@@ -5,7 +5,11 @@ import sympy as sp
 
 from klausurbotpro.application import TimeDomainInputDraft, run_time_domain_workflow
 from klausurbotpro.application.time_domain_workflow import format_ode_preview
-from klausurbotpro.domain.time_domain_contracts import InputSignalType, TimeDomainTaskType
+from klausurbotpro.domain.time_domain_contracts import (
+    InputSignalType,
+    OdeAnalysisGoal,
+    TimeDomainTaskType,
+)
 
 
 def _rf03(**changes: object) -> TimeDomainInputDraft:
@@ -19,6 +23,21 @@ def _rf03(**changes: object) -> TimeDomainInputDraft:
         ode_input_signal_type=InputSignalType.EXPONENTIAL,
         ode_signal_amplitude_text="9",
         ode_signal_rate_text="2",
+    )
+    values.update(changes)
+    return TimeDomainInputDraft(**values)
+
+
+def _reference_ode(**changes: object) -> TimeDomainInputDraft:
+    values: dict[str, object] = dict(
+        task_type=TimeDomainTaskType.SOLVE_ODE,
+        output_order=2,
+        input_order=0,
+        output_coefficient_texts=("0", "4", "2"),
+        input_coefficient_texts=("1",),
+        output_initial_texts=("y0", "v0"),
+        ode_input_signal_type=InputSignalType.IMAGE_EXPRESSION,
+        input_expression_text="1/(s-8)^2",
     )
     values.update(changes)
     return TimeDomainInputDraft(**values)
@@ -46,6 +65,185 @@ def test_rf03_free_forced_pbz_and_all_ode_checks_pass() -> None:
     assert "(s^2 + 2*s + 1)*Y(s) - 1 = U(s)" in result.presentation.image_equation
     assert r"\mathcal{L}\{2\,\dot{y}(t)\}" in result.presentation.latex_source
     _assert_no_internal_origin_names(result)
+
+
+def test_default_ode_goal_preserves_complete_time_response() -> None:
+    draft = _rf03()
+    assert draft.ode_analysis_goal is OdeAnalysisGoal.TIME_RESPONSE
+    result = run_time_domain_workflow(draft)
+    assert result.solution is not None
+    assert result.solution.time_function is not None
+    assert result.solution.ode_solution is not None
+    assert result.solution.ode_solution.analysis_goal is OdeAnalysisGoal.TIME_RESPONSE
+
+
+def test_reference_image_equation_is_algebraically_correct() -> None:
+    result = run_time_domain_workflow(
+        _reference_ode(ode_analysis_goal=OdeAnalysisGoal.OUTPUT_LAPLACE)
+    )
+    assert result.solution is not None and result.solution.ode_solution is not None
+    data = result.solution.ode_solution
+    s, u = sp.symbols("s U")
+    expected_generic = (
+        u
+        + 2 * s * sp.Symbol("y0")
+        + 2 * sp.Symbol("v0")
+        + 4 * sp.Symbol("y0")
+    ) / (2 * s**2 + 4 * s)
+    free = data.free_laplace
+    forced = data.forced_laplace
+    assert free is not None and forced is not None
+    expected_concrete = expected_generic.subs(u, 1 / (s - 8) ** 2)
+    assert (
+        sp.simplify(
+            free._as_sympy() + forced._as_sympy() - expected_concrete
+        )
+        == 0
+    )
+    assert (
+        "2*s^2*Y(s) - 2*s*y0 - 2*v0"
+        in result.presentation.laplace_transformation
+    )
+    image = data.image_equation
+    y = sp.Symbol("Y")
+    assert sp.simplify(
+        image.left_expression._as_sympy()
+        - ((2 * s**2 + 4 * s) * y - 2 * s * sp.Symbol("y0")
+           - 2 * sp.Symbol("v0") - 4 * sp.Symbol("y0"))
+    ) == 0
+    assert sp.simplify(
+        image.right_expression._as_sympy() - u
+    ) == 0
+
+
+def test_image_equation_goal_stops_before_solving_for_y(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(*args: object, **kwargs: object) -> object:
+        raise AssertionError("solve_ode_image_equation must not be called")
+
+    monkeypatch.setattr(
+        "klausurbotpro.application.time_domain_workflow.solve_ode_image_equation",
+        fail_if_called,
+    )
+    result = run_time_domain_workflow(
+        _reference_ode(ode_analysis_goal=OdeAnalysisGoal.IMAGE_EQUATION)
+    )
+    assert result.solution is not None
+    assert result.solution.output_laplace is None
+    assert result.solution.rational_analysis is None
+    assert result.solution.partial_fractions is None
+    assert result.solution.time_function is None
+    assert "Auflösen nach Y(s)" not in result.presentation.worked_steps
+    assert r"\boxed{" in result.presentation.latex_source
+    assert "transformierte Bildgleichung" in result.presentation.latex_source
+
+
+def test_output_laplace_goal_stops_before_rational_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(*args: object, **kwargs: object) -> object:
+        raise AssertionError("inverse_rational must not be called")
+
+    monkeypatch.setattr(
+        "klausurbotpro.application.time_domain_workflow.inverse_rational",
+        fail_if_called,
+    )
+    result = run_time_domain_workflow(
+        _reference_ode(ode_analysis_goal=OdeAnalysisGoal.OUTPUT_LAPLACE)
+    )
+    assert result.solution is not None and result.solution.output_laplace is not None
+    assert result.solution.rational_analysis is None
+    assert result.solution.partial_fractions is None
+    assert result.solution.time_function is None
+    assert "Partialbruchzerlegung" not in result.presentation.worked_steps
+    assert r"\boxed{Y(s)=" in result.presentation.latex_source
+    assert "time" not in result.presentation.visible_result_tabs
+
+
+def test_partial_fraction_goal_stops_before_inverse_laplace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(*args: object, **kwargs: object) -> object:
+        raise AssertionError("_inverse_terms must not be called")
+
+    monkeypatch.setattr(
+        "klausurbotpro.domain.time_domain_analyzer._inverse_terms",
+        fail_if_called,
+    )
+    result = run_time_domain_workflow(
+        _reference_ode(ode_analysis_goal=OdeAnalysisGoal.PARTIAL_FRACTIONS)
+    )
+    assert result.solution is not None
+    assert result.solution.partial_fractions is not None
+    assert result.solution.inverse_mappings == ()
+    assert result.solution.time_function is None
+    assert "Inverse Laplace" not in result.presentation.worked_steps
+    assert "time" not in result.presentation.visible_result_tabs
+    assert "partial" in result.presentation.visible_result_tabs
+
+
+@pytest.mark.parametrize(
+    ("signal_type", "changes"),
+    (
+        (
+            InputSignalType.ZERO,
+            {"ode_signal_amplitude_text": "ungültig(", "ode_signal_rate_text": "ungültig("},
+        ),
+        (
+            InputSignalType.POLYNOMIAL,
+            {
+                "ode_signal_amplitude_text": "ungültig(",
+                "ode_signal_rate_text": "ungültig(",
+                "polynomial_coefficient_texts": ("1",),
+            },
+        ),
+        (
+            InputSignalType.IMAGE_EXPRESSION,
+            {
+                "ode_signal_amplitude_text": "ungültig(",
+                "ode_signal_rate_text": "ungültig(",
+                "input_expression_text": "1/(s+1)",
+            },
+        ),
+    ),
+)
+def test_irrelevant_hidden_signal_fields_are_not_parsed(
+    signal_type: InputSignalType, changes: dict[str, object]
+) -> None:
+    result = run_time_domain_workflow(
+        _rf03(
+            output_order=1,
+            output_coefficient_texts=("1", "1"),
+            output_initial_texts=("0",),
+            ode_input_signal_type=signal_type,
+            ode_analysis_goal=OdeAnalysisGoal.OUTPUT_LAPLACE,
+            **changes,
+        )
+    )
+    assert result.solution is not None
+    assert result.solution.status.value == "SUCCESS"
+
+
+def test_invalid_direct_image_input_has_field_specific_diagnostic() -> None:
+    result = run_time_domain_workflow(
+        _reference_ode(
+            ode_analysis_goal=OdeAnalysisGoal.OUTPUT_LAPLACE,
+            input_expression_text="exp(s)",
+        )
+    )
+    assert result.solution is None
+    assert "Bildbereichseingang U(s)" in result.presentation.diagnostics
+    assert "1/(s+2)" in result.presentation.diagnostics
+
+
+def test_invalid_ode_coefficient_has_field_specific_diagnostic() -> None:
+    result = run_time_domain_workflow(
+        _reference_ode(output_coefficient_texts=("0", "4", "sin("))
+    )
+    assert result.solution is None
+    assert "Koeffizient vor y''(t)" in result.presentation.diagnostics
+    assert "z. B. 2 oder k" in result.presentation.diagnostics
 
 
 def test_rf04_transfer_function_preserves_negative_sign() -> None:
@@ -165,6 +363,8 @@ def test_rf05_missing_initial_value_stops_before_y_of_s() -> None:
         item.code.value.endswith("missing_initial_condition")
         for item in result.solution.diagnostics
     )
+    assert "y'(0+)" in result.presentation.diagnostics
+    assert "z. B. 0 oder y0" in result.presentation.diagnostics
 
 
 def test_rf14_parameter_pt2_step_has_exact_zero_residual() -> None:

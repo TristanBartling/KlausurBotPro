@@ -18,6 +18,7 @@ class TimeDomainViewState:
     laplace_transformation: str = ""
     image_equation: str = ""
     free_and_forced: str = ""
+    visible_result_tabs: tuple[str, ...] = ()
     failed: bool = False
 
 

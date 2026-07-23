@@ -19,6 +19,13 @@ class TimeDomainTaskType(StrEnum):
     TRANSFER_FUNCTION_FROM_ODE = "transfer_function_from_ode"
 
 
+class OdeAnalysisGoal(StrEnum):
+    IMAGE_EQUATION = "image_equation"
+    OUTPUT_LAPLACE = "output_laplace"
+    PARTIAL_FRACTIONS = "partial_fractions"
+    TIME_RESPONSE = "time_response"
+
+
 class InitialConditionOrigin(StrEnum):
     USER_PROVIDED = "USER_PROVIDED"
     EXPLICIT_ZERO_POLICY = "EXPLICIT_ZERO_POLICY"
@@ -261,13 +268,41 @@ class OdeSolutionData:
     input_signal: TypedInputSignal
     transformed_terms: tuple[TransformedOdeTerm, ...]
     image_equation: OdeImageEquation
-    free_laplace: ExactExpression
-    forced_laplace: ExactExpression
-    total_laplace: ExactExpression
-    free_time: TimeFunction
-    forced_time: TimeFunction
-    total_time: TimeFunction
-    verification: OdeVerificationReport
+    analysis_goal: OdeAnalysisGoal
+    free_laplace: ExactExpression | None = None
+    forced_laplace: ExactExpression | None = None
+    total_laplace: ExactExpression | None = None
+    free_time: TimeFunction | None = None
+    forced_time: TimeFunction | None = None
+    total_time: TimeFunction | None = None
+    verification: OdeVerificationReport | None = None
+
+    def __post_init__(self) -> None:
+        laplace_values = (self.free_laplace, self.forced_laplace, self.total_laplace)
+        time_values = (self.free_time, self.forced_time, self.total_time)
+        if self.analysis_goal is OdeAnalysisGoal.IMAGE_EQUATION and (
+            any(item is not None for item in (*laplace_values, *time_values))
+            or self.verification is not None
+        ):
+            raise ValueError("Die Bildgleichungsstufe darf keine späteren Ergebnisse enthalten.")
+        if self.analysis_goal is not OdeAnalysisGoal.IMAGE_EQUATION and any(
+            item is None for item in laplace_values
+        ):
+            raise ValueError("Das Analyseziel erfordert vollständige Bildbereichswerte.")
+        if self.analysis_goal in {
+            OdeAnalysisGoal.OUTPUT_LAPLACE,
+            OdeAnalysisGoal.PARTIAL_FRACTIONS,
+        } and (
+            any(item is not None for item in time_values)
+            or self.verification is not None
+        ):
+            raise ValueError("Die gewählte Bildbereichsstufe darf keine Zeitantwort enthalten.")
+        if self.analysis_goal is OdeAnalysisGoal.TIME_RESPONSE and (
+            any(item is None for item in time_values) or self.verification is None
+        ):
+            raise ValueError(
+                "Die vollständige Zeitantwort erfordert Zeitfunktionen und Verifikation."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -352,6 +387,7 @@ __all__ = [
     "InitialConditionValue",
     "InputSignalType",
     "LinearOdeInput",
+    "OdeAnalysisGoal",
     "OdeImageEquation",
     "OdeSolutionData",
     "OdeTransferFunctionResult",

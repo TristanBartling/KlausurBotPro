@@ -192,11 +192,14 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 | `Sprunghöhe A:`, Exponentialamplitude/-exponent | Textfelder | Exakte Skalare | Baut Eingang automatisch | Passender Antwortmodus | Ungültiger Skalar |
 | DGL-Namen, Ordnungen, Koeffizienten | Felder/Auswahl | Ordnung Ausgang 1–4, Eingang 0–4 | Baut strukturierte lineare DGL | DGL-Modi | Zeitvariable Koeffizienten abgelehnt |
 | `Eingangsart:` | Auswahl | Nullsignal, Sprung, Exponential, Polynom, Sinus, Kosinus, Direkte Eingabe `U(s)` | Baut Eingangssignal | `Lineare DGL lösen` | Für Sinus/Kosinus muss `omega > 0` gelten/angenommen sein |
+| `Analyseziel:` | Auswahl | Bildgleichung, `Y(s)`, PBZ von `Y(s)`, vollständige Zeitantwort | Beendet den DGL-Workflow an der gewählten Zielstufe; Standard ist `Vollständige Zeitantwort y(t)` | Nur `Lineare DGL lösen` | Nicht erreichte Folgestufen werden weder berechnet noch angezeigt |
+| `Amplitude A:`, `Exponent lambda:`, `Kreisfrequenz omega:`, Polynomkoeffizienten | Textfelder | Exakte signalabhängige Parameter | Baut den gewählten DGL-Eingang | Nur für den jeweiligen Signaltyp | Ausgeblendete Felder werden nicht ausgewertet |
+| `Bildbereichseingang U(s):` | Textfeld | Rationaler Ausdruck in `s`, z. B. `1/s` | Direkte DGL-Anregung im Bildbereich | Nur `Direkte Eingabe U(s)` | Kein Amplitudenfeld aktiv; ungültige Eingabe wird feldbezogen gemeldet |
 | Anfangswertfelder | Textfelder | Werte bei `0+` | Bestimmt freien Anteil | `Lineare DGL lösen` | Fehlende benötigte Werte blockieren |
 | `Nicht angegebene Anfangswerte ausdrücklich als 0 setzen` | Checkbox | Bestätigung | Ergänzt fehlende Anfangswerte als null | `Lineare DGL lösen` | Nicht stillschweigend gesetzt |
 | `Vollständigen Nullzustand ausdrücklich bestätigen` | Checkbox | Bestätigung | Erlaubt TF aus DGL | `Übertragungsfunktion aus DGL` | Ohne Bestätigung wird abgelehnt |
 | `Zeitbereich berechnen`, `Zurücksetzen`, `LaTeX kopieren` | Schaltflächen | — | Start/Reset/Kopieren | Ergebnisabhängig | Fehlerausgabe ersetzt Resultate |
-| Ergebnis-Tabs | Tabs | Übersicht, DGL/Anfangswerte, Laplace, Bildgleichung, freie/erzwungene Antwort, rationale Analyse, PBZ, Zeitfunktion, Kontrollen, Kurzlösung, Worked Steps, LaTeX, Diagnosen | Wählt Ausgabe | Ergebnisabhängig | Nicht benötigte Bereiche werden entsprechend bezeichnet |
+| Ergebnis-Tabs | Tabs | Übersicht, DGL/Anfangswerte, Laplace, Bildgleichung, freie/erzwungene Antwort, rationale Analyse, PBZ, Zeitfunktion, Kontrollen, Kurzlösung, Worked Steps, LaTeX, Diagnosen | Wählt Ausgabe | Ziel- und ergebnisabhängig | Nur fachlich erreichte Register sind sichtbar; `Zeitfunktion` erst beim vollständigen Zeitziel |
 
 **Ausgaben:** Rationale Klassifikation, Polynomdivision/PBZ, Zeitfunktion, DGL-Transformation, freie und erzwungene Antwort, Endwert- und Residuenkontrollen, Kurzlösung, Worked Steps und LaTeX.
 
@@ -469,16 +472,16 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Geeigneter Aufgabentyp:** Lineare zeitinvariante DGL Ordnung 1–4 mit strukturierten Anfangswerten.
 - **Modul/Ansicht:** `Zeitbereich`, `Lineare DGL lösen`.
 - **Voraussetzungen:** Koeffizienten und alle benötigten Werte bei `0+`.
-- **Eingaben:** Ordnungen, Koeffizienten `a_i`, `b_i`, Eingangsart, Signalparameter, Anfangswerte, Annahmen.
+- **Eingaben:** Analyseziel, Ordnungen, eindeutig nach Ableitung beschriftete Koeffizienten `a_i`, `b_i`, Eingangsart, nur die dafür relevanten Signalparameter, Anfangswerte und Annahmen.
 - **Akzeptierte Syntax:** Exakte Koeffizienten; Signaltypen über Auswahl; direkte `U(s)` rational.
 - **Gültiges Beispiel:** `a_0=1, a_1=2, a_2=1`, `b_0=1`, `y(0+)=0`, `y'(0+)=1`, Eingang `Exponential`, `A=9`, `lambda=2`.
-- **Bedienfolge:** 1. Modus/Ordnungen wählen. 2. Koeffizienten eingeben und Vorschau prüfen. 3. Eingang/Anfangswerte setzen. 4. Berechnen.
-- **Interne Interpretation:** Transformiert Ableitungen einschließlich Anfangswerttermen; trennt freie und erzwungene Antwort.
-- **Automatische Schritte:** Bildgleichung, PBZ, inverse Transformation, DGL-Residuum und Anfangswertkontrollen.
-- **Sichtbare Ergebnisse:** DGL/Anfangswerte, Laplace-Schritte, freie/erzwungene/gesamte Antwort und Kontrollen.
+- **Bedienfolge:** 1. Modus, Analyseziel und Ordnungen wählen. 2. Koeffizienten eingeben und Vorschau prüfen. 3. Eingang/Anfangswerte setzen. 4. Berechnen.
+- **Interne Interpretation:** Transformiert Ableitungen einschließlich Anfangswerttermen und stoppt echt nach Bildgleichung, aufgelöstem `Y(s)`, PBZ oder vollständiger Zeitantwort. Das Standardziel `Vollständige Zeitantwort y(t)` erhält das bisherige Komplettverhalten.
+- **Automatische Schritte:** `Bildgleichung aufstellen`: nur Transformation und Eingangsvorgabe; `Bildbereichslösung Y(s)`: zusätzlich algebraisches Auflösen und Bildgleichungskontrolle; `Partialbruchzerlegung von Y(s)`: zusätzlich rationale Analyse/PBZ und Rückzusammenfassung; `Vollständige Zeitantwort y(t)`: zusätzlich inverse Laplace, Anfangswert-, Vorwärtstransformations- und DGL-Residuenkontrollen.
+- **Sichtbare Ergebnisse:** Zielabhängig nur erreichte Register. `Y(s)`-Ziel ergänzt die freie/erzwungene Bildantwort; PBZ ergänzt rationale Analyse und Partialbrüche; nur das Zeitziel zeigt die Zeitfunktion.
 - **Manuelle Vorarbeit:** Koeffizienten nach Ableitungsordnung korrekt zuordnen.
 - **Manuelle Nacharbeit/Kontrolle:** Rechte/linksseitige Anfangswerte und Signaldefinition prüfen.
-- **Typische Fehlbedienung:** Fehlende Werte stillschweigend als null erwarten.
+- **Typische Fehlbedienung:** Fehlende Werte stillschweigend als null erwarten oder einen Zeitausdruck in `Bildbereichseingang U(s)` eintragen. Parserfehler nennen das sichtbare Feld und ein gültiges Kurzbeispiel.
 - **Bekannte Grenze:** Zeitvariable Koeffizienten und nicht gewöhnlich invertierbare `U(s)` werden abgelehnt.
 - **Nachweis:** `ui/time_domain_workspace.py`, `application/time_domain_workflow.py`; `tests/ui/test_time_domain_workspace.py`, `tests/application/test_time_domain_ode_workflow.py`.
 
@@ -660,7 +663,9 @@ Ein möglicher Bug darf erst angenommen werden, wenn der richtige Workflow gewä
 | `Annahme …: Relation nicht unterstützt.` | Annahmesyntax unbekannt | Freitext statt Relation | Einfache Relation verwenden | Stabilitätsanalyse blockiert |
 | `Vollständige Nullzeile` / `Hilfspolynomverfahren` | Routh-Sonderfall | Kein Bedienfehler | Manuell fachlich fortsetzen | Teilresultate/Diagnose sichtbar; LaTeX-Kopieren kann deaktiviert sein |
 | `DGL-Koeffizienten müssen zeitunabhängig sein.` | `t`/`s` in DGL-Koeffizient | Zeitvariable DGL | Nur konstante/parametrische Koeffizienten | Zeitbereich zeigt Fehler statt Lösung |
-| `Fehlende Ausgangsanfangswerte der Ableitungsordnung: …` | Benötigter Anfangswert leer | Wert vergessen | Wert angeben oder Nullpolitik bestätigen | Vor `Y(s)` gestoppt; Fehlerdarstellung |
+| `Feld „Bildbereichseingang U(s)“ ist ungültig. …` | Direkte DGL-Eingabe ist nicht rational in `s` | `exp(s)` oder Zeitausdruck | Z. B. `1/s` oder `1/(s+2)` verwenden | Vor der Bildgleichungsauflösung gestoppt |
+| `Feld „Koeffizient vor …“ ist ungültig. …` | Ungültiger DGL-Koeffizient | Unvollständiger Ausdruck | Zahl oder zulässigen symbolischen Ausdruck, z. B. `2` oder `k`, verwenden | Vor Aufbau der DGL gestoppt |
+| `Fehlende Ausgangsanfangswerte: y…(0+). …` | Benötigter Anfangswert leer | Wert vergessen | Exakten Wert, z. B. `0` oder `y0`, angeben oder Nullpolitik bestätigen | Vor `Y(s)` gestoppt; Fehlerdarstellung |
 | `Die Übertragungsfunktion erfordert eine sichtbare Bestätigung …` | TF aus DGL ohne Nullzustandscheckbox | Bestätigung fehlt | Checkbox setzen, sofern fachlich richtig | Vor TF-Bildung gestoppt |
 | `Zustandsdimension größer als 4 wird nicht unterstützt.` | Matrixdimension >4 | Zu großes Modell | Außerhalb der App rechnen/reduzieren | Keine fachlichen Resultate, Diagnose sichtbar |
 | `A muss quadratisch sein; erhalten: …` / Dimensionsmeldungen für `b`, `c^T`, `d` | Inkonsistente Matrixformen | Zeilen/Spalten vertauscht | Matrixstruktur korrigieren | Keine fachlichen Resultate |
@@ -683,7 +688,7 @@ Das Verhalten ist nicht für alle Module einheitlich: Bei `Transferfunktion` lö
 - Uneigentliche inverse Laplace-Funktionen werden klassifiziert und dividiert, aber eine gewöhnliche Zeitfunktion mit Distributionsanteilen wird nicht fertiggestellt.
 - TF-basierte Zeitantworten sind Nullzustandsantworten. Allgemeine Anfangsbedingungen gehören in `Lineare DGL lösen`.
 - Im Zeitbereich ist die Kürzungsprovenienz strikt zu trennen: Eine allgemeine inverse Bildfunktion `F(s)` wird ohne Systemaussage nur algebraisch reduziert. In den Antwortmodi wird `G(s)` vor der Produktbildung separat reduziert; nur eine Kürzung innerhalb dieses `G(s)` kann als möglicherweise verdeckte Systemdynamik gelten. Kürzungen, die erst in `Y(s)=G(s)U(s)` entstehen, sind keine verborgenen Systemmoden und ihre entsprechenden Warncodes werden im sichtbaren Antwortworkflow entfernt.
-- DGL: Ausgangsordnung 1–4, Eingangsordnung 0–4; Koeffizienten zeitunabhängig. Fehlende Anfangswerte werden niemals ohne gesetzte Nullpolitik angenommen.
+- DGL: Ausgangsordnung 1–4, Eingangsordnung 0–4; Koeffizienten zeitunabhängig. Fehlende Anfangswerte werden bei allen vier Analysezielen niemals ohne gesetzte Nullpolitik angenommen. Die Zielwahl hat bei `Übertragungsfunktion aus DGL` keine Wirkung.
 - Zustandsraum: SISO, Dimension 1–4. DGL→Regelungsnormalform unterstützt nur den nicht abgeleiteten Eingang.
 - Reglerauslegung ermittelt Prozesskennwerte nicht aus Diagrammen. ZN/Cohen–Coon bleiben Tabellenverfahren in der implementierten Kurskonvention.
 - Keine Datei-Exportfunktion nachgewiesen; nur Zwischenablage/LaTeX-Quelltext.

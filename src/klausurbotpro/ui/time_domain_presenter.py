@@ -35,6 +35,7 @@ class TimeDomainPresenter(QObject):
                 laplace_transformation=presentation.laplace_transformation,
                 image_equation=presentation.image_equation,
                 free_and_forced=presentation.free_and_forced,
+                visible_result_tabs=presentation.visible_result_tabs,
                 failed=result.solution is None
                 or result.solution.status.value in {"FAILED", "UNSUPPORTED"},
             )
