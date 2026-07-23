@@ -117,6 +117,53 @@ def test_reference_image_equation_is_algebraically_correct() -> None:
     ) == 0
 
 
+def test_reference_image_equation_rendering_preserves_all_initial_value_signs() -> None:
+    result = run_time_domain_workflow(
+        _reference_ode(ode_analysis_goal=OdeAnalysisGoal.IMAGE_EQUATION)
+    )
+    expected_plain = (
+        "(2*s^2 + 4*s)*Y(s) - 2*s*y0 - 2*v0 - 4*y0 = U(s)"
+    )
+    expected_latex = (
+        r"\left(2 s^{2} + 4 s\right)Y(s)"
+        r" - 2 s y_{0} - 2 v_{0} - 4 y_{0}=U(s)"
+    )
+
+    assert result.presentation.image_equation.splitlines()[0] == expected_plain
+    assert rf"\[{expected_latex}\]" in result.presentation.latex_source
+    assert rf"\[\boxed{{{expected_latex}}}\]" in result.presentation.latex_source
+    assert "+ 2 v_{0} + 4 y_{0}" not in result.presentation.latex_source
+
+
+def test_multiple_output_initial_values_use_aligned_latex() -> None:
+    result = run_time_domain_workflow(
+        _reference_ode(ode_analysis_goal=OdeAnalysisGoal.IMAGE_EQUATION)
+    )
+
+    assert r"\begin{aligned}" in result.presentation.latex_source
+    assert r"y(0^+) &= y_{0} \\" in result.presentation.latex_source
+    assert r"\dot{y}(0^+) &= v_{0}" in result.presentation.latex_source
+    assert r"\end{aligned}" in result.presentation.latex_source
+
+
+def test_single_output_initial_value_remains_compact_latex() -> None:
+    result = run_time_domain_workflow(
+        TimeDomainInputDraft(
+            task_type=TimeDomainTaskType.SOLVE_ODE,
+            output_order=1,
+            input_order=0,
+            output_coefficient_texts=("1", "1"),
+            input_coefficient_texts=("1",),
+            output_initial_texts=("y0",),
+            ode_input_signal_type=InputSignalType.ZERO,
+            ode_analysis_goal=OdeAnalysisGoal.IMAGE_EQUATION,
+        )
+    )
+
+    assert r"\[y(0^+)=y_{0}\]" in result.presentation.latex_source
+    assert r"\begin{aligned}" not in result.presentation.latex_source
+
+
 def test_image_equation_goal_stops_before_solving_for_y(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

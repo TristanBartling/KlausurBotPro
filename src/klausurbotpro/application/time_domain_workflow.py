@@ -1280,11 +1280,7 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
     steps = "\n\n".join(
         f"{number}. {block}" for number, block in enumerate(step_blocks, start=1)
     )
-    latex_ic = r" \\ ".join(
-        rf"{_initial_condition_latex(data.ode.output_name, item.derivative_order)}"
-        rf"={item.value.latex}"
-        for item in data.output_initial_conditions.values
-    )
+    latex_initial_conditions = _ode_initial_conditions_latex(data)
     latex_rules = "\n".join(
         rf"\[{_transformed_ode_rule(item, data.ode, latex=True)}\]"
         for item in ordered_transforms
@@ -1296,7 +1292,7 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         r"\section*{Zeitbereichslösung}",
         r"\textbf{Gegeben}",
         rf"\[{format_ode_latex(data.ode)}\]",
-        rf"\[{latex_ic}\]",
+        latex_initial_conditions,
         r"\textbf{Gesucht}",
         rf"\[{_ode_goal_latex(data)}\]",
         r"\textbf{Lösung}",
@@ -1711,6 +1707,25 @@ def _initial_condition_latex(name: str, order: int) -> str:
     return rf"{function}^{{({order})}}(0^+)"
 
 
+def _ode_initial_conditions_latex(data: OdeSolutionData) -> str:
+    conditions = data.output_initial_conditions.values
+    rendered = tuple(
+        (
+            _initial_condition_latex(data.ode.output_name, item.derivative_order),
+            item.value.latex,
+        )
+        for item in conditions
+    )
+    if len(rendered) == 1:
+        name, value = rendered[0]
+        return rf"\[{name}={value}\]"
+    rows = tuple(
+        rf"{name} &= {value}" + (r" \\" if index < len(rendered) - 1 else "")
+        for index, (name, value) in enumerate(rendered)
+    )
+    return "\n".join((r"\[", r"\begin{aligned}", *rows, r"\end{aligned}", r"\]"))
+
+
 def _ode_image_equation_latex(data: OdeSolutionData) -> str:
     output_image = f"{_laplace_symbol_names(data.ode.output_name).latex}(s)"
     input_image = f"{_laplace_symbol_names(data.ode.input_name or 'u').latex}(s)"
@@ -1730,9 +1745,17 @@ def _ode_image_equation_latex(data: OdeSolutionData) -> str:
 def _ode_image_equation_plain(data: OdeSolutionData) -> str:
     output_image = f"{_laplace_symbol_names(data.ode.output_name).plain}(s)"
     input_image = f"{_laplace_symbol_names(data.ode.input_name or 'u').plain}(s)"
-    return data.image_equation.display_equation.replace(
-        "Y(s)", output_image
-    ).replace("U(s)", input_image)
+    left = _image_side_plain(
+        data.image_equation.a_polynomial._as_sympy(),
+        output_image,
+        data.image_equation.output_initial_part._as_sympy(),
+    )
+    right = _image_side_plain(
+        data.image_equation.b_polynomial._as_sympy(),
+        input_image,
+        data.image_equation.input_initial_part._as_sympy(),
+    )
+    return f"{left} = {right}"
 
 
 def _transfer_image_equation_plain(data: OdeTransferFunctionResult) -> str:
@@ -1865,9 +1888,36 @@ def _image_side_latex(
         main = f"-{image_name}"
     else:
         main = rf"\left({sp.latex(expanded)}\right){image_name}"
-    if initial_part == 0:
-        return main
-    return rf"{main}-{sp.latex(sp.expand(initial_part))}"
+    return _append_signed_expression(main, -initial_part, latex=True)
+
+
+def _image_side_plain(
+    polynomial: sp.Expr,
+    image_name: str,
+    initial_part: sp.Expr,
+) -> str:
+    expanded = sp.expand(polynomial)
+    if expanded == 1:
+        main = image_name
+    elif expanded == -1:
+        main = f"-{image_name}"
+    else:
+        main = f"({_plain_math(expanded)})*{image_name}"
+    return _append_signed_expression(main, -initial_part, latex=False)
+
+
+def _append_signed_expression(
+    main: str, expression: sp.Expr, *, latex: bool
+) -> str:
+    result = main
+    for term in sp.expand(expression).as_ordered_terms():
+        if term == 0:
+            continue
+        negative = term.could_extract_minus_sign()
+        magnitude = -term if negative else term
+        rendered = sp.latex(magnitude) if latex else _plain_math(magnitude)
+        result += (" - " if negative else " + ") + rendered
+    return result
 
 
 def _rational_text(solution: TimeDomainSolution) -> str:
