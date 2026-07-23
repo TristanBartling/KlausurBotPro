@@ -6,6 +6,7 @@ import sympy as sp
 from klausurbotpro.application import TimeDomainInputDraft, run_time_domain_workflow
 from klausurbotpro.application.time_domain_workflow import format_ode_preview
 from klausurbotpro.domain.time_domain_contracts import (
+    ComputationStatus,
     InputSignalType,
     OdeAnalysisGoal,
     TimeDomainTaskType,
@@ -181,6 +182,33 @@ def test_partial_fraction_goal_stops_before_inverse_laplace(
     assert "Inverse Laplace" not in result.presentation.worked_steps
     assert "time" not in result.presentation.visible_result_tabs
     assert "partial" in result.presentation.visible_result_tabs
+
+
+def test_partial_fraction_goal_does_not_promote_y_when_pbz_is_unsupported() -> None:
+    result = run_time_domain_workflow(
+        TimeDomainInputDraft(
+            task_type=TimeDomainTaskType.SOLVE_ODE,
+            output_order=1,
+            input_order=0,
+            output_coefficient_texts=("1", "1"),
+            input_coefficient_texts=("1",),
+            output_initial_texts=("0",),
+            ode_input_signal_type=InputSignalType.IMAGE_EXPRESSION,
+            input_expression_text="s^2",
+            ode_analysis_goal=OdeAnalysisGoal.PARTIAL_FRACTIONS,
+        )
+    )
+
+    assert result.solution is not None
+    assert result.solution.status is ComputationStatus.UNSUPPORTED
+    assert result.solution.partial_fractions is None
+    assert "Endergebnis: Y(s)" not in result.presentation.summary
+    assert "Endaussage: Die verlangte Partialbruchzerlegung" in (
+        result.presentation.summary
+    )
+    assert r"\boxed{Y(s)=" not in result.presentation.latex_source
+    assert "nicht fertiggestellt" in result.presentation.latex_source
+    assert "distributional_inverse_unsupported" in result.presentation.diagnostics
 
 
 @pytest.mark.parametrize(

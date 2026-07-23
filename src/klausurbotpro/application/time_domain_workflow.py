@@ -1234,6 +1234,13 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         )
         else ""
     )
+    partial_completed = _ode_partial_fractions_completed(solution, data)
+    visible_partial_text = (
+        _partial_text(solution)
+        if data.analysis_goal is not OdeAnalysisGoal.PARTIAL_FRACTIONS
+        or partial_completed
+        else _incomplete_partial_fraction_plain()
+    )
     primary_plain = _ode_primary_plain(solution, data)
     step_blocks = [
         "Gegeben\n" + data.ode.normalized_ode,
@@ -1262,7 +1269,7 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         step_blocks.extend(
             (
                 "Rationale Analyse\n" + _rational_text(solution),
-                "Partialbruchzerlegung\n" + _partial_text(solution),
+                "Partialbruchzerlegung\n" + visible_partial_text,
             )
         )
     if data.analysis_goal is OdeAnalysisGoal.TIME_RESPONSE:
@@ -1309,10 +1316,10 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
                 rf"{data.forced_laplace.latex}\]",
             )
         )
-    if data.analysis_goal in {
-        OdeAnalysisGoal.PARTIAL_FRACTIONS,
-        OdeAnalysisGoal.TIME_RESPONSE,
-    }:
+    if data.analysis_goal is OdeAnalysisGoal.TIME_RESPONSE or (
+        data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS
+        and partial_completed
+    ):
         latex_lines.extend(_partial_fraction_latex_lines(solution))
     if (
         data.analysis_goal is OdeAnalysisGoal.TIME_RESPONSE
@@ -1331,7 +1338,15 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
                 rf"\[R_{{\mathrm{{DGL}}}}(t)={data.verification.ode_residual.latex}=0\]",
             )
         )
-    latex_lines.append(rf"\[\boxed{{{_ode_primary_latex(solution, data)}}}\]")
+    if (
+        data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS
+        and not partial_completed
+    ):
+        latex_lines.append(
+            rf"\[\text{{{_latex_escape(_incomplete_partial_fraction_plain())}}}\]"
+        )
+    else:
+        latex_lines.append(rf"\[\boxed{{{_ode_primary_latex(solution, data)}}}\]")
     latex = "\n".join(latex_lines)
     rational_text = (
         _rational_text(solution)
@@ -1340,16 +1355,22 @@ def _present_ode_solution(solution: TimeDomainSolution) -> TimeDomainPresentatio
         else ""
     )
     partial_text = (
-        _partial_text(solution)
+        visible_partial_text
         if data.analysis_goal
         in {OdeAnalysisGoal.PARTIAL_FRACTIONS, OdeAnalysisGoal.TIME_RESPONSE}
         else ""
+    )
+    result_label = (
+        "Endaussage"
+        if data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS
+        and not partial_completed
+        else "Endergebnis"
     )
     return TimeDomainPresentation(
         summary=(
             f"Aufgabe: lineare DGL lösen\n{data.ode.normalized_ode}\n"
             f"Analyseziel: {_ode_goal_label(data.analysis_goal)}\n"
-            f"Endergebnis: {primary_plain}"
+            f"{result_label}: {primary_plain}"
         ),
         rational_analysis=rational_text,
         partial_fractions=partial_text,
@@ -1402,13 +1423,13 @@ def _ode_primary_plain(
     if data.analysis_goal is OdeAnalysisGoal.OUTPUT_LAPLACE:
         return f"{output_symbol}(s) = {_plain_exact(data.total_laplace)}"
     if data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS:
+        if not _ode_partial_fractions_completed(solution, data):
+            return _incomplete_partial_fraction_plain()
         visible = _visible_partial_fraction_terms(solution)
-        if visible:
-            return (
-                f"{output_symbol}(s) = "
-                + _inserted_partial_fractions_plain(visible)
-            )
-        return f"{output_symbol}(s) = {_plain_exact(data.total_laplace)}"
+        return (
+            f"{output_symbol}(s) = "
+            + _inserted_partial_fractions_plain(visible)
+        )
     assert data.total_time is not None
     total = _plain_math(sp.expand(data.total_time.expression._as_sympy()))
     return f"{data.ode.output_name}(t) = {total}"
@@ -1424,19 +1445,36 @@ def _ode_primary_latex(
         assert data.total_laplace is not None
         return f"{output_symbol}(s)={data.total_laplace.latex}"
     if data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS:
+        if not _ode_partial_fractions_completed(solution, data):
+            return rf"\text{{{_latex_escape(_incomplete_partial_fraction_plain())}}}"
         visible = _visible_partial_fraction_terms(solution)
-        if visible:
-            return (
-                f"{output_symbol}(s)="
-                + _inserted_partial_fractions_latex(visible)
-            )
-        assert data.total_laplace is not None
-        return f"{output_symbol}(s)={data.total_laplace.latex}"
+        return (
+            f"{output_symbol}(s)="
+            + _inserted_partial_fractions_latex(visible)
+        )
     assert data.total_time is not None
     return (
         f"{_time_name_latex(data.ode.output_name)}(t)="
         f"{data.total_time.expression.latex}"
     )
+
+
+def _ode_partial_fractions_completed(
+    solution: TimeDomainSolution, data: OdeSolutionData
+) -> bool:
+    partial = solution.partial_fractions
+    return (
+        data.analysis_goal is OdeAnalysisGoal.PARTIAL_FRACTIONS
+        and solution.status is ComputationStatus.SUCCESS
+        and partial is not None
+        and partial.status is ComputationStatus.SUCCESS
+        and partial.reconstruction_residual._as_sympy() == 0
+        and bool(_visible_partial_fraction_terms(solution))
+    )
+
+
+def _incomplete_partial_fraction_plain() -> str:
+    return "Die verlangte Partialbruchzerlegung von Y(s) wurde nicht fertiggestellt."
 
 
 def _ode_visible_tabs(goal: OdeAnalysisGoal) -> tuple[str, ...]:

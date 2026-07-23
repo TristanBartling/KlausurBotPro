@@ -105,12 +105,16 @@ class TimeDomainWorkspace(QWidget):
         self.input_initial_edits = [QLineEdit() for _ in range(4)]
         output_coefficients = QWidget()
         output_coefficients_form = QFormLayout(output_coefficients)
+        self._output_coefficients_form = output_coefficients_form
         input_coefficients = QWidget()
         input_coefficients_form = QFormLayout(input_coefficients)
+        self._input_coefficients_form = input_coefficients_form
         output_initials = QWidget()
         output_initials_form = QFormLayout(output_initials)
+        self._output_initials_form = output_initials_form
         input_initials = QWidget()
         input_initials_form = QFormLayout(input_initials)
+        self._input_initials_form = input_initials_form
         for order in range(5):
             self.output_coefficient_edits[order].setObjectName(
                 f"timeDomainOutputCoefficient{order}"
@@ -257,6 +261,8 @@ class TimeDomainWorkspace(QWidget):
         self.ode_analysis_goal_combo.currentIndexChanged.connect(
             self._update_result_tabs_for_selection
         )
+        self.output_name_edit.textChanged.connect(self._update_ode_names)
+        self.input_name_edit.textChanged.connect(self._update_ode_names)
         for coefficient_edit in (
             *self.output_coefficient_edits,
             *self.input_coefficient_edits,
@@ -371,6 +377,12 @@ class TimeDomainWorkspace(QWidget):
         self.exponential_exponent_edit.setText("0")
         self.assumptions_edit.clear()
         self.task_title_edit.clear()
+        self.ode_analysis_goal_combo.setCurrentIndex(
+            self.ode_analysis_goal_combo.findData(
+                OdeAnalysisGoal.TIME_RESPONSE.value
+            )
+        )
+        self._update_result_tabs_for_selection()
         self._latex_task_title = ""
         self.presenter.reset()
 
@@ -582,6 +594,32 @@ class TimeDomainWorkspace(QWidget):
                 ),
             )
         )
+
+    @Slot(str)
+    def _update_ode_names(self, _text: str) -> None:
+        output_name = self.output_name_edit.text().strip() or "y"
+        input_name = self.input_name_edit.text().strip() or "u"
+        for order, field in enumerate(self.output_coefficient_edits):
+            label = self._output_coefficients_form.labelForField(field)
+            if isinstance(label, QLabel):
+                label.setText(
+                    f"a_{order} · {_derivative_label(output_name, order)}"
+                )
+        for order, field in enumerate(self.input_coefficient_edits):
+            label = self._input_coefficients_form.labelForField(field)
+            if isinstance(label, QLabel):
+                label.setText(
+                    f"b_{order} · {_derivative_label(input_name, order)}"
+                )
+        for order, field in enumerate(self.output_initial_edits):
+            label = self._output_initials_form.labelForField(field)
+            if isinstance(label, QLabel):
+                label.setText(f"{_initial_label(output_name, order)}:")
+        for order, field in enumerate(self.input_initial_edits):
+            label = self._input_initials_form.labelForField(field)
+            if isinstance(label, QLabel):
+                label.setText(f"{_initial_label(input_name, order)}:")
+        self._update_ode_preview()
 
     @Slot(object)
     def render_state(self, state: object) -> None:

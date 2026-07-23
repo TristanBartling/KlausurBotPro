@@ -200,6 +200,86 @@ def test_ode_result_tabs_follow_selected_goal() -> None:
     workspace.close()
 
 
+def test_reset_restores_time_response_goal_and_default_tabs() -> None:
+    application = _app()
+    workspace = TimeDomainWorkspace(TimeDomainPresenter())
+    workspace.show()
+    workspace.task_combo.setCurrentIndex(
+        workspace.task_combo.findData(TimeDomainTaskType.SOLVE_ODE.value)
+    )
+    workspace.ode_analysis_goal_combo.setCurrentIndex(
+        workspace.ode_analysis_goal_combo.findData(
+            OdeAnalysisGoal.PARTIAL_FRACTIONS.value
+        )
+    )
+    assert not workspace.result_tabs.isTabVisible(
+        workspace.result_tabs.indexOf(workspace.result_edits["time"])
+    )
+
+    QTest.mouseClick(workspace.reset_button, Qt.MouseButton.LeftButton)
+    application.processEvents()
+
+    assert (
+        workspace.ode_analysis_goal_combo.currentData()
+        == OdeAnalysisGoal.TIME_RESPONSE.value
+    )
+    assert workspace.result_tabs.isTabVisible(
+        workspace.result_tabs.indexOf(workspace.result_edits["time"])
+    )
+    workspace.close()
+
+
+def test_custom_ode_names_update_labels_and_preview_immediately() -> None:
+    application = _app()
+    workspace = TimeDomainWorkspace(TimeDomainPresenter())
+    workspace.show()
+    workspace.task_combo.setCurrentIndex(
+        workspace.task_combo.findData(TimeDomainTaskType.SOLVE_ODE.value)
+    )
+    workspace.output_order_combo.setCurrentIndex(
+        workspace.output_order_combo.findData(1)
+    )
+    workspace.input_order_combo.setCurrentIndex(
+        workspace.input_order_combo.findData(0)
+    )
+    workspace.output_coefficient_edits[0].setText("1")
+    workspace.output_coefficient_edits[1].setText("1")
+    workspace.input_coefficient_edits[0].setText("1")
+
+    workspace.output_name_edit.setText("x")
+    workspace.input_name_edit.setText("r")
+    application.processEvents()
+
+    assert workspace._output_coefficients_form.labelForField(
+        workspace.output_coefficient_edits[0]
+    ).text() == "a_0 · x(t)"
+    assert workspace._output_coefficients_form.labelForField(
+        workspace.output_coefficient_edits[1]
+    ).text() == "a_1 · x'(t)"
+    assert workspace._output_initials_form.labelForField(
+        workspace.output_initial_edits[0]
+    ).text() == "x(0+):"
+    assert workspace._input_coefficients_form.labelForField(
+        workspace.input_coefficient_edits[0]
+    ).text() == "b_0 · r(t)"
+    assert workspace._input_initials_form.labelForField(
+        workspace.input_initial_edits[0]
+    ).text() == "r(0+):"
+    assert workspace.ode_preview.text() == "x'(t) + x(t) = r(t)"
+
+    workspace.output_name_edit.clear()
+    workspace.input_name_edit.clear()
+    application.processEvents()
+    assert workspace._output_coefficients_form.labelForField(
+        workspace.output_coefficient_edits[0]
+    ).text() == "a_0 · y(t)"
+    assert workspace._input_coefficients_form.labelForField(
+        workspace.input_coefficient_edits[0]
+    ).text() == "b_0 · u(t)"
+    assert workspace.ode_preview.text() == "y'(t) + y(t) = u(t)"
+    workspace.close()
+
+
 def test_direct_image_input_output_goal_click_ends_at_y_of_s() -> None:
     application = _app()
     presenter = TimeDomainPresenter()
