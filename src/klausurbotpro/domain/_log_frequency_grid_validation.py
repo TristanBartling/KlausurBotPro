@@ -100,8 +100,21 @@ def validate_log_frequency_grid_request(
     if request.points_per_decade > limits.max_points_per_decade:
         raise LogFrequencyGridFailure(
             DiagnosticCode.LOG_FREQUENCY_GRID_LIMIT_EXCEEDED,
-            "Die Anzahl der Punkte pro Dekade überschreitet die Grenze.",
-            (("limit", "max_points_per_decade"),),
+            (
+                f"Angefordert sind {request.points_per_decade} Punkte pro "
+                f"Dekade im Frequenzbereich {_rational_text(request.omega_min)} "
+                f"bis {_rational_text(request.omega_max)} rad/s und "
+                f"{_explicit_count_text(request.explicit_frequencies)} "
+                "expliziten Frequenzen; "
+                "erlaubt sind "
+                f"maximal {limits.max_points_per_decade} Punkte pro Dekade. "
+                f"Verwende höchstens {limits.max_points_per_decade} Punkte pro Dekade."
+            ),
+            (
+                ("limit", "max_points_per_decade"),
+                ("requested_points_per_decade", str(request.points_per_decade)),
+                ("maximum_points_per_decade", str(limits.max_points_per_decade)),
+            ),
         )
     explicit = request.explicit_frequencies
     if type(explicit) is not tuple or any(
@@ -114,8 +127,21 @@ def validate_log_frequency_grid_request(
     if len(explicit) > limits.max_explicit_points:
         raise LogFrequencyGridFailure(
             DiagnosticCode.LOG_FREQUENCY_GRID_LIMIT_EXCEEDED,
-            "Es wurden zu viele explizite Frequenzen angegeben.",
-            (("limit", "max_explicit_points"),),
+            (
+                f"Angefordert sind {len(explicit)} explizite Frequenzen bei "
+                f"{request.points_per_decade} Punkten pro Dekade im "
+                f"Frequenzbereich {_rational_text(request.omega_min)} bis "
+                f"{_rational_text(request.omega_max)} rad/s; erlaubt sind "
+                f"maximal {limits.max_explicit_points} explizite Frequenzen. "
+                f"Verwende höchstens {limits.max_explicit_points} explizite "
+                "Frequenzen oder entferne nicht benötigte Stützstellen."
+            ),
+            (
+                ("limit", "max_explicit_points"),
+                ("requested_explicit_frequencies", str(len(explicit))),
+                ("maximum_explicit_frequencies", str(limits.max_explicit_points)),
+                ("points_per_decade", str(request.points_per_decade)),
+            ),
         )
     explicit_values: list[Fraction] = []
     previous: Fraction | None = None
@@ -142,10 +168,28 @@ def validate_log_frequency_grid_request(
         previous = rational
     ratio = omega_max / omega_min
     if ratio > Fraction(10**limits.max_decades):
+        minimum_generated_points = (
+            limits.max_decades * request.points_per_decade + 2
+        )
         raise LogFrequencyGridFailure(
             DiagnosticCode.LOG_FREQUENCY_GRID_LIMIT_EXCEEDED,
-            "Die logarithmische Dekadenspanne überschreitet die Grenze.",
-            (("limit", "max_decades"),),
+            (
+                f"Der Frequenzbereich {_rational_text(request.omega_min)} bis "
+                f"{_rational_text(request.omega_max)} rad/s umfasst mehr als "
+                f"{limits.max_decades} Dekaden. Mit "
+                f"{request.points_per_decade} Punkten pro Dekade würden bereits "
+                f"mehr als {minimum_generated_points - 1} Rasterpunkte "
+                f"angefordert; erlaubt sind maximal {limits.max_decades} "
+                "Dekaden. Verkleinere den Frequenzbereich, zum Beispiel auf "
+                f"ω_max ≤ ω_min·10^{limits.max_decades}."
+            ),
+            (
+                ("limit", "max_decades"),
+                ("minimum_requested_points", str(minimum_generated_points)),
+                ("maximum_decades", str(limits.max_decades)),
+                ("points_per_decade", str(request.points_per_decade)),
+                ("explicit_frequencies", str(len(explicit))),
+            ),
         )
     request_snapshot = LogFrequencyGridRequest(
         ExactRationalValue(omega_min.numerator, omega_min.denominator),
@@ -213,15 +257,53 @@ def validate_total_points(
     interval_count: int,
     exact_target_indices: tuple[int | None, ...],
     limits: LogFrequencyGridLimits,
+    validated: ValidatedLogFrequencyGridRequest,
 ) -> None:
     """Bound the final point count before any irrational approximation."""
 
     additional = sum(index is None for index in exact_target_indices)
-    if interval_count + 1 + additional > limits.max_total_points:
+    requested_points = interval_count + 1 + additional
+    if requested_points > limits.max_total_points:
+        available_intervals = limits.max_total_points - additional - 1
+        safe_points_per_decade = (
+            validated.request.points_per_decade
+            * available_intervals
+            // interval_count
+        )
+        correction = (
+            f"Verwende höchstens {safe_points_per_decade} Punkte pro Dekade "
+            "oder verkleinere den Frequenzbereich."
+            if safe_points_per_decade >= 1
+            else (
+                "Reduziere die Anzahl expliziter Frequenzen oder verkleinere "
+                "den Frequenzbereich; ein kleinerer positiver "
+                "Punkte-pro-Dekade-Wert allein reicht nicht sicher aus."
+            )
+        )
         raise LogFrequencyGridFailure(
             DiagnosticCode.LOG_FREQUENCY_GRID_LIMIT_EXCEEDED,
-            "Das vollständige Raster enthält zu viele Punkte.",
-            (("limit", "max_total_points"),),
+            (
+                f"Mit {validated.request.points_per_decade} Punkten pro Dekade "
+                f"im Frequenzbereich {_rational_text(validated.request.omega_min)} "
+                f"bis {_rational_text(validated.request.omega_max)} rad/s und "
+                f"{len(validated.request.explicit_frequencies)} expliziten "
+                f"Frequenzen werden {requested_points} Punkte angefordert; "
+                f"erlaubt sind maximal {limits.max_total_points}. {correction}"
+            ),
+            (
+                ("limit", "max_total_points"),
+                ("requested_points", str(requested_points)),
+                ("maximum_points", str(limits.max_total_points)),
+                (
+                    "points_per_decade",
+                    str(validated.request.points_per_decade),
+                ),
+                (
+                    "explicit_frequencies",
+                    str(len(validated.request.explicit_frequencies)),
+                ),
+                ("safe_points_per_decade", str(safe_points_per_decade)),
+            ),
         )
 
 
@@ -283,6 +365,18 @@ def _integer_exceeds_digits(value: int, maximum_digits: int) -> bool:
     if magnitude == 0 or magnitude.bit_length() <= maximum_digits:
         return False
     return bool(magnitude >= 10**maximum_digits)
+
+
+def _rational_text(value: ExactRationalValue) -> str:
+    return (
+        str(value.numerator)
+        if value.denominator == 1
+        else f"{value.numerator}/{value.denominator}"
+    )
+
+
+def _explicit_count_text(value: object) -> str:
+    return str(len(value)) if type(value) is tuple else "ungültig vielen"
 
 
 __all__ = [

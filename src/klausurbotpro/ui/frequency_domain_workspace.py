@@ -37,6 +37,7 @@ from klausurbotpro.application import (
     FrequencyDomainInputDraft,
     FrequencyDomainWorkflowMode,
     FrequencyPhasePresentation,
+    FrequencyTableScope,
     ParameterInputDraft,
     TransferFunctionInputDraft,
     WorkflowInputForm,
@@ -394,6 +395,20 @@ class FrequencyDomainWorkspace(QWidget):
 
         table_page = QWidget()
         table_layout = QVBoxLayout(table_page)
+        table_scope_layout = QHBoxLayout()
+        self.table_scope_combo = QComboBox()
+        self.table_scope_combo.setObjectName("frequencyTableScope")
+        self.table_scope_combo.addItems(("Kompakt", "Vollständiges Raster"))
+        table_scope_layout.addWidget(QLabel("Tabellenumfang:"))
+        table_scope_layout.addWidget(self.table_scope_combo)
+        table_scope_layout.addStretch(1)
+        table_layout.addLayout(table_scope_layout)
+        table_scope_explanation = QLabel(
+            "Kompakt zeigt klausurrelevante markante Punkte; das vollständige "
+            "Raster bleibt optional verfügbar."
+        )
+        table_scope_explanation.setWordWrap(True)
+        table_layout.addWidget(table_scope_explanation)
         table_explanation = QLabel(
             "<b>Ziel-ω:</b> gewünschter logarithmischer Rasterwert. "
             "<b>Auswertungs-ω:</b> zertifizierter rationaler Rechenwert. "
@@ -580,6 +595,9 @@ class FrequencyDomainWorkspace(QWidget):
         self.reset_button.clicked.connect(self.reset_workspace)
         self.presenter.state_changed.connect(self.render_state)
         self.value_table.currentCellChanged.connect(self._selected_row_changed)
+        self.table_scope_combo.currentIndexChanged.connect(
+            self._table_scope_changed
+        )
         self.technical_details_checkbox.toggled.connect(self._technical_details_toggled)
         self.copy_latex_button.clicked.connect(self.copy_latex_solution)
         self.bode_display_mode_combo.currentIndexChanged.connect(
@@ -687,6 +705,7 @@ class FrequencyDomainWorkspace(QWidget):
         self.scalar_gain_lower_edit.clear()
         self.scalar_gain_upper_edit.clear()
         self.bode_display_mode_combo.setCurrentIndex(0)
+        self.table_scope_combo.setCurrentIndex(0)
         self.show_component_checkbox.setChecked(True)
         self.show_total_checkbox.setChecked(True)
 
@@ -722,6 +741,14 @@ class FrequencyDomainWorkspace(QWidget):
             self.single_labels[name].setText(getattr(value.single_point, name))
         self.single_group.setVisible(bool(value.single_point.status))
         self._render_rows(value)
+        self.table_scope_combo.blockSignals(True)
+        self.table_scope_combo.setCurrentIndex(
+            0 if value.table_scope is FrequencyTableScope.COMPACT else 1
+        )
+        self.table_scope_combo.setEnabled(
+            not running and bool(value.bode_indices)
+        )
+        self.table_scope_combo.blockSignals(False)
         self._render_reserve_rows(value)
         self.result_tabs.setTabVisible(self.reserve_tab_index, bool(value.reserve_rows))
         self.result_tabs.setTabVisible(self.plot_tab_index, value.plot.visible)
@@ -748,8 +775,12 @@ class FrequencyDomainWorkspace(QWidget):
                 self.value_table.setItem(row_index, column, item)
         self.value_table.setUpdatesEnabled(True)
         if state.rows:
-            selected = min(state.selected_bode_index, len(state.rows) - 1)
-            self.value_table.setCurrentCell(selected, 0)
+            selected_row = (
+                state.bode_indices.index(state.selected_bode_index)
+                if state.selected_bode_index in state.bode_indices
+                else 0
+            )
+            self.value_table.setCurrentCell(selected_row, 0)
         self.value_table.blockSignals(False)
 
     def _render_reserve_rows(self, state: FrequencyDomainViewState) -> None:
@@ -1129,12 +1160,24 @@ class FrequencyDomainWorkspace(QWidget):
         _previous_column: int,
     ) -> None:
         if hasattr(self, "_rendered_state"):
-            selected = max(current_row, 0)
+            if current_row < 0 or current_row >= len(
+                self._rendered_state.bode_indices
+            ):
+                return
+            selected = self._rendered_state.bode_indices[current_row]
             self.presenter.select_bode_row(selected)
             self._render_worked_steps(
                 self.presenter.state,
                 selected,
             )
+
+    @Slot(int)
+    def _table_scope_changed(self, index: int) -> None:
+        self.presenter.set_table_scope(
+            FrequencyTableScope.COMPACT
+            if index == 0
+            else FrequencyTableScope.FULL_GRID
+        )
 
     @Slot()
     def copy_latex_solution(self) -> None:
@@ -1147,7 +1190,7 @@ class FrequencyDomainWorkspace(QWidget):
         if hasattr(self, "_rendered_state"):
             self._render_worked_steps(
                 self._rendered_state,
-                max(self.value_table.currentRow(), 0),
+                self._rendered_state.selected_bode_index,
             )
 
     def _render_diagnostics(self, state: FrequencyDomainViewState) -> None:

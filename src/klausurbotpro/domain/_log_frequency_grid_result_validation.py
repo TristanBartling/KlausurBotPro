@@ -113,7 +113,12 @@ def _validate_result(
         )
         for explicit in validated.explicit_frequencies
     )
-    validate_total_points(expected_interval_count, exact_target_indices, limits)
+    validate_total_points(
+        expected_interval_count,
+        exact_target_indices,
+        limits,
+        validated,
+    )
     if type(result.points) is not tuple or any(
         type(point) is not LogFrequencyGridPoint for point in result.points
     ):

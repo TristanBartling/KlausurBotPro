@@ -88,9 +88,12 @@ def test_decade_limit_is_checked_before_grid_generation() -> None:
     assert result.diagnostics[0].code is (
         DiagnosticCode.LOG_FREQUENCY_GRID_LIMIT_EXCEEDED
     )
-    assert result.diagnostics[0].technical_details == (
-        ("limit", "max_decades"),
+    assert result.diagnostics[0].technical_details[0] == (
+        "limit",
+        "max_decades",
     )
+    assert "mehr als 1 Dekaden" in result.diagnostics[0].message
+    assert "Verkleinere den Frequenzbereich" in result.diagnostics[0].message
 
 
 @pytest.mark.parametrize(
@@ -143,6 +146,66 @@ def test_request_limits_are_structured_before_generation(
     )
 
 
+def test_points_per_decade_limit_names_input_limit_and_safe_correction() -> None:
+    result = LogFrequencyGridGenerator(
+        LogFrequencyGridLimits(max_points_per_decade=4)
+    ).generate(
+        LogFrequencyGridRequest(
+            ExactRationalValue(1),
+            ExactRationalValue(100),
+            5,
+        )
+    )
+
+    message = result.diagnostics[0].message
+    assert "5 Punkte pro Dekade" in message
+    assert "1 bis 100 rad/s" in message
+    assert "maximal 4 Punkte pro Dekade" in message
+    assert "Verwende höchstens 4" in message
+
+
+def test_explicit_frequency_limit_names_count_limit_and_correction() -> None:
+    result = LogFrequencyGridGenerator(
+        LogFrequencyGridLimits(max_explicit_points=2)
+    ).generate(
+        LogFrequencyGridRequest(
+            ExactRationalValue(1),
+            ExactRationalValue(10),
+            2,
+            (
+                ExactRationalValue(2),
+                ExactRationalValue(3),
+                ExactRationalValue(4),
+            ),
+        )
+    )
+
+    message = result.diagnostics[0].message
+    assert "3 explizite Frequenzen" in message
+    assert "maximal 2 explizite Frequenzen" in message
+    assert "entferne nicht benötigte Stützstellen" in message
+
+
+def test_combined_limit_failure_reports_all_problematic_inputs() -> None:
+    result = LogFrequencyGridGenerator(
+        LogFrequencyGridLimits(max_points_per_decade=4, max_decades=1)
+    ).generate(
+        LogFrequencyGridRequest(
+            ExactRationalValue(1),
+            ExactRationalValue(1000),
+            5,
+            (ExactRationalValue(2), ExactRationalValue(3)),
+        )
+    )
+
+    message = result.diagnostics[0].message
+    assert "5 Punkte pro Dekade" in message
+    assert "1 bis 1000 rad/s" in message
+    assert "2 expliziten Frequenzen" in message
+    assert "höchstens 4" in message
+    assert "bode_data" not in message
+
+
 def test_total_point_limit_precedes_target_approximation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -172,9 +235,13 @@ def test_total_point_limit_precedes_target_approximation(
     assert result.diagnostics[0].code is (
         DiagnosticCode.LOG_FREQUENCY_GRID_LIMIT_EXCEEDED
     )
-    assert result.diagnostics[0].technical_details == (
-        ("limit", "max_total_points"),
+    assert result.diagnostics[0].technical_details[0] == (
+        "limit",
+        "max_total_points",
     )
+    assert "11 Punkte angefordert" in result.diagnostics[0].message
+    assert "maximal 10" in result.diagnostics[0].message
+    assert "höchstens 9 Punkte pro Dekade" in result.diagnostics[0].message
 
 
 def test_generated_precision_collision_is_not_silently_deduplicated() -> None:

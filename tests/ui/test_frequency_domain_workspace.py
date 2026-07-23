@@ -73,7 +73,7 @@ def test_mode_controls_only_relevant_fields_and_unwrap() -> None:
     workspace.close()
 
 
-def test_pt1_bode_renders_one_visible_row_per_domain_point() -> None:
+def test_small_pt1_bode_compact_projection_contains_all_domain_points() -> None:
     workspace, requests = _workspace()
     workspace.common_expression_edit.setPlainText("1/(s+1)")
     workspace.mode_combo.setCurrentIndex(1)
@@ -97,6 +97,51 @@ def test_pt1_bode_renders_one_visible_row_per_domain_point() -> None:
     assert target_item is not None and target_item.text()
     assert evaluation_item is not None and evaluation_item.text()
     assert workspace.calculate_button.isEnabled()
+    workspace.close()
+
+
+def test_table_scope_switches_without_request_and_preserves_original_selection() -> None:
+    workspace, requests = _workspace()
+    workspace.common_expression_edit.setPlainText("1/(s+1)")
+    workspace.mode_combo.setCurrentIndex(1)
+    workspace.omega_min_edit.setText("1/1000")
+    workspace.omega_max_edit.setText("1000")
+    workspace.points_per_decade_edit.setText("8")
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    request = requests[0]
+    assert type(request) is FrequencyDomainWorkflowRequest
+    result = FrequencyDomainWorkflowService().run(request)
+    assert result.bode_data_result is not None
+    workspace.presenter.accept_result(result)
+    _app().processEvents()
+
+    assert workspace.table_scope_combo.currentText() == "Kompakt"
+    assert workspace.value_table.rowCount() <= 12
+    compact_count = workspace.value_table.rowCount()
+    workspace.value_table.setCurrentCell(compact_count // 2, 0)
+    _app().processEvents()
+    selected_original = workspace.presenter.state.selected_bode_index
+
+    workspace.table_scope_combo.setCurrentIndex(1)
+    _app().processEvents()
+
+    assert len(requests) == 1
+    assert workspace.value_table.rowCount() == len(result.bode_data_result.points)
+    assert workspace.presenter.state.selected_bode_index == selected_original
+    assert workspace.value_table.currentRow() == selected_original
+    assert str(selected_original + 1) == workspace.value_table.item(
+        selected_original, 0
+    ).text()
+
+    workspace.table_scope_combo.setCurrentIndex(0)
+    _app().processEvents()
+    assert workspace.presenter.state.selected_bode_index == selected_original
+    assert selected_original in workspace.presenter.state.bode_indices
+    assert workspace.value_table.rowCount() == compact_count
+
+    QTest.mouseClick(workspace.reset_button, Qt.MouseButton.LeftButton)
+    assert workspace.table_scope_combo.currentText() == "Kompakt"
     workspace.close()
 
 

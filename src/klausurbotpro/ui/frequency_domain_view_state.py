@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from klausurbotpro.application import FrequencyDomainRequestFieldError
+from klausurbotpro.application import (
+    FrequencyDomainRequestFieldError,
+    FrequencyTableScope,
+)
 
 
 class FrequencyDomainUiRunStatus(StrEnum):
@@ -302,6 +305,8 @@ class FrequencyDomainViewState:
     worked_steps: WorkedStepsView = WorkedStepsView()
     latex_report: str = ""
     selected_bode_index: int = 0
+    bode_indices: tuple[int, ...] = ()
+    table_scope: FrequencyTableScope = FrequencyTableScope.COMPACT
     diagnostics: tuple[FrequencyDomainDiagnosticView, ...] = ()
     request_errors: tuple[FrequencyDomainRequestFieldError, ...] = ()
     focused_field: str | None = None
@@ -324,6 +329,14 @@ class FrequencyDomainViewState:
             raise TypeError("latex_report must be a string.")
         if type(self.selected_bode_index) is not int or self.selected_bode_index < 0:
             raise ValueError("selected_bode_index must be nonnegative.")
+        if type(self.bode_indices) is not tuple or any(
+            type(value) is not int or value < 0 for value in self.bode_indices
+        ):
+            raise TypeError("bode_indices must contain nonnegative integers.")
+        if tuple(sorted(set(self.bode_indices))) != self.bode_indices:
+            raise ValueError("bode_indices must be unique and sorted.")
+        if type(self.table_scope) is not FrequencyTableScope:
+            raise TypeError("table_scope must be a FrequencyTableScope.")
         for values, value_type, name in (
             (self.rows, FrequencyDomainTableRow, "rows"),
             (self.reserve_rows, FrequencyReserveTableRow, "reserve_rows"),

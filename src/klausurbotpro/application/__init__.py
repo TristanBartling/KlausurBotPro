@@ -42,6 +42,11 @@ from klausurbotpro.application.frequency_domain_workflow_contracts import (
 from klausurbotpro.application.frequency_domain_workflow_service import (
     FrequencyDomainWorkflowService,
 )
+from klausurbotpro.application.frequency_table_projection import (
+    COMPACT_FREQUENCY_TABLE_TARGET_SIZE,
+    FrequencyTableScope,
+    select_frequency_table_indices,
+)
 from klausurbotpro.application.latex_task_heading import prepend_latex_task_heading
 from klausurbotpro.application.standard_element_bode_formatting import (
     exact_expression_decimal_text,
@@ -181,6 +186,7 @@ __all__ = [
     "FrequencyDomainWorkflowStageStatus",
     "FrequencyDomainWorkflowStatus",
     "FrequencyPhasePresentation",
+    "FrequencyTableScope",
     "HurwitzAnalysisResult",
     "OverrideProvenance",
     "OverrideLine",
@@ -242,6 +248,8 @@ __all__ = [
     "render_solution_report_latex",
     "render_solution_report_plaintext",
     "render_frequency_domain_solution_latex",
+    "select_frequency_table_indices",
+    "COMPACT_FREQUENCY_TABLE_TARGET_SIZE",
     "run_time_domain_workflow",
     "StateSpaceAnalysisResult",
     "StateSpaceCheck",

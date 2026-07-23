@@ -96,6 +96,33 @@ def _assert_value_free_invalid(result: FrequencyDomainWorkflowResult) -> None:
     assert diagnostic.technical_details
 
 
+def test_bode_point_limit_has_concrete_safe_user_diagnosis() -> None:
+    request = _bode(
+        grid=LogFrequencyGridRequest(
+            ExactRationalValue(1, 1000),
+            ExactRationalValue(1000),
+            64,
+            (ExactRationalValue(1),),
+        )
+    )
+
+    result = FrequencyDomainWorkflowService().run(request)
+
+    assert result.status is FrequencyDomainWorkflowStatus.PARTIAL
+    message = next(
+        diagnostic.message
+        for diagnostic in result.diagnostics
+        if "Punkte angefordert" in diagnostic.message
+    )
+    assert "385 Punkte angefordert" in message
+    assert "maximal 256" in message
+    assert "64 Punkten pro Dekade" in message
+    assert "1/1000 bis 1000 rad/s" in message
+    assert "1 expliziten Frequenzen" in message
+    assert "Verwende höchstens 42 Punkte pro Dekade" in message
+    assert "bode_data" not in message
+
+
 @pytest.mark.parametrize(
     "workflow_request",
     [
