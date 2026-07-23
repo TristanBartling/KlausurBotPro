@@ -45,7 +45,10 @@ from klausurbotpro.domain.log_frequency_grid_contracts import (
     LogFrequencyGridResult,
     LogFrequencyGridStatus,
 )
-from klausurbotpro.domain.parameter_substitutions import ParameterSubstitutions
+from klausurbotpro.domain.parameter_substitutions import (
+    ExactRationalValue,
+    ParameterSubstitutions,
+)
 from klausurbotpro.domain.reduced_transfer_function import (
     ReducedTransferFunction,
 )
@@ -91,10 +94,46 @@ def validate_bode_input_grid(
         key=lambda item: item[1],
     )
     if len(grid.points) > active_limit_value:
+        assert grid.request is not None
+        assert grid.interval_count is not None
+        explicit_count = len(grid.request.explicit_frequencies)
+        additional_explicit = len(grid.points) - grid.interval_count - 1
+        available_intervals = active_limit_value - additional_explicit - 1
+        safe_points_per_decade = (
+            grid.request.points_per_decade
+            * available_intervals
+            // grid.interval_count
+        )
+        bounds = (
+            f"{_rational_text(grid.request.omega_min)} bis "
+            f"{_rational_text(grid.request.omega_max)} rad/s"
+        )
+        correction = (
+            f"Verwende höchstens {safe_points_per_decade} Punkte pro Dekade "
+            "oder verkleinere den Frequenzbereich."
+            if safe_points_per_decade >= 1
+            else (
+                "Reduziere die Anzahl expliziter Frequenzen oder verkleinere "
+                "den Frequenzbereich; allein mit einem kleineren positiven "
+                "Punkte-pro-Dekade-Wert ist diese Eingabe nicht sicher."
+            )
+        )
         raise BodeDataFailure(
             DiagnosticCode.BODE_DATA_LIMIT_EXCEEDED,
-            "Das Raster enthält zu viele Bode-Punkte.",
-            (("limit", active_limit_name),),
+            (
+                f"Mit {grid.request.points_per_decade} Punkten pro Dekade im "
+                f"Frequenzbereich {bounds} und {explicit_count} expliziten "
+                f"Frequenzen werden {len(grid.points)} Punkte angefordert; "
+                f"erlaubt sind maximal {active_limit_value}. {correction}"
+            ),
+            (
+                ("limit", active_limit_name),
+                ("requested_points", str(len(grid.points))),
+                ("points_per_decade", str(grid.request.points_per_decade)),
+                ("frequency_range", bounds),
+                ("explicit_frequencies", str(explicit_count)),
+                ("safe_points_per_decade", str(safe_points_per_decade)),
+            ),
         )
 
 
@@ -445,6 +484,14 @@ def _plot_decimal_limit() -> BodeDataFailure:
         DiagnosticCode.BODE_DATA_LIMIT_EXCEEDED,
         "Eine vorhandene Plotdarstellung überschreitet die Dezimalgrenze.",
         (("limit", "max_plot_decimal_digits"),),
+    )
+
+
+def _rational_text(value: ExactRationalValue) -> str:
+    return (
+        str(value.numerator)
+        if value.denominator == 1
+        else f"{value.numerator}/{value.denominator}"
     )
 
 

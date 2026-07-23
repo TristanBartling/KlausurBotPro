@@ -462,9 +462,15 @@ def test_active_preanalysis_point_limit_is_reported_and_skips_phase_3a1(
 
     assert result.status is BodeDataStatus.FAILED
     assert result.diagnostics[0].code is DiagnosticCode.BODE_DATA_LIMIT_EXCEEDED
-    assert result.diagnostics[0].technical_details == (
-        ("limit", expected_limit),
+    assert result.diagnostics[0].technical_details[0] == (
+        "limit",
+        expected_limit,
     )
+    assert "5 Punkte angefordert" in result.diagnostics[0].message
+    assert f"maximal {min(bode_maximum, frequency_maximum)}" in (
+        result.diagnostics[0].message
+    )
+    assert "bode_data" not in result.diagnostics[0].message
     assert calls == 0
 
 

@@ -17,8 +17,10 @@ from klausurbotpro.application import (
     FrequencyDomainWorkflowLimits,
     FrequencyDomainWorkflowResult,
     FrequencyDomainWorkflowStatus,
+    FrequencyTableScope,
     exact_expression_decimal_text,
     render_frequency_domain_solution_latex,
+    select_frequency_table_indices,
     standard_element_asymptote_plain,
     standard_element_contributions,
     standard_element_decomposition_plain,
@@ -93,6 +95,7 @@ class FrequencyDomainPresenter(QObject):
         self._added_frequencies: tuple[Any, ...] = ()
         self._displayed_result: FrequencyDomainWorkflowResult | None = None
         self._displayed_added_frequencies: tuple[Any, ...] = ()
+        self._table_scope = FrequencyTableScope.COMPACT
         self._state = FrequencyDomainViewState()
 
     @property
@@ -202,22 +205,30 @@ class FrequencyDomainPresenter(QObject):
             message = f"{message} {notice}"
         self._displayed_result = value
         self._displayed_added_frequencies = added_frequencies
+        bode_indices = select_frequency_table_indices(
+            value,
+            scope=self._table_scope,
+            added_frequencies=added_frequencies,
+        )
         latex_report = render_frequency_domain_solution_latex(
             value,
             self._limits,
             added_frequencies=added_frequencies,
+            table_scope=self._table_scope,
         )
         self._set_state(
             FrequencyDomainViewState(
                 run_status=status,
                 summary=_summary(value, added_text),
                 single_point=_single_point(value),
-                rows=_rows(value),
+                rows=_rows(value, bode_indices),
                 reserve_rows=_reserve_rows(value),
                 plot=_plot(value),
                 nyquist=_nyquist(value),
                 worked_steps=_worked_steps(value),
                 latex_report=latex_report,
+                bode_indices=bode_indices,
+                table_scope=self._table_scope,
                 diagnostics=tuple(
                     FrequencyDomainDiagnosticView(
                         diagnostic.severity.value,
@@ -258,6 +269,7 @@ class FrequencyDomainPresenter(QObject):
         if self._state.run_status is FrequencyDomainUiRunStatus.RUNNING:
             return False
         self._reset_refinement()
+        self._table_scope = FrequencyTableScope.COMPACT
         self._set_state(FrequencyDomainViewState())
         return True
 
@@ -275,8 +287,8 @@ class FrequencyDomainPresenter(QObject):
             raise ValueError("index must be a nonnegative int.")
         if self._displayed_result is None or not self._state.rows:
             return
-        if index >= len(self._state.rows):
-            raise ValueError("index exceeds the available Bode rows.")
+        if index not in self._state.bode_indices:
+            raise ValueError("index is not present in the visible Bode rows.")
         if index == self._state.selected_bode_index:
             return
         latex_report = render_frequency_domain_solution_latex(
@@ -284,12 +296,52 @@ class FrequencyDomainPresenter(QObject):
             self._limits,
             selected_bode_index=index,
             added_frequencies=self._displayed_added_frequencies,
+            table_scope=self._table_scope,
         )
         self._set_state(
             replace(
                 self._state,
                 latex_report=latex_report,
                 selected_bode_index=index,
+            )
+        )
+
+    def set_table_scope(self, scope: FrequencyTableScope) -> None:
+        """Reproject the visible and exported table without a workflow run."""
+
+        if type(scope) is not FrequencyTableScope:
+            raise TypeError("scope must be a FrequencyTableScope.")
+        if scope is self._table_scope:
+            return
+        self._table_scope = scope
+        if self._displayed_result is None:
+            self._set_state(replace(self._state, table_scope=scope))
+            return
+        indices = select_frequency_table_indices(
+            self._displayed_result,
+            scope=scope,
+            selected_bode_index=self._state.selected_bode_index,
+            added_frequencies=self._displayed_added_frequencies,
+        )
+        selected = _visible_selection(
+            self._state.selected_bode_index,
+            indices,
+        )
+        latex_report = render_frequency_domain_solution_latex(
+            self._displayed_result,
+            self._limits,
+            selected_bode_index=selected,
+            added_frequencies=self._displayed_added_frequencies,
+            table_scope=scope,
+        )
+        self._set_state(
+            replace(
+                self._state,
+                rows=_rows(self._displayed_result, indices),
+                latex_report=latex_report,
+                selected_bode_index=selected,
+                bode_indices=indices,
+                table_scope=scope,
             )
         )
 
@@ -308,6 +360,8 @@ class FrequencyDomainPresenter(QObject):
                 worked_steps=self._state.worked_steps,
                 latex_report=self._state.latex_report,
                 selected_bode_index=self._state.selected_bode_index,
+                bode_indices=self._state.bode_indices,
+                table_scope=self._state.table_scope,
                 diagnostics=self._state.diagnostics,
                 request_errors=self._state.request_errors,
                 focused_field=self._state.focused_field,
@@ -383,6 +437,7 @@ def _single_point(
 
 def _rows(
     result: FrequencyDomainWorkflowResult,
+    indices: tuple[int, ...],
 ) -> tuple[FrequencyDomainTableRow, ...]:
     bode = result.bode_data_result
     if bode is None:
@@ -397,7 +452,8 @@ def _rows(
         }
     )
     rows: list[FrequencyDomainTableRow] = []
-    for index, point in enumerate(bode.points):
+    for index in indices:
+        point = bode.points[index]
         full_values = (
             str(index + 1),
             point.target_decimal.decimal_text,
@@ -424,6 +480,14 @@ def _rows(
         )
         rows.append(FrequencyDomainTableRow(*displayed, full_values))
     return tuple(rows)
+
+
+def _visible_selection(selected: int, indices: tuple[int, ...]) -> int:
+    if not indices:
+        return 0
+    if selected in indices:
+        return selected
+    return min(indices, key=lambda index: (abs(index - selected), index))
 
 
 def _plot(result: FrequencyDomainWorkflowResult) -> PlotView:
@@ -1329,11 +1393,22 @@ def _added_frequencies_text(values: tuple[Any, ...]) -> str:
 
 
 def _diagnostic_focus(result: FrequencyDomainWorkflowResult) -> str | None:
-    if result.request is not None or not result.diagnostics:
+    if not result.diagnostics:
         return None
     details = result.diagnostics[0].technical_details
     if not details:
-        return None
+        return result.diagnostics[0].field
+    detail_map = dict(details)
+    limit_focus = {
+        "max_points_per_decade": "points_per_decade",
+        "max_explicit_points": "explicit_frequencies",
+        "max_decades": "omega_max",
+        "max_total_points": "points_per_decade",
+        "max_grid_points": "points_per_decade",
+        "max_frequency_points": "points_per_decade",
+    }
+    if "limit" in detail_map and detail_map["limit"] in limit_focus:
+        return limit_focus[detail_map["limit"]]
     return details[0][0].removeprefix("preparation_request.")
 
 

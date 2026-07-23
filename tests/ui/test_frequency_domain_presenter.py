@@ -119,6 +119,27 @@ def test_frequency_view_state_is_immutable_widget_free_and_string_only() -> None
     )
 
 
+def test_oversized_bode_grid_focuses_points_per_decade_field() -> None:
+    presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
+
+    _execute(
+        presenter,
+        _draft(
+            "1/(s+1)",
+            mode=FrequencyDomainWorkflowMode.BODE,
+            omega_min="1/1000",
+            omega_max="1000",
+            points="64",
+        ),
+    )
+
+    assert presenter.state.focused_field == "points_per_decade"
+    assert any(
+        "385 Punkte angefordert" in diagnostic.message
+        for diagnostic in presenter.state.diagnostics
+    )
+
+
 def test_presenter_dispatches_one_exact_single_point_request() -> None:
     presenter = FrequencyDomainPresenter(FrequencyDomainRequestFactory())
     request = _execute(
@@ -350,12 +371,7 @@ def test_pt1_plot_projection_preserves_principal_domain_segments() -> None:
     assert plot.magnitude_segments[0].x_values == (
         plot.principal_phase_segments[0].x_values
     )
-    assert plot.magnitude_segments[0].x_values == tuple(
-        row.tooltips[1] for row in presenter.state.rows
-    )
-    assert len(plot.magnitude_segments[0].x_values) == len(
-        presenter.state.rows
-    )
+    assert len(plot.magnitude_segments[0].x_values) > len(presenter.state.rows)
 
 
 def test_three_pt1_factors_keep_principal_and_add_unwrapped_phase() -> None:
@@ -401,16 +417,17 @@ def test_singularity_keeps_segments_separate_and_marks_interruption() -> None:
     assert len(plot.magnitude_segments) == 2
     assert len(plot.principal_phase_segments) == 2
     assert all(len(segment.x_values) == 9 for segment in plot.magnitude_segments)
-    singular_index = next(
+    singular_row = next(
         index
         for index, row in enumerate(presenter.state.rows)
         if row.status == "Singularität"
     )
+    singular_index = presenter.state.bode_indices[singular_row]
     detail = dict(
         presenter.state.worked_steps.point_details[singular_index].lines
     )
     assert "Unterbrechung" in detail["Plotsegment"]
-    assert presenter.state.rows[singular_index].target_omega not in {
+    assert presenter.state.rows[singular_row].target_omega not in {
         value
         for segment in plot.magnitude_segments
         for value in segment.x_values

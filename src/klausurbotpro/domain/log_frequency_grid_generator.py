@@ -137,6 +137,7 @@ class LogFrequencyGridGenerator:
             interval_count,
             exact_target_indices,
             self._limits,
+            validated,
         )
         explicit_by_target = {
             index: explicit

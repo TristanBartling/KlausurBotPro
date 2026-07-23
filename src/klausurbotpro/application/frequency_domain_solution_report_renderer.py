@@ -23,6 +23,10 @@ from klausurbotpro.application.frequency_domain_workflow_contracts import (
     FrequencyDomainWorkflowResult,
     FrequencyPhasePresentation,
 )
+from klausurbotpro.application.frequency_table_projection import (
+    FrequencyTableScope,
+    select_frequency_table_indices,
+)
 from klausurbotpro.application.standard_element_bode_formatting import (
     standard_element_asymptote_latex,
     standard_element_decomposition_latex,
@@ -67,6 +71,7 @@ def render_frequency_domain_solution_latex(
     *,
     selected_bode_index: int = 0,
     added_frequencies: tuple[ExactRationalValue, ...] = (),
+    table_scope: FrequencyTableScope = FrequencyTableScope.COMPACT,
 ) -> str:
     """Render existing exact and numerical values without analyzing them again."""
 
@@ -80,6 +85,8 @@ def render_frequency_domain_solution_latex(
         type(value) is not ExactRationalValue for value in added_frequencies
     ):
         raise TypeError("added_frequencies must contain exact rationals.")
+    if type(table_scope) is not FrequencyTableScope:
+        raise TypeError("table_scope must be a FrequencyTableScope.")
     validate_frequency_domain_workflow_result(result, limits)
     if (
         result.request is None
@@ -93,6 +100,7 @@ def render_frequency_domain_solution_latex(
         result,
         selected_bode_index,
         added_frequencies,
+        table_scope,
     )
 
 
@@ -119,6 +127,7 @@ def _bode_report(
     result: FrequencyDomainWorkflowResult,
     selected_index: int,
     added_frequencies: tuple[ExactRationalValue, ...],
+    table_scope: FrequencyTableScope,
 ) -> str:
     assert result.request is not None
     grid_request = result.request.grid_request
@@ -161,7 +170,18 @@ def _bode_report(
         r"\[s=\mathrm{j}\omega\]",
         r"\[G(\mathrm{j}\omega)=G(s)\big|_{s=\mathrm{j}\omega}\]",
     )
-    table = _bode_table(result)
+    table_indices = select_frequency_table_indices(
+        result,
+        scope=table_scope,
+        selected_bode_index=selected_index,
+        added_frequencies=added_frequencies,
+    )
+    table = _bode_table(result, table_indices)
+    table_description = (
+        r"\noindent Kompakte Auswahl aus dem berechneten Frequenzraster.\par"
+        if table_scope is FrequencyTableScope.COMPACT
+        else r"\noindent Vollständiges berechnetes Frequenzraster.\par"
+    )
     selected = (
         ()
         if not bode.points
@@ -177,6 +197,7 @@ def _bode_report(
         *given_lines,
         *_standard_element_section(result),
         r"\section*{Wertetabelle}",
+        table_description,
         table,
         *selected,
         *_unwrap_explanation(result, selected_index),
@@ -363,9 +384,11 @@ def _point_solution(
                 rf"\[|G({argument})|=0,\qquad L({omega})=-\infty\,\mathrm{{dB}}\]",
                 r"\[\varphi(\omega)\text{ ist nicht definiert.}\]",
                 (
-                    rf"\[\boxed{{G({argument})=0,\quad "
-                    rf"L({omega})=-\infty\,\mathrm{{dB}},\quad "
-                    r"\varphi\text{ nicht definiert}}\]"
+                    r"\[\boxed{\begin{aligned}"
+                    rf"G({argument}) &= 0\\"
+                    rf"L({omega}) &= -\infty\,\mathrm{{dB}}\\"
+                    r"\varphi(\omega) &\text{ ist nicht definiert}"
+                    r"\end{aligned}}\]"
                 ),
             )
         )
@@ -397,17 +420,22 @@ def _point_solution(
             r"\textbf{5. Phase:}",
             rf"\[\varphi({omega})\approx {phase}^\circ\]",
             (
-                rf"\[\boxed{{G({argument})={exact_value},\quad "
-                rf"|G({argument})|\approx {magnitude},\quad "
-                rf"L({omega})\approx {decibel}\,\mathrm{{dB}},\quad "
-                rf"\varphi({omega})\approx {phase}^\circ}}\]"
+                r"\[\boxed{\begin{aligned}"
+                rf"G({argument}) &= {exact_value}\\"
+                rf"|G({argument})| &\approx {magnitude}\\"
+                rf"L({omega}) &\approx {decibel}\,\mathrm{{dB}}\\"
+                rf"\varphi({omega}) &\approx {phase}^\circ"
+                r"\end{aligned}}\]"
             ),
         )
     )
     return tuple(lines)
 
 
-def _bode_table(result: FrequencyDomainWorkflowResult) -> str:
+def _bode_table(
+    result: FrequencyDomainWorkflowResult,
+    indices: tuple[int, ...],
+) -> str:
     assert result.bode_data_result is not None
     unwrapped = _unwrapped_values(result)
     include_unwrapped = result.phase_unwrap_result is not None
@@ -420,13 +448,18 @@ def _bode_table(result: FrequencyDomainWorkflowResult) -> str:
     if include_unwrapped:
         header += r" & \varphi_{\mathrm{entf}}(\omega)\,[^\circ]"
     rows = [
-        r"\[",
-        rf"\begin{{array}}{{{columns}}}",
+        rf"\begin{{longtable}}{{{columns}}}",
         r"\hline",
-        header + r"\\",
+        "$" + header.replace(" & ", "$ & $") + r"$\\",
         r"\hline",
+        r"\endfirsthead",
+        r"\hline",
+        "$" + header.replace(" & ", "$ & $") + r"$\\",
+        r"\hline",
+        r"\endhead",
     ]
-    for index, bode_point in enumerate(result.bode_data_result.points):
+    for index in indices:
+        bode_point = result.bode_data_result.points[index]
         point = bode_point.frequency_response_point
         values = (
             _table_frequency(bode_point.target_decimal.decimal_text),
@@ -435,11 +468,11 @@ def _bode_table(result: FrequencyDomainWorkflowResult) -> str:
             _table_decibel(point),
             _table_phase(point.numerical_phase_degrees),
         )
-        row = " & ".join(values)
+        row = "$" + "$ & $".join(values) + "$"
         if include_unwrapped:
-            row += " & " + _table_phase(unwrapped.get(index))
+            row += " & $" + _table_phase(unwrapped.get(index)) + "$"
         rows.append(row + r"\\")
-    rows.extend((r"\hline", r"\end{array}", r"\]"))
+    rows.extend((r"\hline", r"\end{longtable}"))
     return "\n".join(rows)
 
 

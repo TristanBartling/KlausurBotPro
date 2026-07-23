@@ -14,6 +14,7 @@ from klausurbotpro.application import (
     FrequencyDomainWorkflowResult,
     FrequencyDomainWorkflowService,
     FrequencyPhasePresentation,
+    FrequencyTableScope,
     ParameterInputDraft,
     TransferFunctionInputDraft,
     WorkflowInputForm,
@@ -136,7 +137,7 @@ def test_single_point_zero_response_marks_phase_undefined() -> None:
     assert r"\varphi(\omega)\text{ ist nicht definiert.}" in latex
 
 
-def test_bode_report_contains_every_numeric_row_without_table_asymptote() -> None:
+def test_bode_report_uses_compact_longtable_without_table_asymptote() -> None:
     result, limits = _result(
         "1/(s+1)",
         FrequencyDomainWorkflowMode.BODE,
@@ -145,7 +146,7 @@ def test_bode_report_contains_every_numeric_row_without_table_asymptote() -> Non
 
     latex = render_frequency_domain_solution_latex(result, limits)
     table = latex.split(r"\section*{Wertetabelle}", maxsplit=1)[1].split(
-        r"\end{array}",
+        r"\end{longtable}",
         maxsplit=1,
     )[0]
     table_rows = tuple(
@@ -156,8 +157,12 @@ def test_bode_report_contains_every_numeric_row_without_table_asymptote() -> Non
 
     assert r"\section*{Numerische Bode-Auswertung}" in latex
     assert r"s=\mathrm{j}\omega" in latex
-    assert r"\begin{array}" in latex
-    assert len(table_rows) == len(result.bode_data_result.points) + 1
+    assert r"\begin{longtable}" in latex
+    assert "\\[\n\\begin{longtable}" not in latex
+    assert r"\endfirsthead" in table
+    assert r"\endhead" in table
+    assert len(table_rows) == len(result.bode_data_result.points) + 2
+    assert "Kompakte Auswahl aus dem berechneten Frequenzraster" in latex
     assert "asymptot" not in table.lower()
     assert re.search(r"\d+\.\d{12,}", latex) is None
 
@@ -247,11 +252,11 @@ def test_bode_table_uses_three_significant_decimal_frequencies_only() -> None:
         selected_bode_index=selected_index,
     )
     table = latex.split(r"\section*{Wertetabelle}", maxsplit=1)[1].split(
-        r"\end{array}",
+        r"\end{longtable}",
         maxsplit=1,
     )[0]
 
-    assert "0.0178 &" in table
+    assert r"$0.0178$ &" in table
     assert exact_frequency not in table
     assert re.search(r"\\frac\{\d{20,}\}\{\d{20,}\}", table) is None
     assert exact_frequency in latex
@@ -342,6 +347,56 @@ def test_selected_bode_row_changes_only_the_point_solution() -> None:
         result.bode_data_result.points[0].frequency_response_point.status
         is FrequencyResponsePointStatus.DEFINED
     )
+
+
+def test_full_grid_mode_exports_every_row_in_longtable() -> None:
+    result, limits = _result(
+        "1/(s+1)",
+        FrequencyDomainWorkflowMode.BODE,
+        omega_min="1/1000",
+        omega_max="1000",
+        points="8",
+    )
+    assert result.bode_data_result is not None
+
+    compact = render_frequency_domain_solution_latex(result, limits)
+    full = render_frequency_domain_solution_latex(
+        result,
+        limits,
+        table_scope=FrequencyTableScope.FULL_GRID,
+    )
+
+    compact_table = compact.split(r"\begin{longtable}", 1)[1].split(
+        r"\end{longtable}", 1
+    )[0]
+    full_table = full.split(r"\begin{longtable}", 1)[1].split(
+        r"\end{longtable}", 1
+    )[0]
+    compact_rows = sum(
+        line.endswith(r"\\") for line in compact_table.splitlines()
+    ) - 2
+    full_rows = sum(line.endswith(r"\\") for line in full_table.splitlines()) - 2
+
+    assert compact_rows <= 12
+    assert compact_rows < full_rows
+    assert full_rows == len(result.bode_data_result.points)
+    assert "Vollständiges berechnetes Frequenzraster" in full
+
+
+def test_defined_frequency_point_box_is_multiline() -> None:
+    result, limits = _result(
+        "(s^2+123456789*s+1)/(s^2+s+123456789)",
+        FrequencyDomainWorkflowMode.SINGLE_POINT,
+    )
+
+    latex = render_frequency_domain_solution_latex(result, limits)
+
+    assert r"\boxed{\begin{aligned}" in latex
+    assert r"G(\mathrm{j}) &=" in latex
+    assert r"|G(\mathrm{j})| &\approx" in latex
+    assert r"L(1) &\approx" in latex
+    assert r"\varphi(1) &\approx" in latex
+    assert r"\quad |G(\mathrm{j})|" not in latex
 
 
 def test_renderer_source_contains_no_analysis_or_workflow_execution() -> None:
