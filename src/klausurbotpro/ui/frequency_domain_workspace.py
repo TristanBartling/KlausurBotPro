@@ -404,7 +404,7 @@ class FrequencyDomainWorkspace(QWidget):
         table_layout.addWidget(self.value_table, 1)
 
         self.plot_figure = Figure(figsize=(7.0, 5.0), layout="constrained")
-        plot_axes = self.plot_figure.subplots(2, 1)
+        plot_axes = self.plot_figure.subplots(2, 1, sharex=True)
         self.magnitude_axes = plot_axes[0]
         self.phase_axes = plot_axes[1]
         self.plot_canvas = FigureCanvasQTAgg(  # type: ignore[no-untyped-call]
@@ -775,6 +775,7 @@ class FrequencyDomainWorkspace(QWidget):
                 self.standard_element_table.setItem(
                     row_index, column, QTableWidgetItem(getattr(row, name))
                 )
+        self.magnitude_axes.set_xscale("linear")
         self.magnitude_axes.clear()
         self.phase_axes.clear()
         for axes, ylabel in (
@@ -882,7 +883,11 @@ class FrequencyDomainWorkspace(QWidget):
         for marker in state.plot.gain_crossover_markers:
             frequency = float(marker.x_value)
             self.magnitude_axes.scatter(
-                [frequency], [float(marker.y_value)], color="#146c94", zorder=5
+                [frequency],
+                [float(marker.y_value)],
+                color="#146c94",
+                zorder=5,
+                label=marker.label,
             )
             self.magnitude_axes.annotate(marker.label, (frequency, 0.0))
         for marker in state.plot.phase_crossover_markers:

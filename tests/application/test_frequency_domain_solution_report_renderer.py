@@ -196,17 +196,21 @@ def test_manual_frequency_reference_hides_internal_statuses_and_deduplicates_nyq
 
 def test_unsupported_standard_elements_keep_readable_latex_reason() -> None:
     result, limits = _result(
-        "1/(s^2+s+1)",
+        "(s^2+s+1)/(s+1)",
         FrequencyDomainWorkflowMode.BODE,
     )
 
     latex = render_frequency_domain_solution_latex(result, limits)
 
     assert (
-        "\\mbox{Grund: Eine komplexe Polstelle wird vom "
+        "\\mbox{Grund: Ein komplexes Nullstellenpaar wird vom "
         "Standardglieder-MVP nicht unterst\u00fctzt.}"
     ) in latex
     assert "unterst\u00fctzt" in latex
+    assert "vollständige Standardgliederanalyse wurde deshalb nicht fortgesetzt" in latex
+    assert "numerische Wertetabelle" in latex
+    assert "exakte Bode-Verlauf" in latex
+    assert "bereits bestimmten Frequenzgangwerte" in latex
     assert r"\[K=" not in latex
     assert r"L_a(\omega)" not in latex
     assert r"\section*{Wertetabelle}" in latex

@@ -81,6 +81,9 @@ class FrequencyDomainWorkflowDiagnosticCode(StrEnum):
     GRID_FAILED = "frequency_domain_workflow.grid_failed"
     BODE_DATA_FAILED = "frequency_domain_workflow.bode_data_failed"
     PHASE_UNWRAP_FAILED = "frequency_domain_workflow.phase_unwrap_failed"
+    NYQUIST_NUMERIC_PARAMETERS_REQUIRED = (
+        "frequency_domain_workflow.nyquist_numeric_parameters_required"
+    )
     CONTEXT_MISMATCH = "frequency_domain_workflow.context_mismatch"
     LIMIT_EXCEEDED = "frequency_domain_workflow.limit_exceeded"
     RESOURCE_LIMIT_EXCEEDED = (

@@ -129,6 +129,39 @@ def test_f2_real_click_path_switches_modes_and_uses_exam_phase_ticks() -> None:
     workspace.close()
 
 
+def test_bode_axes_share_limits_ticks_and_frequency_positions() -> None:
+    workspace, requests = _workspace()
+    workspace.common_expression_edit.setPlainText("2.5*(1-s)/(s^2+3*s+2)")
+    workspace.mode_combo.setCurrentIndex(1)
+    workspace.phase_combo.setCurrentIndex(1)
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    request = requests[0]
+    assert type(request) is FrequencyDomainWorkflowRequest
+    workspace.presenter.accept_result(FrequencyDomainWorkflowService().run(request))
+    _app().processEvents()
+    workspace.plot_canvas.draw()
+
+    assert workspace.magnitude_axes.get_xscale() == "log"
+    assert workspace.phase_axes.get_xscale() == "log"
+    assert workspace.magnitude_axes.get_xlim() == workspace.phase_axes.get_xlim()
+    assert tuple(workspace.magnitude_axes.get_xticks()) == tuple(
+        workspace.phase_axes.get_xticks()
+    )
+    assert tuple(workspace.magnitude_axes.get_xticks(minor=True)) == tuple(
+        workspace.phase_axes.get_xticks(minor=True)
+    )
+    frequency = float(
+        workspace.presenter.state.plot.gain_crossover_markers[0].x_value
+    )
+    magnitude_x = workspace.magnitude_axes.transData.transform((frequency, 0.0))[0]
+    phase_x = workspace.phase_axes.transData.transform((frequency, -180.0))[0]
+    assert magnitude_x == phase_x
+    assert "ωg1" in workspace.magnitude_axes.get_legend_handles_labels()[1]
+    assert any(text.get_text() == "ωg1" for text in workspace.magnitude_axes.texts)
+    workspace.close()
+
+
 def test_invalid_rational_is_visible_focused_and_does_not_dispatch() -> None:
     workspace, requests = _workspace()
     workspace.common_expression_edit.setPlainText("1/(s+1)")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from klausurbotpro.application._frequency_domain_workflow_diagnostics import (
     frequency_workflow_diagnostic,
+    nyquist_parameters_required_diagnostic,
     owned_diagnostics,
 )
 from klausurbotpro.application._frequency_domain_workflow_validation import (
@@ -294,9 +295,25 @@ class FrequencyDomainWorkflowService:
             reduced,
             field=request.preparation_request.field,
         )
+        substitutions = preparation.request.substitutions or ParameterSubstitutions()
+        missing_nyquist_parameters = tuple(
+            sorted(reduced.used_parameter_names - substitutions.parameter_names)
+        )
+        nyquist_parameter_diagnostic = (
+            nyquist_parameters_required_diagnostic(
+                missing_nyquist_parameters,
+                field=request.preparation_request.field,
+            )
+            if request.include_nyquist and missing_nyquist_parameters
+            else None
+        )
         bode_record = self._success_record(
             FrequencyDomainWorkflowStage.BODE_DATA,
-            bode_owned,
+            (
+                bode_owned
+                if nyquist_parameter_diagnostic is None
+                else (*bode_owned, nyquist_parameter_diagnostic)
+            ),
         )
         if (
             request.phase_presentation
@@ -334,7 +351,7 @@ class FrequencyDomainWorkflowService:
                 nyquist_analysis=(
                     NyquistAnalyzer().analyze(
                         reduced,
-                        preparation.request.substitutions or ParameterSubstitutions(),
+                        substitutions,
                         bode,
                         reserve_analyses[0],
                         scalar_gain_domain=request.scalar_gain_domain,
@@ -342,6 +359,7 @@ class FrequencyDomainWorkflowService:
                     if reserve_unwrap is not None
                     and reserve_unwrap.succeeded
                     and request.include_nyquist
+                    and nyquist_parameter_diagnostic is None
                     else None
                 ),
                 records=(
@@ -416,12 +434,16 @@ class FrequencyDomainWorkflowService:
             nyquist_analysis=(
                 NyquistAnalyzer().analyze(
                     reduced,
-                    preparation.request.substitutions or ParameterSubstitutions(),
+                    substitutions,
                     bode,
                     analyses[0] if request.include_reserves else None,
                     scalar_gain_domain=request.scalar_gain_domain,
                 )
-                if unwrap.succeeded and request.include_nyquist
+                if (
+                    unwrap.succeeded
+                    and request.include_nyquist
+                    and nyquist_parameter_diagnostic is None
+                )
                 else None
             ),
             records=(

@@ -250,6 +250,9 @@ def test_diagnostics_are_projected_once_in_original_order() -> None:
     result = FrequencyDomainWorkflowService().run(request)
     presenter.accept_result(result)
 
+    assert result.nyquist_analysis is None
+    assert not presenter.state.nyquist.visible
+    assert "Belege K numerisch" in presenter.state.latex_report
     assert len(presenter.state.diagnostics) == len(result.diagnostics)
     assert tuple(item.message for item in presenter.state.diagnostics) == tuple(
         item.message for item in result.diagnostics

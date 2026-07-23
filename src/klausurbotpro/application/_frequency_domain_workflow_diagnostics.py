@@ -37,4 +37,40 @@ def owned_diagnostics(
     return diagnostics[len(upstream) :]
 
 
-__all__ = ["frequency_workflow_diagnostic", "owned_diagnostics"]
+def nyquist_parameters_required_diagnostic(
+    parameter_names: tuple[str, ...],
+    *,
+    field: str | None,
+) -> Diagnostic:
+    """Explain why an optional numerical Nyquist evaluation was skipped."""
+
+    if not parameter_names:
+        raise ValueError("parameter_names must not be empty.")
+    joined = ", ".join(parameter_names)
+    missing_clause = (
+        f"der Parameter {joined} nicht numerisch belegt ist"
+        if len(parameter_names) == 1
+        else f"die Parameter {joined} nicht numerisch belegt sind"
+    )
+    return Diagnostic(
+        DiagnosticSeverity.WARNING,
+        cast(
+            DiagnosticCode,
+            FrequencyDomainWorkflowDiagnosticCode.NYQUIST_NUMERIC_PARAMETERS_REQUIRED,
+        ),
+        (
+            f"Die numerische Nyquist-Auswertung wurde nicht gestartet, weil "
+            f"{missing_clause}. Belege {joined} numerisch, um den "
+            "Nyquist-Plot und Zahlenwerte zu berechnen. Es wurde kein Ersatzwert "
+            "angenommen; bereits bestimmte symbolische Teilresultate bleiben verwendbar."
+        ),
+        field,
+        (("parameters", joined),),
+    )
+
+
+__all__ = [
+    "frequency_workflow_diagnostic",
+    "nyquist_parameters_required_diagnostic",
+    "owned_diagnostics",
+]

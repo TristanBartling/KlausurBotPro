@@ -6,6 +6,7 @@ from math import gcd
 from typing import NoReturn, TypeGuard, cast
 
 from klausurbotpro.application._frequency_domain_workflow_diagnostics import (
+    nyquist_parameters_required_diagnostic,
     owned_diagnostics,
 )
 from klausurbotpro.application._transfer_function_preparation_validation import (
@@ -536,6 +537,26 @@ def _validate_bode_result(
             bode.diagnostics,
             result.grid_result.diagnostics,  # type: ignore[union-attr]
         )
+        substitutions = preparation.request.substitutions
+        assigned_names = (
+            frozenset()
+            if substitutions is None
+            else substitutions.parameter_names
+        )
+        missing_nyquist_parameters = tuple(
+            sorted(
+                preparation.reduced_value.used_parameter_names
+                - assigned_names
+            )
+        )
+        if result.request.include_nyquist and missing_nyquist_parameters:
+            expected = (
+                *expected,
+                nyquist_parameters_required_diagnostic(
+                    missing_nyquist_parameters,
+                    field=result.request.preparation_request.field,
+                ),
+            )
         if (
             record.status is not FrequencyDomainWorkflowStageStatus.SUCCEEDED
             or record.diagnostics != expected
@@ -553,8 +574,18 @@ def _validate_bode_result(
             _fail("A failed Bode result cannot retain an unwrap result.")
         return
     _validate_reserve_results(result)
-    if result.request.include_nyquist and result.nyquist_analysis is None:
-        _fail("A successful requested Nyquist analysis requires a result.")
+    if (
+        result.request.include_nyquist
+        and result.nyquist_analysis is None
+        and not missing_nyquist_parameters
+    ):
+        _fail("A numerically evaluable requested Nyquist analysis requires a result.")
+    if (
+        result.request.include_nyquist
+        and result.nyquist_analysis is not None
+        and missing_nyquist_parameters
+    ):
+        _fail("An unbound-parameter Nyquist request cannot retain numerical results.")
     if not result.request.include_nyquist and result.nyquist_analysis is not None:
         _fail("An unrequested Bode run cannot retain a Nyquist result.")
     _validate_unwrap_result(result, limits)
