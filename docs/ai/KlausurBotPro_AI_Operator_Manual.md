@@ -29,7 +29,7 @@ Dieses Handbuch beschreibt App-Bedienung und implementiertes Verhalten. Es ist k
 |---|---|---|---|---|---|---|
 | Rationale Übertragungsfunktion, Pole, Nullstellen, Stabilität | Transferfunktion | `UI_VERIFIED` | Gemeinsamer Ausdruck oder Zähler/Nenner | Parsen, rohe Form, Kürzung, rohe/reduzierte Wurzeln, Stabilität, Bericht | Modell und Parameterbelegungen korrekt übertragen; fachlich prüfen | Nur sichere rationale Syntax; nicht belegte Parameter können Aussagen unbestimmt lassen |
 | Frequenzgang an einem Punkt | Frequenzbereich / Einzelpunkt | `UI_VERIFIED` | Übertragungsfunktion und exakte rationale Kreisfrequenz | `G(jω)`, Real-/Imaginärteil, Betrag, dB, Hauptphase | Einheit und gewünschte Frequenz prüfen | Frequenzfeld akzeptiert keine Dezimalzahl wie `0.5`, sondern z. B. `1/2` |
-| Bode, Standardglieder, Reserven, Nyquist | Frequenzbereich / Bode | `PARTIAL` | Übertragungsfunktion, Grenzen, Raster, Phase | Numerisches Raster, Diagramme, Komponenten, Durchtritte, Reserven, Nyquist | Frequenzgrenzen vorgeben; asymptotische Skizze fachlich beurteilen | Worked Steps sind numerisch; keine vollständige asymptotische Konstruktion |
+| Bode, Standardglieder, Reserven, Nyquist | Frequenzbereich / Bode | `PARTIAL` | Übertragungsfunktion, Grenzen, Raster, Phase | Numerisches Raster, Diagramme mit gemeinsamer logarithmischer Frequenzachse, Komponenten, Durchtritte, Reserven, Nyquist | Frequenzgrenzen und alle numerisch benötigten Parameter vorgeben; asymptotische Skizze fachlich beurteilen | Worked Steps sind numerisch; keine vollständige asymptotische Konstruktion |
 | Hurwitz und Parameterbereich | Stabilität | `UI_VERIFIED` | Polynom oder Führungsübertragungsfunktion | Kanonisierung, Matrix, Determinanten, Bedingungen, Bereich | Rolle und Analyseziel korrekt wählen | Höchstens zwei Entscheidungsparameter |
 | Routh und Parameterbereich | Stabilität | `PARTIAL` | Polynom oder Führungsübertragungsfunktion | Routh-Schema, erste Spalte, Vorzeichenwechsel, Bereich | Sonderfälle fachlich behandeln | Vollständige Nullzeile kann LaTeX-Ausgabe verhindern |
 | Direkte Laplace-Transformation | Zeitbereich | `PARTIAL` | Unterstützte Kombinationen in `t` | Tabellenpaar-/Regeltransformation | Prüfen, ob Funktion im begrenzten Regelvorrat liegt | Kein allgemeiner CAS-Laplace-Workflow |
@@ -139,14 +139,14 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 | `Skalarverstärkungsbereich G₀(s,K)=K·Ḡ(s)` und offene K-Grenzen | Checkbox/Textfelder | Optionaler K-Bereich | Berechnet stabile K-Intervalle im Nyquist-Kontext | Nur Bode, Grenzen bei gesetzter Checkbox | Obere Grenze muss größer sein |
 | `Erweiterte Rastereinstellungen` | Gruppe | 1–64 Punkte/Dekade; optionale rationale Frequenzliste | Steuert numerisches Raster | Nur Bode | Max. 256 explizite Punkte; insgesamt begrenzt |
 | `Frequenzbereich berechnen` / `Zurücksetzen` | Schaltflächen | — | Start/Reset | Nicht laufend | Requestfehler fokussiert Feld |
-| `Darstellung:` | Auswahl | `Exakter Verlauf`, `Asymptotische Näherung`, `Grobe Klausurskizze` | Wählt gezeichnete Kurven | Bode-Ergebnis | Näherungen nur aus erkannten Komponenten |
+| `Darstellung:` | Auswahl | `Exakter Verlauf`, `Asymptotische Näherung`, `Grobe Klausurskizze` | Wählt gezeichnete Kurven | Bode-Ergebnis mit unterstützter Standardgliederzerlegung; sonst auf exakten Verlauf deaktiviert | Näherungen nur aus erkannten Komponenten |
 | `Einzelbeiträge anzeigen` / `Gesamtfunktion anzeigen` | Checkboxen | Sichtbarkeit | Blendet Kurven ein/aus | Bode-Ergebnis | Kein neuer Rechenlauf |
 | Ergebnis-Tabs | Tabs | `Ergebnisübersicht`, `Wertetabelle`, `Diagramme`, `Durchtritte und Reserven`, `Nyquist`, `Numerische Kurzlösung`, `LaTeX-Lösung`, `Diagnosen` | Wählt Darstellung | Modus-/Ergebnisabhängig | Einzelpunkt blendet Bode-Tabs aus |
 | `Technische Details anzeigen` / `LaTeX kopieren` | Checkbox/Schaltfläche | — | Ergänzt Details bzw. kopiert | Ergebnis vorhanden | Technische Details sind nicht der klausurtaugliche Kern |
 
-**Ausgaben:** Exakte/numerische Punktwerte, Ziel- und Auswertungsfrequenzen, Bode-Tabelle, Betrag/Phase, Standardgliedtabelle, Singularitätslücken, alle erkannten Durchtritte und Reserven, Nyquist-Kriterium, numerische Kurzlösung und LaTeX.
+**Ausgaben:** Exakte/numerische Punktwerte, Ziel- und Auswertungsfrequenzen, Bode-Tabelle, Betrag/Phase auf derselben logarithmischen Frequenzachse mit identischen Grenzen und Ticks, Standardgliedtabelle, Singularitätslücken, alle erkannten Durchtritte und Reserven, Nyquist-Kriterium, numerische Kurzlösung und LaTeX. Amplituden- und Phasendurchtrittsmarker werden einheitlich als `ωg1`, `ωg2`, … beziehungsweise `ωp1`, `ωp2`, … bezeichnet.
 
-**Grenzen:** `ω_min` und `ω_max` werden nicht aus der Aufgabe erfunden. Standardglieder und asymptotische Darstellungen hängen von erkannter Zerlegung ab. Die Ansicht erklärt ausdrücklich, dass die numerischen Worked Steps keine vollständige asymptotische Bode-Konstruktion sind.
+**Grenzen:** `ω_min` und `ω_max` werden nicht aus der Aufgabe erfunden. Standardglieder und asymptotische Darstellungen hängen von erkannter Zerlegung ab. Bei einer nicht unterstützten Zerlegung bleibt ausschließlich der exakte Verlauf verfügbar; der Darstellungsumschalter und die nicht vorhandenen Einzelbeiträge werden deaktiviert und die Ursache wird sichtbar genannt. LaTeX nennt das betroffene Glied beziehungsweise den Fall, erklärt den Abbruch der vollständigen Standardgliederanalyse und weist in umbrechbarer Prosa auf weiter verwendbare numerische Frequenzgangresultate hin. Die Ansicht erklärt ausdrücklich, dass die numerischen Worked Steps keine vollständige asymptotische Bode-Konstruktion sind.
 
 ### Stabilität
 
@@ -300,17 +300,18 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Status:** `PARTIAL`
 - **Geeigneter Aufgabentyp:** Numerische Frequenzanalyse einer rationalen TF.
 - **Modul/Ansicht:** `Frequenzbereich`, Modus `Bode`.
-- **Voraussetzungen:** Positive Frequenzgrenzen; numerisch auswertbare Parameter.
+- **Voraussetzungen:** Positive Frequenzgrenzen; alle für Bode-Zahlenwerte und Nyquist benötigten Parameter sind numerisch belegt.
 - **Eingaben:** TF, `ω_min`, `ω_max`, Raster, Phase; optional K-Bereich.
 - **Akzeptierte Syntax:** Exakte rationale Grenzen/Liste; TF wie WF-01.
 - **Gültiges Beispiel:** `100/(s*(10*s+1))`, `ω_min=1/10`, `ω_max=10`.
 - **Bedienfolge:** 1. `Bode` wählen. 2. TF und Grenzen eingeben. 3. Phase/Raster wählen. 4. Berechnen. 5. Ergebnis-Tabs prüfen.
 - **Interne Interpretation:** Reduziertes Modell; Hauptphase und optional zusätzliche entfaltete Phase.
 - **Automatische Schritte:** Lograster, Singularitätsverfeinerung, Bode-Komponenten, Durchtritte/Reserven, Nyquist, Diagramme.
-- **Sichtbare Ergebnisse:** Wertetabelle, exakter/asymptotischer/grober Plot, Standardgliedtabelle, Reserven, Nyquist und LaTeX.
+- **Sichtbare Ergebnisse:** Wertetabelle, exakter/asymptotischer/grober Plot mit gemeinsamer logarithmischer Betrag-/Phasenachse, Marker `ωg1`/`ωp1`, Standardgliedtabelle, Reserven, Nyquist und LaTeX.
 - **Manuelle Vorarbeit:** Diagrammgrenzen aus Aufgabenstellung bestimmen.
 - **Manuelle Nacharbeit/Kontrolle:** Asymptoten und qualitative Skizze fachlich prüfen und papiergerecht zeichnen.
-- **Typische Fehlbedienung:** Hauptphase mit entfalteter Phase verwechseln; zu grobes Raster als exakte Kurve interpretieren.
+- **Typische Fehlbedienung:** Hauptphase mit entfalteter Phase verwechseln; zu grobes Raster als exakte Kurve interpretieren; einen verwendeten Parameter wie `K` deklarieren, aber für den numerischen Nyquist-Lauf nicht belegen.
+- **Fehlende Parameterbelegung:** Die numerische Nyquist-Auswertung und der Nyquist-Plot werden nicht gestartet, es wird kein Ersatzwert für `K` angenommen. Eine Diagnose fordert zur numerischen Belegung auf; bereits mögliche symbolische Bode- und LaTeX-Teilresultate bleiben sichtbar.
 - **Bekannte Grenze:** Numerische Kurzlösung ersetzt keine vollständige asymptotische Bode-Konstruktion.
 - **Nachweis:** `ui/frequency_domain_workspace.py`, `application/frequency_domain_workflow_service.py`; `tests/ui/test_frequency_domain_workspace.py`, `tests/ui/test_frequency_reserve_presenter_smoke.py`.
 
@@ -659,6 +660,7 @@ Ein möglicher Bug darf erst angenommen werden, wenn der richtige Workflow gewä
 | `Eingabe ungültig; das angezeigte Ergebnis stammt aus der vorherigen Berechnung.` | Neuer Transferfunktionsrequest fehlerhaft, vorheriges Ergebnis vorhanden | Ungültige Parameterzeile/Syntax | Eingabe korrigieren und erneut starten | Frühere Resultate bleiben sichtbar und werden ausdrücklich als alt markiert |
 | `Eine exakte rationale Zahl wie 3 oder 1/10 ist erforderlich.` | Frequenz-/Rasterfeld nicht rational | `0.5` | `1/2` | Frequenzberechnung blockiert; Ergebnisansicht wird auf Fehlerzustand gesetzt |
 | `Die obere K-Grenze muss größer als die untere sein.` | Ungültiger K-Bereich | Vertauschte Grenzen | Grenzen korrigieren | Berechnung blockiert |
+| `Die numerische Nyquist-Auswertung wurde nicht gestartet, weil der Parameter K nicht numerisch belegt ist.` | Verwendeter Parameter ohne Zahlenbelegung | `K/(s+1)` mit deklarierter, aber leerer Parameterzeile | `K` in der Parametertabelle numerisch belegen und erneut berechnen | Kein Nyquist-Zahlenlauf und kein Nyquist-Plot; symbolische Teilresultate und konkrete Diagnose bleiben sichtbar |
 | `Variable oder Entscheidungsparameter sind ungültig.` | Name/Anzahl ungültig | Drei Parameter oder reservierter Name | Maximal zwei gültige Namen | Stabilitätsanalyse blockiert; neue Ergebnisfelder zeigen Fehler |
 | `Annahme …: Relation nicht unterstützt.` | Annahmesyntax unbekannt | Freitext statt Relation | Einfache Relation verwenden | Stabilitätsanalyse blockiert |
 | `Vollständige Nullzeile` / `Hilfspolynomverfahren` | Routh-Sonderfall | Kein Bedienfehler | Manuell fachlich fortsetzen | Teilresultate/Diagnose sichtbar; LaTeX-Kopieren kann deaktiviert sein |
@@ -682,6 +684,8 @@ Das Verhalten ist nicht für alle Module einheitlich: Bei `Transferfunktion` lö
 - Stabilität: maximal zwei Entscheidungsparameter. Größere symbolische Gebiete müssen manuell zerlegt werden.
 - Frequenzraster: maximal 24 Dekaden, 64 Punkte pro Dekade, 2048 Rasterpunkte und 256 explizite Punkte; der Frequenzanalysepfad begrenzt einen Lauf zusätzlich auf 256 Frequenzpunkte. Welche Grenze zuerst greift, hängt vom Request ab.
 - Frequenzresultate kombinieren exakte Spezialisierung mit numerischer Darstellung. Bode, Reserven, Nyquist und P-Phasenreserve sind nicht rein symbolisch.
+- Numerische Nyquist-Auswertung startet nur bei vollständig numerisch belegten verwendeten Parametern. Unbelegte Parameter bleiben symbolisch; es gibt keine implizite Annahme für `K`.
+- Betrag und Phase verwenden eine gemeinsame logarithmische Frequenzachse. Grenzen sowie Haupt- und Nebenticks werden gemeinsam geführt, damit identische Frequenzen und Marker vertikal übereinanderliegen.
 - Hauptphase und entfaltete Phase sind getrennt; die entfaltete Phase ist nur eine kontinuierliche Zusatzdarstellung durch Vielfache von 360°.
 - Bode-`Asymptotische Näherung` und `Grobe Klausurskizze` basieren auf erkannten Standardgliedkomponenten. Nicht erkannte Zerlegungen benötigen manuelle Skizzenarbeit.
 - Direkte Laplace-Transformation unterstützt einen begrenzten Vorrat aus Konstanten, Potenzen, Exponential-, Sinus-/Kosinusformen und nachgewiesenen Kombinationen.

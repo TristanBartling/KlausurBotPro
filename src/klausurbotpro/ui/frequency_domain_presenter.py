@@ -490,7 +490,7 @@ def _plot(result: FrequencyDomainWorkflowResult) -> PlotView:
         else tuple(
             PlotMarkerView(
                 f"{item.frequency:.12g}",
-                f"ω_{{g,{index}}} – Amplitudendurchtritt",
+                f"ωg{index}",
                 "0",
             )
             for index, item in enumerate(crossovers.gain_crossovers, 1)
@@ -502,7 +502,7 @@ def _plot(result: FrequencyDomainWorkflowResult) -> PlotView:
         else tuple(
             PlotMarkerView(
                 f"{item.frequency:.12g}",
-                f"ω_{{p,{index}}} – Phasendurchtritt",
+                f"ωp{index}",
                 f"{item.phase_target_degrees:.12g}",
             )
             for index, item in enumerate(crossovers.phase_crossovers, 1)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 import klausurbotpro.domain._frequency_response_evaluator as evaluator_module
@@ -238,6 +240,60 @@ def test_zero_and_symbolic_bode_statuses_remain_complete() -> None:
     assert symbolic.bode_data_result.status is (
         BodeDataStatus.SYMBOLIC_UNDETERMINED
     )
+
+
+def test_unbound_parameter_skips_numeric_nyquist_without_losing_symbolic_results() -> None:
+    request = replace(
+        _bode(
+            "K/(s+1)",
+            parameters=("K",),
+            presentation=FrequencyPhasePresentation.PRINCIPAL_AND_UNWRAPPED,
+        ),
+        include_reserves=True,
+        include_nyquist=True,
+    )
+
+    result = FrequencyDomainWorkflowService().run(request)
+
+    assert result.status is FrequencyDomainWorkflowStatus.COMPLETE
+    assert result.bode_data_result is not None
+    assert result.bode_data_result.status is BodeDataStatus.SYMBOLIC_UNDETERMINED
+    assert result.nyquist_analysis is None
+    messages = tuple(item.message for item in result.diagnostics)
+    nyquist_messages = tuple(
+        message for message in messages if "Nyquist-Auswertung" in message
+    )
+    assert len(nyquist_messages) == 1
+    assert "Parameter K" in nyquist_messages[0]
+    assert "Belege K numerisch" in nyquist_messages[0]
+    assert "kein Ersatzwert" in nyquist_messages[0]
+    assert "symbolische Teilresultate bleiben verwendbar" in nyquist_messages[0]
+
+
+def test_bound_parameter_keeps_numeric_nyquist_enabled() -> None:
+    substitutions = ParameterSubstitutions(
+        (ParameterAssignment("K", ExactRationalValue(2)),)
+    )
+    request = FrequencyDomainWorkflowRequest(
+        _preparation(
+            "K/(s+1)",
+            parameters=("K",),
+            substitutions=substitutions,
+        ),
+        FrequencyDomainWorkflowMode.BODE,
+        grid_request=_grid(),
+        phase_presentation=FrequencyPhasePresentation.PRINCIPAL_AND_UNWRAPPED,
+        include_reserves=True,
+        include_nyquist=True,
+    )
+
+    result = FrequencyDomainWorkflowService().run(request)
+
+    assert result.status is FrequencyDomainWorkflowStatus.COMPLETE
+    assert result.bode_data_result is not None
+    assert result.bode_data_result.status is BodeDataStatus.COMPLETE
+    assert result.nyquist_analysis is not None
+    assert all("Nyquist-Auswertung" not in item.message for item in result.diagnostics)
 
 
 def test_optional_phase_unwrap_is_mode_controlled() -> None:

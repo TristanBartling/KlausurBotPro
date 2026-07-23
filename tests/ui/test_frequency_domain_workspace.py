@@ -4,6 +4,8 @@ import os
 import tomllib
 from pathlib import Path
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
@@ -126,6 +128,150 @@ def test_f2_real_click_path_switches_modes_and_uses_exam_phase_ticks() -> None:
     assert {0, -45, -90, -180, -270} <= ticks
     assert workspace.show_component_checkbox.isChecked()
     assert workspace.show_total_checkbox.isChecked()
+    workspace.close()
+
+
+def test_supported_bode_modes_render_their_distinct_component_sums() -> None:
+    workspace, requests = _workspace()
+    workspace.common_expression_edit.setPlainText("100/(s*(10*s+1))")
+    workspace.mode_combo.setCurrentIndex(1)
+    workspace.omega_min_edit.setText("1/100")
+    workspace.omega_max_edit.setText("100")
+    workspace.phase_combo.setCurrentIndex(1)
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    request = requests[0]
+    assert type(request) is FrequencyDomainWorkflowRequest
+    result = FrequencyDomainWorkflowService().run(request)
+    assert result.standard_element_bode_result is not None
+    assert result.standard_element_bode_result.supported
+    workspace.presenter.accept_result(result)
+    _app().processEvents()
+
+    components = workspace.presenter.state.plot.component_curves
+    assert components
+    assert workspace.bode_display_mode_combo.isEnabled()
+
+    exact_magnitude = tuple(
+        tuple(float(value) for value in line.get_ydata())
+        for line in workspace.magnitude_axes.lines
+    )
+    exact_phase = tuple(
+        tuple(float(value) for value in line.get_ydata())
+        for line in workspace.phase_axes.lines
+    )
+
+    workspace.bode_display_mode_combo.setCurrentIndex(1)
+    _app().processEvents()
+    asymptotic_magnitude = tuple(
+        tuple(float(value) for value in line.get_ydata())
+        for line in workspace.magnitude_axes.lines
+    )
+    asymptotic_phase = tuple(
+        tuple(float(value) for value in line.get_ydata())
+        for line in workspace.phase_axes.lines
+    )
+    expected_asymptotic_magnitude = tuple(
+        sum(float(component.asymptotic_magnitude.y_values[index]) for component in components)
+        for index in range(len(components[0].asymptotic_magnitude.y_values))
+    )
+    expected_asymptotic_phase = tuple(
+        sum(float(component.asymptotic_phase.y_values[index]) for component in components)
+        for index in range(len(components[0].asymptotic_phase.y_values))
+    )
+    assert workspace.bode_display_mode_combo.currentIndex() == 1
+    assert workspace.bode_mode_notice.text() == "Asymptotische Näherung"
+    assert (asymptotic_magnitude, asymptotic_phase) != (exact_magnitude, exact_phase)
+    assert asymptotic_magnitude[-1] == pytest.approx(expected_asymptotic_magnitude)
+    assert asymptotic_phase[-1] == pytest.approx(expected_asymptotic_phase)
+
+    workspace.bode_display_mode_combo.setCurrentIndex(2)
+    _app().processEvents()
+    rough_magnitude = tuple(
+        tuple(float(value) for value in line.get_ydata())
+        for line in workspace.magnitude_axes.lines
+    )
+    rough_phase = tuple(
+        tuple(float(value) for value in line.get_ydata())
+        for line in workspace.phase_axes.lines
+    )
+    expected_rough_magnitude = tuple(
+        sum(float(component.rough_magnitude.y_values[index]) for component in components)
+        for index in range(len(components[0].rough_magnitude.y_values))
+    )
+    expected_rough_phase = tuple(
+        sum(float(component.rough_phase.y_values[index]) for component in components)
+        for index in range(len(components[0].rough_phase.y_values))
+    )
+    assert workspace.bode_display_mode_combo.currentIndex() == 2
+    assert workspace.bode_mode_notice.text() == "Grobe qualitative Klausurskizze"
+    assert (rough_magnitude, rough_phase) != (asymptotic_magnitude, asymptotic_phase)
+    assert rough_magnitude[-1] == pytest.approx(expected_rough_magnitude)
+    assert rough_phase[-1] == pytest.approx(expected_rough_phase)
+    workspace.close()
+
+
+def test_unsupported_bode_decomposition_disables_unavailable_plot_modes() -> None:
+    workspace, requests = _workspace()
+    workspace.common_expression_edit.setPlainText("2.5*(1-s)/(s^2+3*s+2)")
+    workspace.mode_combo.setCurrentIndex(1)
+    workspace.omega_min_edit.setText("1/100")
+    workspace.omega_max_edit.setText("100")
+    workspace.phase_combo.setCurrentIndex(1)
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    request = requests[0]
+    assert type(request) is FrequencyDomainWorkflowRequest
+    result = FrequencyDomainWorkflowService().run(request)
+    assert result.standard_element_bode_result is not None
+    assert not result.standard_element_bode_result.supported
+    workspace.presenter.accept_result(result)
+    _app().processEvents()
+
+    assert not workspace.presenter.state.plot.component_curves
+    assert not workspace.bode_display_mode_combo.isEnabled()
+    assert not workspace.show_component_checkbox.isEnabled()
+    assert workspace.bode_display_mode_combo.currentIndex() == 0
+    assert "Nur exakter Verlauf verfügbar" in workspace.bode_mode_notice.text()
+    assert "RHP-Nullstelle" in workspace.bode_mode_notice.text()
+
+    workspace.bode_display_mode_combo.setCurrentIndex(1)
+    _app().processEvents()
+    assert workspace.bode_display_mode_combo.currentIndex() == 0
+    assert workspace.bode_mode_notice.text().startswith("Nur exakter Verlauf verfügbar")
+    workspace.close()
+
+
+def test_bode_axes_share_limits_ticks_and_frequency_positions() -> None:
+    workspace, requests = _workspace()
+    workspace.common_expression_edit.setPlainText("2.5*(1-s)/(s^2+3*s+2)")
+    workspace.mode_combo.setCurrentIndex(1)
+    workspace.phase_combo.setCurrentIndex(1)
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    request = requests[0]
+    assert type(request) is FrequencyDomainWorkflowRequest
+    workspace.presenter.accept_result(FrequencyDomainWorkflowService().run(request))
+    _app().processEvents()
+    workspace.plot_canvas.draw()
+
+    assert workspace.magnitude_axes.get_xscale() == "log"
+    assert workspace.phase_axes.get_xscale() == "log"
+    assert workspace.magnitude_axes.get_xlim() == workspace.phase_axes.get_xlim()
+    assert tuple(workspace.magnitude_axes.get_xticks()) == tuple(
+        workspace.phase_axes.get_xticks()
+    )
+    assert tuple(workspace.magnitude_axes.get_xticks(minor=True)) == tuple(
+        workspace.phase_axes.get_xticks(minor=True)
+    )
+    frequency = float(
+        workspace.presenter.state.plot.gain_crossover_markers[0].x_value
+    )
+    magnitude_x = workspace.magnitude_axes.transData.transform((frequency, 0.0))[0]
+    phase_x = workspace.phase_axes.transData.transform((frequency, -180.0))[0]
+    assert magnitude_x == phase_x
+    assert "ωg1" in workspace.magnitude_axes.get_legend_handles_labels()[1]
+    assert any(text.get_text() == "ωg1" for text in workspace.magnitude_axes.texts)
     workspace.close()
 
 

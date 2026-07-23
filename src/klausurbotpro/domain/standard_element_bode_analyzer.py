@@ -207,7 +207,8 @@ class StandardElementBodeAnalyzer:
                 if role is StandardElementFactorRole.ZERO:
                     raise _UnsupportedDecomposition(
                         StandardElementUnsupportedReason.COMPLEX_ROOT,
-                        "Ein komplexes Nullstellenpaar wird nicht unterstützt.",
+                        "Ein komplexes Nullstellenpaar wird vom "
+                        "Standardglieder-MVP nicht unterstützt.",
                     )
                 partner_index = next(
                     (

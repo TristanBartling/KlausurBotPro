@@ -201,6 +201,23 @@ def _standard_element_section(
             heading,
             ("\\[\\text{Standardglieder-MVP: nicht unterst\u00fctzt}\\]"),
             rf"\[{descriptive_math(f'Grund: {message}').latex}\]",
+            descriptive_math(
+                "Die vollständige Standardgliederanalyse wurde deshalb nicht "
+                "fortgesetzt.",
+                latex=(
+                    r"\noindent Die vollständige Standardgliederanalyse wurde "
+                    r"deshalb nicht fortgesetzt.\par"
+                ),
+            ).latex,
+            descriptive_math(
+                "Weiter verwendbar bleiben die numerische Wertetabelle, der exakte "
+                "Bode-Verlauf und die bereits bestimmten Frequenzgangwerte.",
+                latex=(
+                    r"\noindent Weiter verwendbar bleiben die numerische "
+                    r"Wertetabelle, der exakte Bode-Verlauf und die bereits "
+                    r"bestimmten Frequenzgangwerte.\par"
+                ),
+            ).latex,
         )
     assert analysis.gain is not None
     assert analysis.initial_slope_db_per_decade is not None
