@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import QObject, Signal
 
 from klausurbotpro.application import (
+    StateSpaceAnalysisTarget,
     StateSpaceInputDraft,
     preview_matrix_dimensions,
     preview_structured_ode,
@@ -27,6 +28,7 @@ class StateSpacePresenter(QObject):
                 summary="Die Zustandsraumanalyse wurde nicht ausgeführt.",
                 diagnostics="\n".join(result.diagnostics),
                 failed=True,
+                analysis_target=draft.analysis_target,
             )
             self.state_changed.emit(self.state)
             return
@@ -50,12 +52,29 @@ class StateSpacePresenter(QObject):
                 f"rechte Halbebene: {counts[2]}"
             )
         )
-        exact = (
-            ", ".join(
-                value.canonical_text + (f" (m={multiplicity})" if multiplicity > 1 else "")
-                for value, multiplicity in result.exact_eigenvalues
+        exact_values = ", ".join(
+            value.canonical_text + (f" (m={multiplicity})" if multiplicity > 1 else "")
+            for value, multiplicity in result.exact_eigenvalues
+        )
+        exact_line = (
+            f"Exakte Eigenwerte: {exact_values}"
+            if exact_values
+            else (
+                "Eigenwerte parameterabhängig; für die Stabilitätsentscheidung wird das "
+                "Hurwitz-Kriterium verwendet."
+                if counts is None
+                else "Keine kompakte exakte Eigenwertdarstellung verfügbar."
             )
-            or "keine kompakte exakte Darstellung"
+        )
+        real_parts = "\n".join(
+            f"Re({item.eigenvalue_text})"
+            f"{' ≈' if item.approximate else ' ='} {item.real_part_text} {item.comparison}"
+            for item in result.real_part_checks
+        )
+        violations = "\n".join(
+            f"lambda={item.eigenvalue_text} verletzt das Kriterium Re(lambda) < 0."
+            for item in result.real_part_checks
+            if item.comparison != "< 0"
         )
         reduced = result.reduced_transfer_function
         raw = result.raw_transfer_function
@@ -64,11 +83,25 @@ class StateSpacePresenter(QObject):
             diagnostics = "\n".join(
                 item for item in (diagnostics, result.cancellation_report) if item
             )
+        stability_target = result.analysis_target is StateSpaceAnalysisTarget.STATE_STABILITY
+        stability_summary = (
+            "Charakteristisches Polynom: "
+            + (
+                result.characteristic_polynomial_text
+                if result.characteristic_polynomial
+                else ""
+            )
+            + f"\n{exact_line}\n{result.state_stability}"
+        )
         self.state = StateSpaceViewState(
             summary=(
-                f"Zustandsdimension: {model.state_dimension}\n"
-                f"Zustandsstabilität: {result.state_stability}\n"
-                f"G(s) = {reduced.canonical_text if reduced else 'nicht verfügbar'}"
+                stability_summary
+                if stability_target
+                else (
+                    f"Zustandsdimension: {model.state_dimension}\n"
+                    f"Zustandsstabilität: {result.state_stability}\n"
+                    f"G(s) = {reduced.canonical_text if reduced else 'nicht verfügbar'}"
+                )
             ),
             normalized_ode=normalized,
             matrices=(
@@ -87,36 +120,35 @@ class StateSpacePresenter(QObject):
                     f"d = {model.scalar_d.canonical_text}"
                 )
             ),
-            characteristic=(
-                "p_A(s) = "
-                + (
-                    result.characteristic_polynomial.canonical_text
-                    if result.characteristic_polynomial
-                    else ""
-                )
-            ),
+            characteristic="\n".join(result.determinant_steps),
             eigenvalues_stability=(
-                f"Exakte Eigenwerte: {exact}\n"
+                f"{exact_line}\n"
                 "Numerische Eigenwerte: "
                 f"{', '.join(result.numerical_eigenvalues) or 'parameterabhängig'}\n"
-                f"{count_text}\n{result.state_stability}"
+                f"{count_text}\n\n"
+                "Allgemeines Stabilitätskriterium:\n"
+                "A asymptotisch stabil genau dann, wenn für alle i gilt: Re(lambda_i) < 0.\n\n"
+                f"{real_parts}\n"
+                f"{violations}\n"
+                f"{result.state_stability}"
             ),
-            transfer_function=(
+            transfer_function=("" if stability_target else (
                 f"Rohe Übertragungsfunktion: {raw.canonical_text if raw else ''}\n"
                 f"Reduzierte Übertragungsfunktion: {reduced.canonical_text if reduced else ''}\n"
                 + "\n".join(result.transfer_details)
                 + "\n"
                 f"{result.cancellation_report}"
-            ),
+            )),
             checks="\n".join(
                 f"{'BESTANDEN' if item.passed else 'FEHLER'} – {item.name}: {item.explanation}"
-                for item in result.checks
+                for item in result.visible_checks
             ),
             worked_steps="\n".join(
                 f"{index}. {step}" for index, step in enumerate(result.worked_steps, 1)
             ),
             latex_source=result.latex_source,
             diagnostics=diagnostics or "Keine Diagnosen.",
+            analysis_target=result.analysis_target,
         )
         self.state_changed.emit(self.state)
 

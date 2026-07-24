@@ -139,9 +139,11 @@ from klausurbotpro.domain.standard_element_bode_contributions import (
 from klausurbotpro.domain.state_space_contracts import (
     ExactMatrix,
     StateSpaceAnalysisResult,
+    StateSpaceAnalysisTarget,
     StateSpaceCheck,
     StateSpaceInputDraft,
     StateSpaceModel,
+    StateSpaceRealPartCheck,
     StateSpaceStatus,
     StateSpaceTaskType,
 )
@@ -252,9 +254,11 @@ __all__ = [
     "COMPACT_FREQUENCY_TABLE_TARGET_SIZE",
     "run_time_domain_workflow",
     "StateSpaceAnalysisResult",
+    "StateSpaceAnalysisTarget",
     "StateSpaceCheck",
     "StateSpaceInputDraft",
     "StateSpaceModel",
+    "StateSpaceRealPartCheck",
     "StateSpaceStatus",
     "StateSpaceTaskType",
     "preview_matrix_dimensions",
