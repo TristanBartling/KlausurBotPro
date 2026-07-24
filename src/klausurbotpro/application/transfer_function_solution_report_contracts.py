@@ -36,14 +36,15 @@ class SolutionSectionKind(StrEnum):
     GIVEN = "given"
     TRANSFER_FUNCTION = "transfer_function"
     NUMERATOR_DENOMINATOR = "numerator_denominator"
-    REDUCTION = "reduction"
-    PREREQUISITES = "prerequisites"
-    DOMAIN_EXCLUSIONS = "domain_exclusions"
-    PARAMETER_SUBSTITUTIONS = "parameter_substitutions"
     ZEROS = "zeros"
     POLES = "poles"
     POLE_REAL_PARTS = "pole_real_parts"
     STABILITY = "stability"
+    DYNAMIC_BEHAVIOR = "dynamic_behavior"
+    REDUCTION = "reduction"
+    DOMAIN_EXCLUSIONS = "domain_exclusions"
+    PREREQUISITES = "prerequisites"
+    PARAMETER_SUBSTITUTIONS = "parameter_substitutions"
     SOURCES = "sources"
     WORKFLOW_NOTICES = "workflow_notices"
 
@@ -181,6 +182,18 @@ class ResultLine:
 
 
 @dataclass(frozen=True, slots=True)
+class ApproximationLine:
+    """One presentation-only numerical approximation of an exact result."""
+
+    label: str
+    value: ReportMathExpression
+
+    def __post_init__(self) -> None:
+        _require_text(self.label, "label")
+        _require_math(self.value, "value")
+
+
+@dataclass(frozen=True, slots=True)
 class OverrideLine:
     """Visible provenance for an active overridden workflow value."""
 
@@ -239,6 +252,7 @@ type SolutionLine = (
     EquationLine
     | TransformationLine
     | ResultLine
+    | ApproximationLine
     | ConditionLine
     | OverrideLine
     | WarningLine
@@ -249,6 +263,7 @@ _SOLUTION_LINE_TYPES = (
     EquationLine,
     TransformationLine,
     ResultLine,
+    ApproximationLine,
     ConditionLine,
     OverrideLine,
     WarningLine,
@@ -328,7 +343,7 @@ class ReportDiagnostic:
 class SolutionReportLimits:
     """Finite presentation limits; no process timeout is implied."""
 
-    max_sections: int = 13
+    max_sections: int = 14
     max_total_lines: int = 512
     max_lines_per_section: int = 128
     max_expression_length: int = 4096
@@ -411,6 +426,7 @@ def _condition_tuple(
 
 
 __all__ = [
+    "ApproximationLine",
     "ConditionLine",
     "EquationLine",
     "OverrideLine",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from klausurbotpro.application.transfer_function_solution_report_contracts import (
+    ApproximationLine,
     ConditionLine,
     EquationLine,
     OverrideLine,
@@ -36,6 +37,7 @@ _HEADINGS = {
     SolutionSectionKind.POLES: "Pole",
     SolutionSectionKind.POLE_REAL_PARTS: "Realteile der Pole",
     SolutionSectionKind.STABILITY: "Stabilität",
+    SolutionSectionKind.DYNAMIC_BEHAVIOR: "Dynamisches Verhalten",
     SolutionSectionKind.SOURCES: "Quellen",
     SolutionSectionKind.WORKFLOW_NOTICES: "Workflow-Hinweise",
 }
@@ -157,6 +159,10 @@ def _render_plain_line(
         root_label = _root_equation_label(section_kind, line)
         return equation if root_label is None else f"{root_label}: {equation}"
     if type(line) is ResultLine:
+        if section_kind is SolutionSectionKind.DYNAMIC_BEHAVIOR:
+            if line.label == "Aussage":
+                return line.exact_value.plaintext
+            return f"{line.label}: {line.exact_value.plaintext}"
         if line.label == "Stabilitätsaussage":
             return f"⇒ {line.exact_value.plaintext}"
         if (
@@ -176,6 +182,11 @@ def _render_plain_line(
         if line.multiplicity is not None:
             value += f"  (Multiplizität {line.multiplicity})"
         return value
+    if type(line) is ApproximationLine:
+        return (
+            f"{_plain_result_label(line.label)} ≈ "
+            f"{line.value.plaintext}"
+        )
     if type(line) is ConditionLine:
         if line.relation == "NOT_ALL_ZERO":
             values = ", ".join(
@@ -245,6 +256,13 @@ def _render_latex_line(
             f"\n{equation}"
         )
     if type(line) is ResultLine:
+        if section_kind is SolutionSectionKind.DYNAMIC_BEHAVIOR:
+            if line.label == "Aussage":
+                return _escape_latex_text(line.exact_value.plaintext)
+            return (
+                rf"\textit{{{_escape_latex_text(line.label)}:}} "
+                rf"{_escape_latex_text(line.exact_value.plaintext)}"
+            )
         if line.label == "Stabilitätsaussage":
             return (
                 rf"\[\Longrightarrow "
@@ -277,6 +295,11 @@ def _render_latex_line(
         return (
             rf"\[{_latex_result_label(line.label)} = "
             rf"{exact_latex}{approximation}{multiplicity}\]"
+        )
+    if type(line) is ApproximationLine:
+        return (
+            rf"\[{_latex_result_label(line.label)} \approx "
+            rf"{line.value.latex}\]"
         )
     if type(line) is ConditionLine:
         values = ", ".join(

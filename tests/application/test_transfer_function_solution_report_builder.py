@@ -61,7 +61,7 @@ def test_stable_first_order_report_is_complete_and_fixed_order() -> None:
         SolutionSectionKind
     )
     assert "-1" in _result_values(report, SolutionSectionKind.POLES)
-    assert "System ist E/A-stabil." in _result_values(
+    assert "Das System ist E/A-asymptotisch stabil." in _result_values(
         report,
         SolutionSectionKind.STABILITY,
     )

@@ -96,7 +96,7 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 
 **Status:** `UI_VERIFIED`
 
-**Zweck:** Erstellt eine rohe und reduzierte rationale Übertragungsfunktion und analysiert Nullstellen, Pole und E/A-Stabilität.
+**Zweck:** Erstellt eine rohe und reduzierte rationale Übertragungsfunktion und analysiert Nullstellen, Pole, E/A-Stabilität und eine sicher unterstützte qualitative Polinterpretation.
 
 **Navigation:** Startansicht bzw. Tab `Transferfunktion`.
 
@@ -115,9 +115,11 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 | `Aktiven Bericht kopieren` | Schaltfläche | — | Kopiert aktiven Bericht | Bericht vorhanden | Bei fehlender Ausgabe deaktiviert |
 | `Technische Details` | Umschalter | — | Zeigt technische Diagnose | Immer | Nicht mit Fachlösung verwechseln |
 
-**Ausgaben:** Stufenbaum `Parse`, `Raw-Transferfunktion`, `Reduktion`, `Wurzelanalyse`, `Stabilitätsanalyse`; Ergebnisfelder für Übertragungsfunktion, Nullstellen, Pole, Stabilität, Voraussetzungen und Definitionsausschlüsse; Plaintext- und LaTeX-Bericht.
+**Ausgaben:** Stufenbaum `Parse`, `Raw-Transferfunktion`, `Reduktion`, `Wurzelanalyse`, `Stabilitätsanalyse`; Ergebnisfelder für Übertragungsfunktion, Nullstellen, Pole, Stabilität, dynamisches Verhalten, Voraussetzungen und Definitionsausschlüsse; Plaintext- und LaTeX-Bericht. In der primären Ergebnisfolge stehen Polgleichung und exakte Pole vor den numerischen Polwerten. Numerische Real- und Imaginärteile werden nur für die Darstellung auf höchstens sechs signifikante Stellen gerundet; abschließende Nullen und numerisches `-0` entfallen. Exakte Ausdrücke bleiben unverändert. Die numerische Gegenprüfung ordnet Kandidaten unabhängig von ihrer Lieferreihenfolge und unter Beachtung der Vielfachheiten den exakten Wurzeln zu. Eine Näherungszeile entfällt, wenn sie gegenüber einem bereits exakten gaußschen ganzzahligen Pol keine zusätzliche Information liefert. Identische Workflow-Hinweise erscheinen im Hauptbericht nur einmal; die technischen Details bewahren die vollständigen Einträge.
 
-**Grenzen:** Rohe und reduzierte Modelle sind getrennt zu lesen. Eine erfolgreiche Kürzung kann interne Dynamik entfernen; der primäre Stabilitätsabschnitt ist E/A-bezogen. Ungelöste Parameter können statt einer definitiven Aussage ein unbestimmtes Ergebnis liefern.
+**Qualitative Polinterpretation:** `Das E/A-Verhalten enthält einen gedämpft schwingenden Anteil.` bedeutet, dass das asymptotisch stabile reduzierte E/A-Modell mindestens ein sicher erkanntes konjugiert-komplexes Polpaar mit negativem Realteil besitzt; bei zusätzlichen stabilen reellen Polen wird damit keine reine Zweipolschwingung behauptet. `Das E/A-Verhalten ist aperiodisch.` wird nur bei einem asymptotisch stabilen reduzierten E/A-Modell mit ausschließlich reellen Polen in der linken Halbebene ausgegeben. Bei instabilen, imaginärachsennahen oder unbestimmten Polstrukturen sowie unbelegten Parametern wird keine dieser stabilen Standardklassifikationen behauptet.
+
+**Grenzen:** Rohe und reduzierte Modelle sind getrennt zu lesen. Eine erfolgreiche Kürzung eines nichtkonstanten gemeinsamen Faktors in der Hauptvariablen kann interne Dynamik entfernen; nur für einen solchen strukturiert dokumentierten Polynomfaktor weist der Bericht darauf hin, dass sich Stabilität und qualitative Aussage auf die reduzierte E/A-Übertragungsfunktion beziehen. Reine Zahlenfaktoren, Vorzeichenwechsel und kanonische Skalierungen lösen diesen Hinweis nicht aus. Ungelöste Parameter können statt einer definitiven Aussage ein unbestimmtes Ergebnis liefern. Das Modul bestimmt keine allgemeinen Zeitkennwerte wie Dämpfungsmaß, Eigenkreisfrequenz, Überschwingweite oder Einschwingzeit und besitzt keinen zustandsbehafteten Zwei-System-Vergleich.
 
 ### Frequenzbereich
 
@@ -269,13 +271,13 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Akzeptierte Syntax:** Rationale sichere Syntax mit explizitem `*`, `^`/`**`, Klammern und Brüchen.
 - **Gültiges Beispiel:** `1/(s+1)`
 - **Bedienfolge:** 1. Eingabeform wählen. 2. Ausdruck eingeben. 3. `Berechnen` wählen. 4. Stufen, Ergebnis und Bericht lesen.
-- **Interne Interpretation:** Bewahrt rohe Struktur, bildet rohe TF, kürzt algebraisch, analysiert rohe/reduzierte Wurzeln; sichtbare Stabilitätsaussage nutzt das reduzierte E/A-Modell.
-- **Automatische Schritte:** Parse, Rohmodell, Reduktion, Wurzel- und Stabilitätsanalyse, Plaintext/LaTeX.
-- **Sichtbare Ergebnisse:** Rohe/reduzierte TF, Pole, Nullstellen, Stabilität, Voraussetzungen, Definitionsausschlüsse.
+- **Interne Interpretation:** Bewahrt rohe Struktur, bildet rohe TF, kürzt algebraisch, analysiert rohe/reduzierte Wurzeln; sichtbare Stabilitäts- und Dynamikaussagen nutzen das reduzierte E/A-Modell.
+- **Automatische Schritte:** Parse, Rohmodell, Reduktion, Wurzel- und Stabilitätsanalyse, sichere qualitative Polinterpretation, Plaintext/LaTeX.
+- **Sichtbare Ergebnisse:** Rohe/reduzierte TF, Nullstellen, Polgleichung, exakte Pole, kompakte numerische Polwerte, Stabilität, dynamisches Verhalten sowie nachrangig Voraussetzungen, Definitionsausschlüsse und Reduktionsprotokoll.
 - **Manuelle Vorarbeit:** Richtige offene/geschlossene Übertragungsfunktion aus der Aufgabe bilden.
 - **Manuelle Nacharbeit/Kontrolle:** Kürzungen und verborgene interne Modi gesondert beurteilen.
 - **Typische Fehlbedienung:** `2s` statt `2*s`; Parameter benutzt, aber nicht deklariert.
-- **Bekannte Grenze:** Interne und E/A-Stabilität sind hier kein auswählbares Paar; dafür `Stabilität` verwenden.
+- **Bekannte Grenze:** Interne und E/A-Stabilität sind hier kein auswählbares Paar; dafür `Stabilität` verwenden. Es gibt weder allgemeine Zeitkennwerte noch einen Zwei-System-Vergleich.
 - **Nachweis:** `ui/transfer_function_workspace.py`, `application/transfer_function_workflow_service.py`; `tests/ui/test_main_window.py`, `tests/application/test_transfer_function_workflow_service.py`.
 
 ### WF-02: Numerischer Frequenzgang an einem Punkt

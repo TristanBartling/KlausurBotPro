@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from klausurbotpro.application import (
+    ApproximationLine,
     ConditionLine,
     EquationLine,
     OverrideLine,
@@ -241,6 +242,10 @@ class TransferFunctionWorkspace(QWidget):
             (SolutionSectionKind.ZEROS, "Nullstellen:"),
             (SolutionSectionKind.POLES, "Pole:"),
             (SolutionSectionKind.STABILITY, "Stabilität:"),
+            (
+                SolutionSectionKind.DYNAMIC_BEHAVIOR,
+                "Dynamisches Verhalten:",
+            ),
             (SolutionSectionKind.PREREQUISITES, "Voraussetzungen:"),
             (SolutionSectionKind.DOMAIN_EXCLUSIONS, "Definitionsausschlüsse:"),
         )):
@@ -620,6 +625,10 @@ def _summary_line(line: object, section_kind: SolutionSectionKind) -> str:
             return f"{label}: {equation}"
         return equation
     if type(line) is ResultLine:
+        if section_kind is SolutionSectionKind.DYNAMIC_BEHAVIOR:
+            if line.label == "Aussage":
+                return line.exact_value.plaintext
+            return f"{line.label}: {line.exact_value.plaintext}"
         if line.label == "Stabilitätsaussage":
             return f"⇒ {line.exact_value.plaintext}"
         if (
@@ -631,6 +640,8 @@ def _summary_line(line: object, section_kind: SolutionSectionKind) -> str:
             f"{_summary_result_label(line.label)} = "
             f"{line.exact_value.plaintext}"
         )
+    if type(line) is ApproximationLine:
+        return f"{line.label} ≈ {line.value.plaintext}"
     if type(line) is ConditionLine:
         values = ", ".join(value.plaintext for value in line.expressions)
         if line.relation == "NOT_ALL_ZERO":
