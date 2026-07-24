@@ -36,7 +36,6 @@ from klausurbotpro.domain.stability_presentation import (
     display_math,
     format_parameter_region_plain,
     latex_additive_equation,
-    latex_conditions,
     latex_numerical_check,
     latex_parameter_region,
     paragraph,
@@ -276,6 +275,13 @@ def _build_rows(
                     _exact(denominator),
                     f"[{lower[0]}*{upper_next} - {upper[0]}*{lower_next}]/{lower[0]} = {value}",
                     column == 0,
+                    _routh_calculation_latex(
+                        lower[0],
+                        upper_next,
+                        upper[0],
+                        lower_next,
+                        denominator,
+                    ),
                 )
             )
         values.append(current)
@@ -293,6 +299,31 @@ def _build_rows(
         if special is not RouthSpecialCase.NONE:
             return tuple(rows), special
     return tuple(rows), RouthSpecialCase.NONE
+
+
+def _routh_calculation_latex(
+    lower_first: sp.Expr,
+    upper_next: sp.Expr,
+    upper_first: sp.Expr,
+    lower_next: sp.Expr,
+    denominator: sp.Expr,
+) -> str:
+    expanded_numerator = sp.expand(
+        lower_first * upper_next - upper_first * lower_next
+    )
+    numerator = (
+        sp.latex(lower_first)
+        + r"\cdot "
+        + sp.latex(upper_next)
+        + "-"
+        + sp.latex(upper_first)
+        + r"\cdot "
+        + sp.latex(lower_next)
+    )
+    return (
+        rf"\dfrac{{{numerator}}}{{{sp.latex(denominator)}}}"
+        + rf"=\dfrac{{{sp.latex(expanded_numerator)}}}{{{sp.latex(denominator)}}}"
+    )
 
 
 def _initial_row(power: int, values: list[sp.Expr], kind: RouthRowType, index: int) -> RouthRow:
@@ -606,55 +637,13 @@ def _latex(
             variable=canonical.input.variable,
         ),
         paragraph("Gesucht", _concept(canonical)),
-        paragraph(
-            "Hurwitz-Skriptkonvention",
-            "Bei einer Gegenkontrolle beginnt die erste Matrixzeile mit a_1, a_3, a_5, ...",
-        ),
     ]
     for result in results:
         if result.rows:
-            for row in result.rows:
-                blocks.append(paragraph("Routh-Zeile", row.power_label))
-                blocks.extend(
-                    latex_additive_equation(
-                        rf"r_{{{row.power},{index}}}", entry
-                    )
-                    for index, entry in enumerate(row.entries, 1)
-                )
-            recursive_cells = [cell for row in result.rows[2:] for cell in row.cells]
-            for cell in recursive_cells:
-                label = rf"r_{{{cell.row_index},{cell.column_index}}}"
-                if len(cell.raw_numerator.latex) > 75:
-                    helper = rf"Z_{{{cell.row_index},{cell.column_index}}}"
-                    blocks.append(paragraph("Routh-Rekursion", "Additive Zwischengröße:"))
-                    blocks.append(latex_additive_equation(helper, cell.raw_numerator))
-                    blocks.append(
-                        display_math(
-                            label
-                            + rf"=\frac{{{helper}}}{{{cell.raw_denominator.latex}}}"
-                        )
-                    )
-                    blocks.append(latex_additive_equation(label, cell.value))
-                else:
-                    blocks.append(
-                        display_math(
-                            r"\begin{aligned}"
-                            + label
-                            + rf"&=\frac{{{cell.raw_numerator.latex}}}"
-                            + rf"{{{cell.raw_denominator.latex}}}\\"
-                            + rf"&={cell.value.latex}"
-                            + r"\end{aligned}"
-                        )
-                    )
+            blocks.append(paragraph("Routh-Schema", "Kompakte klausurtaugliche Tabelle:"))
+            blocks.append(_latex_routh_table(result))
             blocks.append(paragraph("Stabilitätsbedingungen", "Erste Spalte strikt positiv:"))
-            blocks.append(
-                latex_conditions(
-                    tuple(
-                        item.expression
-                        for item in result.full_conditions[: len(result.first_column)]
-                    )
-                )
-            )
+            blocks.append(_latex_routh_conditions(result))
             blocks.append(paragraph("Parametergebiet", "Exaktes Ergebnis:"))
             blocks.append(
                 latex_parameter_region(
@@ -675,6 +664,56 @@ def _latex(
         blocks.append(paragraph("Warnung", notice))
     blocks.append(_latex_final_box(canonical, results))
     return "\n\n".join(blocks)
+
+
+def _latex_routh_table(result: RouthDegreeCaseResult) -> str:
+    columns = max((len(row.entries) for row in result.rows), default=0)
+    specification = "c|" + "c" * columns
+    lines: list[str] = []
+    for row_index, row in enumerate(result.rows):
+        entries = tuple(
+            _latex_routh_entry(row, row_index, column_index)
+            for column_index in range(columns)
+        )
+        lines.append(
+            rf"s^{{{row.power}}} & " + " & ".join(entries)
+        )
+    return display_math(
+        rf"\begin{{array}}{{{specification}}}"
+        + r"\\".join(lines)
+        + r"\end{array}"
+    )
+
+
+def _latex_routh_entry(
+    row: RouthRow,
+    row_index: int,
+    column_index: int,
+) -> str:
+    if column_index >= len(row.entries):
+        return "0"
+    if (
+        row_index == 2
+        and column_index == 0
+        and row.cells
+        and row.cells[0].calculation_latex
+    ):
+        return row.cells[0].calculation_latex
+    return row.entries[column_index].latex
+
+
+def _latex_routh_conditions(result: RouthDegreeCaseResult) -> str:
+    conditions: list[str] = []
+    for row_index, row in enumerate(result.rows):
+        if row_index == 2 and row.cells and row.cells[0].raw_denominator._as_sympy() != 1:
+            expression = (
+                rf"\dfrac{{{row.cells[0].raw_numerator.latex}}}"
+                rf"{{{row.cells[0].raw_denominator.latex}}}"
+            )
+        else:
+            expression = row.first_column.latex
+        conditions.append(expression + ">0")
+    return display_math(r",\quad ".join(conditions))
 
 
 def _latex_final_box(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import cast
 
 import sympy as sp
 
@@ -16,12 +17,16 @@ from klausurbotpro.domain.hurwitz_contracts import (
     NumericalCheckStatus,
     NumericalPoleCheck,
 )
-from klausurbotpro.domain.parameter_core import solve_parameter_conditions
+from klausurbotpro.domain.parameter_core import (
+    canonicalize_characteristic_polynomial,
+    solve_parameter_conditions,
+)
 from klausurbotpro.domain.parameter_core_contracts import (
     AnalysisTarget,
     AtomicParameterCondition,
     CancellationStatus,
     CanonicalCharacteristicPolynomial,
+    CharacteristicPolynomialInput,
     ConditionOrigin,
     DegreeCaseKind,
     ParameterConditionProblem,
@@ -29,6 +34,7 @@ from klausurbotpro.domain.parameter_core_contracts import (
     PolynomialRole,
     Relation,
     SolveStatus,
+    SourceProvenance,
 )
 from klausurbotpro.domain.stability_numeric import check_numeric_poles
 from klausurbotpro.domain.stability_presentation import (
@@ -69,6 +75,7 @@ def analyze_hurwitz(
             canonical.diagnostics,
         )
     results = tuple(_analyze_case(canonical, case) for case in canonical.degree_cases)
+    results = _complete_exact_internal_factorization(canonical, results)
     trusted = all(
         result.status not in (SolveStatus.INVALID_INPUT, SolveStatus.UNSUPPORTED)
         and not (
@@ -81,7 +88,7 @@ def analyze_hurwitz(
     statement = (
         _overall_statement(
             results,
-            _concept(canonical),
+            canonical,
             combined_region,
             canonical.input.decision_parameters,
         )
@@ -111,6 +118,212 @@ def analyze_hurwitz(
         _latex(canonical, results, notice) if trusted else "",
         tuple(item for result in results for item in result.diagnostics),
     )
+
+
+def _complete_exact_internal_factorization(
+    canonical: CanonicalCharacteristicPolynomial,
+    results: tuple[HurwitzDegreeCaseResult, ...],
+) -> tuple[HurwitzDegreeCaseResult, ...]:
+    cancellation = canonical.input.cancellation_report
+    if (
+        canonical.input.role is not PolynomialRole.RAW_CLOSED_LOOP_CHARACTERISTIC
+        or canonical.input.analysis_target
+        is not AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC
+        or cancellation is None
+        or cancellation.status is not CancellationStatus.FACTORS_REMOVED
+        or not cancellation.removed_factors
+        or len(results) != 1
+    ):
+        return results
+    variable = sp.Symbol(canonical.input.variable)
+    factor_expressions = tuple(
+        factor._as_sympy() for factor in cancellation.removed_factors
+    )
+    factor_conditions = tuple(
+        condition
+        for factor in factor_expressions
+        if (
+            condition := _stable_linear_factor_condition(
+                factor,
+                variable,
+                canonical.input.decision_parameters,
+            )
+        )
+        is not None
+    )
+    if len(factor_conditions) != len(factor_expressions):
+        return results
+    factor_product = sp.expand(sp.Mul(*factor_expressions))
+    try:
+        quotient, remainder = sp.div(
+            sp.Poly(canonical.expanded_polynomial._as_sympy(), variable),
+            sp.Poly(factor_product, variable),
+        )
+    except sp.PolynomialError:
+        return results
+    if not remainder.is_zero or quotient.degree() < 1:
+        return results
+    reduced_input = CharacteristicPolynomialInput(
+        _exact(quotient.as_expr()),
+        canonical.input.variable,
+        canonical.input.decision_parameters,
+        canonical.input.fixed_symbols,
+        canonical.input.assumptions,
+        canonical.input.exclusions,
+        PolynomialRole.DIRECT_CHARACTERISTIC_POLYNOMIAL,
+        AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC,
+        SourceProvenance(
+            "Exakte Faktorprovenienz",
+            canonical.input.provenance.source_reference,
+            "Verbleibender Nenner nach exakt protokollierter Kürzung",
+        ),
+    )
+    reduced = analyze_hurwitz(canonicalize_characteristic_polynomial(reduced_input))
+    if len(reduced.case_results) != 1:
+        return results
+    reduced_case = reduced.case_results[0]
+    if reduced_case.parameter_region.status is not SolveStatus.SOLVED_EXACT:
+        return results
+    try:
+        reduced_formula = sp.sympify(reduced_case.parameter_region.exact_text)
+    except (TypeError, ValueError):
+        return results
+    factor_relations = tuple(
+        sp.Gt(condition.expression._as_sympy(), 0)
+        for condition in factor_conditions
+    )
+    exact_formula = sp.And(reduced_formula, *factor_relations)
+    exact_text = reduced_case.parameter_region.exact_text + " & " + " & ".join(
+        f"({condition.expression.canonical_text} > 0)"
+        for condition in factor_conditions
+    )
+    control_points = _factorized_control_points(
+        reduced_case.parameter_region.control_points,
+        canonical.input.decision_parameters,
+        factor_relations,
+    )
+    exact_region = ParameterRegion(
+        SolveStatus.SOLVED_EXACT,
+        exact_text,
+        sp.latex(exact_formula),
+        x_domain=reduced_case.parameter_region.x_domain,
+        control_points=control_points,
+    )
+    positive_symbols = _positive_symbols(
+        canonical.input.assumptions + results[0].degree_case.guard,
+        canonical.input.exclusions,
+    )
+    factor_steps = tuple(
+        _condition_step(
+            label=f"Faktor {factor.canonical_text}",
+            origin=ConditionOrigin.CANCELLATION_FACTOR,
+            expression=condition.expression._as_sympy(),
+            parameters=canonical.input.decision_parameters,
+            assumptions=canonical.input.assumptions,
+            positive_symbols=positive_symbols,
+        )
+        for factor, condition in zip(
+            cancellation.removed_factors,
+            factor_conditions,
+            strict=True,
+        )
+    )
+    original = results[0]
+    factorized_necessary = tuple(
+        _resolved_by_factorization(item)
+        for item in original.necessary_condition_steps
+    )
+    factorized_sufficient = tuple(
+        _resolved_by_factorization(item)
+        for item in original.sufficient_condition_steps
+    )
+    numerical = _numeric_check(
+        original.degree_case,
+        canonical.input.decision_parameters,
+        exact_region,
+    )
+    diagnostics = (
+        ("SYMBOLIC_NUMERIC_MISMATCH",)
+        if numerical is not None
+        and numerical.status is NumericalCheckStatus.INCONSISTENT
+        else ()
+    )
+    completed = replace(
+        original,
+        solver_conditions=(*reduced_case.solver_conditions, *factor_conditions),
+        necessary_condition_steps=factorized_necessary,
+        sufficient_condition_steps=factorized_sufficient,
+        minimal_condition_steps=(*reduced_case.minimal_condition_steps, *factor_steps),
+        parameter_region=exact_region,
+        numerical_check=numerical,
+        statement=_case_statement(
+            original.degree_case.degree,
+            exact_region,
+            _concept(canonical),
+            canonical.input.decision_parameters,
+        ),
+        status=SolveStatus.SOLVED_EXACT,
+        diagnostics=diagnostics,
+    )
+    return (completed,)
+
+
+def _resolved_by_factorization(
+    step: HurwitzConditionStep,
+) -> HurwitzConditionStep:
+    if step.status is HurwitzConditionStatus.ALREADY_SATISFIED:
+        return step
+    return replace(
+        step,
+        solved_text="",
+        solved_latex="",
+        status=HurwitzConditionStatus.RESOLVED_BY_FACTORIZATION,
+        reference_label="exakte Faktorzerlegung",
+        reason=(
+            "Die Bedingung ist durch die exakte Stabilität des verbleibenden "
+            "Nenners und aller protokollierten Faktoren abgedeckt."
+        ),
+    )
+
+
+def _stable_linear_factor_condition(
+    factor: sp.Expr,
+    variable: sp.Symbol,
+    parameters: tuple[str, ...],
+) -> AtomicParameterCondition | None:
+    try:
+        polynomial = sp.Poly(sp.expand(factor), variable)
+    except sp.PolynomialError:
+        return None
+    if polynomial.degree() != 1 or sp.simplify(polynomial.LC() - 1) != 0:
+        return None
+    constant = sp.simplify(polynomial.TC())
+    declared = {sp.Symbol(name) for name in parameters}
+    if not constant.free_symbols <= declared:
+        return None
+    return AtomicParameterCondition(
+        _exact(constant),
+        Relation.GT,
+        ConditionOrigin.CANCELLATION_FACTOR,
+        parameters,
+        f"Faktor {sp.sstr(factor)} stabil",
+    )
+
+
+def _factorized_control_points(
+    points: tuple[tuple[str, ...], ...],
+    parameters: tuple[str, ...],
+    relations: tuple[sp.Rel, ...],
+) -> tuple[tuple[str, ...], ...]:
+    valid: list[tuple[str, ...]] = []
+    for point in points:
+        substitutions = {
+            sp.Symbol(name): sp.sympify(value)
+            for name, value in zip(parameters, point, strict=True)
+        }
+        if all(bool(relation.subs(substitutions)) for relation in relations):
+            valid.append(point)
+    return tuple(valid)
 
 
 def _analyze_case(
@@ -310,12 +523,6 @@ def _condition_step(
     relevant = tuple(
         name for name in parameters if sp.Symbol(name) in solved_expression.free_symbols
     )
-    relevant_symbols = {sp.Symbol(name) for name in relevant}
-    relevant_assumptions = tuple(
-        item
-        for item in assumptions
-        if item.expression._as_sympy().free_symbols <= relevant_symbols
-    )
     condition = AtomicParameterCondition(
         _exact(solved_expression),
         Relation.GT,
@@ -324,12 +531,15 @@ def _condition_step(
         f"{label} > 0",
     )
     region = solve_parameter_conditions(
-        ParameterConditionProblem(relevant, (condition,), relevant_assumptions)
+        ParameterConditionProblem(relevant, (condition,))
     )
     if region.status is SolveStatus.SOLVED_EXACT:
         status = HurwitzConditionStatus.ACTIVE
         solved_text = format_parameter_region_plain(region, relevant)
-        solved_latex = _region_latex_body(region, relevant)
+        solved_latex = (
+            _affine_condition_latex(solved_expression, relevant)
+            or _region_latex_body(region, relevant)
+        )
         reason = ""
     elif region.status is SolveStatus.EMPTY:
         status = HurwitzConditionStatus.CONTRADICTORY
@@ -365,6 +575,44 @@ def _region_latex_body(
         body = body.removeprefix(r"\begin{aligned}").removesuffix(r"\end{aligned}")
         body = body.replace(r"\\", r",\quad ").replace("&", "")
     return body
+
+
+def _affine_condition_latex(
+    expression: sp.Expr,
+    parameters: tuple[str, ...],
+) -> str:
+    bound = _affine_bound(expression, parameters)
+    if bound is None:
+        return ""
+    name, direction, value = bound
+    relation = ">" if direction == "lower" else "<"
+    return rf"{_latex_parameter(name)} {relation} {_latex_factored_scalar(value)}"
+
+
+def _latex_parameter(name: str) -> str:
+    if "_" not in name:
+        return name
+    base, suffix = name.split("_", 1)
+    return rf"{base}_{{{suffix}}}"
+
+
+def _latex_factored_scalar(value: sp.Expr) -> str:
+    coefficient, remainder = sp.factor(value).as_coeff_Mul()
+    if remainder == 1 or not isinstance(coefficient, sp.Rational):
+        return cast(str, sp.latex(value))
+    sign = "-" if coefficient < 0 else ""
+    magnitude = abs(coefficient)
+    if magnitude == 1:
+        coefficient_latex = ""
+    elif magnitude.q == 1:
+        coefficient_latex = str(magnitude.p)
+    else:
+        coefficient_latex = rf"\frac{{{magnitude.p}}}{{{magnitude.q}}}"
+    remainder_latex = cast(str, sp.latex(remainder))
+    if remainder.is_Add:
+        remainder_latex = r"\left(" + remainder_latex + r"\right)"
+    separator = r"\," if coefficient_latex else ""
+    return sign + coefficient_latex + separator + remainder_latex
 
 
 def _classify_condition_steps(
@@ -671,6 +919,8 @@ def _case_statement(
     if region.status is SolveStatus.EMPTY:
         return f"Grad {degree}: keine zulässige Einstellung für {concept}."
     if region.status is SolveStatus.SOLVED_EXACT:
+        if not parameters:
+            return f"Grad {degree}: {concept} ist nachgewiesen."
         return (
             f"Grad {degree}: {concept} genau für "
             f"{format_parameter_region_plain(region, parameters)}."
@@ -686,15 +936,18 @@ def _case_statement(
 
 def _overall_statement(
     results: tuple[HurwitzDegreeCaseResult, ...],
-    concept: str,
+    canonical: CanonicalCharacteristicPolynomial,
     combined_region: str,
     parameters: tuple[str, ...],
 ) -> str:
+    concept = _concept(canonical)
     solved = tuple(
         item.parameter_region
         for item in results
         if item.parameter_region.status is SolveStatus.SOLVED_EXACT
     )
+    if not parameters and len(solved) == len(results):
+        return _stable_latex_text(canonical)
     if combined_region and len(solved) == 1:
         return f"{concept} genau für {format_parameter_region_plain(solved[0], parameters)}."
     statements = " ".join(result.statement for result in results)
@@ -826,7 +1079,7 @@ def _worked_steps(
             item.solved_text or f"{item.expression.canonical_text}>0"
             for item in result.minimal_condition_steps
         ) or "keine zusätzliche aktive Bedingung"
-        region = format_parameter_region_plain(
+        region = _hurwitz_region_plain(
             result.parameter_region, canonical.input.decision_parameters
         )
         steps.extend(
@@ -853,6 +1106,9 @@ def _condition_step_text(step: HurwitzConditionStep) -> str:
         HurwitzConditionStatus.ALREADY_SATISFIED: "bereits erfüllt",
         HurwitzConditionStatus.REDUNDANT_EQUIVALENT: "äquivalent abgedeckt",
         HurwitzConditionStatus.REDUNDANT_WEAKER: "als schwächere Grenze redundant",
+        HurwitzConditionStatus.RESOLVED_BY_FACTORIZATION: (
+            "durch exakte Faktorzerlegung abgedeckt"
+        ),
         HurwitzConditionStatus.CONTRADICTORY: "widersprüchlich",
         HurwitzConditionStatus.UNRESOLVED_SAFE: "sicher ungelöst und weiterhin aktiv",
     }[step.status]
@@ -982,12 +1238,7 @@ def _latex(
         blocks.append(
             paragraph("Schnittmenge", "Minimales Bedingungssystem und exaktes Gebiet:")
         )
-        blocks.append(
-            latex_parameter_region(
-                result.parameter_region,
-                canonical.input.decision_parameters,
-            )
-        )
+        blocks.append(_latex_case_region(canonical, result))
         blocks.append(latex_numerical_check(result.numerical_check))
     if notice:
         blocks.append(paragraph("Warnung", notice))
@@ -1002,6 +1253,9 @@ def _latex_condition_step(step: HurwitzConditionStep) -> str:
         HurwitzConditionStatus.ALREADY_SATISFIED: "bereits erfüllt",
         HurwitzConditionStatus.REDUNDANT_EQUIVALENT: "bereits äquivalent abgedeckt",
         HurwitzConditionStatus.REDUNDANT_WEAKER: "schwächer und redundant",
+        HurwitzConditionStatus.RESOLVED_BY_FACTORIZATION: (
+            "durch exakte Faktorzerlegung abgedeckt"
+        ),
         HurwitzConditionStatus.CONTRADICTORY: "widersprüchlich",
         HurwitzConditionStatus.UNRESOLVED_SAFE: "sicher ungelöst; bleibt aktiv",
     }[step.status]
@@ -1051,8 +1305,51 @@ def _reduced_condition_text(steps: tuple[HurwitzConditionStep, ...]) -> str:
             HurwitzConditionStatus.REDUNDANT_WEAKER,
         )
     )
+    factorized = tuple(
+        item.label
+        for item in steps
+        if item.status is HurwitzConditionStatus.RESOLVED_BY_FACTORIZATION
+    )
     text = "Aktiv: " + (", ".join(active) or "keine zusätzliche Bedingung")
-    return text + (". Redundant: " + ", ".join(redundant) if redundant else "")
+    if redundant:
+        text += ". Redundant: " + ", ".join(redundant)
+    if factorized:
+        text += ". Durch exakte Faktorzerlegung abgedeckt: " + ", ".join(factorized)
+    return text
+
+
+def _hurwitz_region_plain(
+    region: ParameterRegion,
+    parameters: tuple[str, ...],
+) -> str:
+    if not parameters and region.status is SolveStatus.SOLVED_EXACT:
+        return "Keine zusätzlichen Parameterbedingungen."
+    return format_parameter_region_plain(region, parameters)
+
+
+def _latex_case_region(
+    canonical: CanonicalCharacteristicPolynomial,
+    result: HurwitzDegreeCaseResult,
+) -> str:
+    if (
+        not canonical.input.decision_parameters
+        and result.parameter_region.status is SolveStatus.SOLVED_EXACT
+    ):
+        return paragraph(
+            "Parameterbedingungen",
+            "Keine zusätzlichen Parameterbedingungen.",
+        )
+    active = tuple(
+        item
+        for item in result.minimal_condition_steps
+        if item.status is HurwitzConditionStatus.ACTIVE and item.solved_latex
+    )
+    if len(active) == 1:
+        return display_math(active[0].solved_latex)
+    return latex_parameter_region(
+        result.parameter_region,
+        canonical.input.decision_parameters,
+    )
 
 
 def _latex_final_box(
@@ -1061,6 +1358,14 @@ def _latex_final_box(
 ) -> str:
     if canonical.input.decision_parameters:
         if len(results) == 1:
+            active = tuple(
+                item
+                for item in results[0].minimal_condition_steps
+                if item.status is HurwitzConditionStatus.ACTIVE
+                and item.solved_latex
+            )
+            if len(active) == 1:
+                return display_math(r"\boxed{" + active[0].solved_latex + "}")
             return latex_parameter_region(
                 results[0].parameter_region,
                 canonical.input.decision_parameters,

@@ -201,7 +201,7 @@ def _hurwitz_case(
         _condition_plain(condition) for condition in item.sufficient_condition_steps
     )
     reduced_sufficient = _reduced_plain(item.sufficient_condition_steps)
-    region = format_stability_region(item.parameter_region, parameters)
+    region = _hurwitz_region_text(item, parameters)
     return "\n".join(
         (
             "Charakteristisches Polynom",
@@ -243,6 +243,9 @@ def _condition_plain(item: HurwitzConditionStep) -> str:
         HurwitzConditionStatus.ALREADY_SATISFIED: "bereits erfüllt",
         HurwitzConditionStatus.REDUNDANT_EQUIVALENT: "äquivalent abgedeckt",
         HurwitzConditionStatus.REDUNDANT_WEAKER: "schwächer und redundant",
+        HurwitzConditionStatus.RESOLVED_BY_FACTORIZATION: (
+            "durch exakte Faktorzerlegung abgedeckt"
+        ),
         HurwitzConditionStatus.CONTRADICTORY: "widersprüchlich",
         HurwitzConditionStatus.UNRESOLVED_SAFE: "sicher ungelöst; bleibt aktiv",
     }[item.status]
@@ -267,7 +270,7 @@ def _hurwitz_region(
         condition.solved_text or f"{condition.expression.canonical_text} > 0"
         for condition in item.minimal_condition_steps
     ) or "Keine zusätzliche aktive Bedingung."
-    region = format_stability_region(item.parameter_region, parameters)
+    region = _hurwitz_region_text(item, parameters)
     return "\n".join(
         (
             "Aktives minimales Bedingungssystem",
@@ -291,7 +294,7 @@ def _hurwitz_short(
 ) -> str:
     necessary = _reduced_plain(item.necessary_condition_steps)
     sufficient = _reduced_plain(item.sufficient_condition_steps)
-    region = format_stability_region(item.parameter_region, parameters)
+    region = _hurwitz_region_text(item, parameters)
     check = (
         _check_status(item.numerical_check.status.value)
         if item.numerical_check is not None
@@ -311,6 +314,15 @@ def _hurwitz_short(
             f"Numerische Kontrolle (nachrangig): {check}",
         )
     )
+
+
+def _hurwitz_region_text(
+    item: HurwitzDegreeCaseResult,
+    parameters: tuple[str, ...],
+) -> str:
+    if not parameters and item.parameter_region.status.value == "solved_exact":
+        return "Keine zusätzlichen Parameterbedingungen."
+    return format_stability_region(item.parameter_region, parameters)
 
 
 def _routh_case(item: object) -> str:

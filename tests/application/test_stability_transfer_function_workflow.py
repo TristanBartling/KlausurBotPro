@@ -89,7 +89,8 @@ def test_internal_variant_keeps_raw_quartic_and_reports_full_conditions() -> Non
     ).is_zero
     case = result.analysis.case_results[0]
     assert len(case.full_conditions) == 9
-    assert case.parameter_region.status is SolveStatus.PARTIALLY_SOLVED_SAFE
+    assert case.parameter_region.status is SolveStatus.SOLVED_EXACT
+    assert "K > 0" in case.parameter_region.exact_text
     assert "roher Nenner" in str(result.source_steps)
     assert "K + s" in str(result.source_steps)
 

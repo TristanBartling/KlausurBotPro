@@ -22,6 +22,7 @@ class HurwitzConditionStatus(StrEnum):
     ALREADY_SATISFIED = "already_satisfied"
     REDUNDANT_EQUIVALENT = "redundant_equivalent"
     REDUNDANT_WEAKER = "redundant_weaker"
+    RESOLVED_BY_FACTORIZATION = "resolved_by_factorization"
     CONTRADICTORY = "contradictory"
     UNRESOLVED_SAFE = "unresolved_safe"
 

@@ -172,7 +172,7 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 | `Hurwitz analysieren` bzw. `Routh analysieren`, `Zurücksetzen`, `LaTeX kopieren` | Schaltflächen | — | Start/Reset/Kopieren | Nicht laufend bzw. LaTeX vorhanden | Bei nicht gelöstem Sonderfall kein kopierbares LaTeX |
 | Ergebnis-Tabs | Tabs | Übersicht, Gradfälle, `Hurwitz-Bedingungen und Rechenweg`, Routh, Bedingungen/Bereich, `Kurzlösung`, Worked Steps, LaTeX, Diagnosen | Wählt Ausgabe | Verfahrensabhängig | Nicht verwendetes Verfahren wird ausgeblendet |
 
-**Ausgaben:** Kanonisches Polynom und Gradfälle, bei Hurwitz getrennte notwendige Koeffizienten- und hinreichende Determinantenbedingungen, Redundanzmarkierungen, minimales Bedingungssystem, Schnittmenge und exaktes Gebiet; alternativ Routh-Schema, numerische Kontrolle, Worked Steps, LaTeX und Diagnosen. Die Hurwitz-Kurzlösung nennt zuerst notwendige Bedingungen, dann hinreichende Zusatzbedingungen und das exakte Gebiet; die numerische Kontrolle folgt nachrangig.
+**Ausgaben:** Kanonisches Polynom und Gradfälle, bei Hurwitz getrennte notwendige Koeffizienten- und hinreichende Determinantenbedingungen, Redundanzmarkierungen, minimales Bedingungssystem, Schnittmenge und exaktes Gebiet; alternativ ein kompaktes Routh-Schema als zusammenhängende LaTeX-Tabelle, numerische Kontrolle, Worked Steps, LaTeX und Diagnosen. Die Hurwitz-Kurzlösung nennt zuerst notwendige Bedingungen, dann hinreichende Zusatzbedingungen und das exakte Gebiet; die numerische Kontrolle folgt nachrangig. Parameterfreie Hurwitz-Fälle zeigen `Keine zusätzlichen Parameterbedingungen.` statt einer CAS-Wahrheitskonstante.
 
 **Grenzen:** Höchstens zwei Entscheidungsparameter. Direkte Polynomeingabe bildet keinen Regelkreis. Bei Führungsübertragungsfunktion wählt `Interne asymptotische Stabilität` den rohen Nenner, `E/A-asymptotische Stabilität` den reduzierten Nenner. Stabilitätsgrenzen sind strikt offen. Die Redundanzklassifikation beweist nur positive Konstanten, symbolische Gleichheit, sicher positive Proportionalität und unterstützte affine stärkere Grenzen; nicht sicher beweisbare Fälle bleiben aktiv oder werden als sicher ungelöst gekennzeichnet.
 
@@ -329,7 +329,7 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Bedienfolge:** 1. Eingabeart/Verfahren wählen. 2. Felder ausfüllen. 3. `Hurwitz analysieren`.
 - **Interne Interpretation:** Kanonisiert Koeffizienten und Gradfälle unter gewählter Semantik.
 - **Automatische Schritte:** Koeffizientenvergleich, notwendige Bedingungen mit Einsetzung und Lösung, sichere Redundanzklassifikation, Hurwitz-Matrix, hinreichende Determinantenbedingungen, minimales Bedingungssystem, Schnittmenge, exaktes Gebiet und numerische Kontrolle.
-- **Sichtbare Ergebnisse:** Für das Beispiel zunächst `K_P > 0`, dann `20-K_P > 0 ⇔ K_P < 20` und als primäres exaktes Ergebnis strikt `0 < K_P < 20`; Matrix und Determinanten bleiben im Rechenweg sichtbar.
+- **Sichtbare Ergebnisse:** Für das Beispiel zunächst `K_P > 0`, dann `20-K_P > 0 ⇔ K_P < 20` und als primäres exaktes Ergebnis strikt `0 < K_P < 20`; Matrix und Determinanten bleiben im Rechenweg sichtbar. Bei positiven Voraussetzungen werden diese unter `Voraussetzungen` dokumentiert, aber nicht unnötig in der primären Endbox wiederholt; im quartischen Referenzfall lautet sie nur `TI > 9*T1/2`.
 - **Manuelle Vorarbeit:** Charakteristisches Polynom korrekt herleiten.
 - **Manuelle Nacharbeit/Kontrolle:** Gradwechsel und Annahmen gegen Aufgabe prüfen.
 - **Typische Fehlbedienung:** Falsche Polynomrolle oder falsches Analyseziel.
@@ -348,7 +348,7 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Bedienfolge:** 1. `Routh` wählen. 2. Eingabe setzen. 3. `Routh analysieren`.
 - **Interne Interpretation:** Erstes-Spalten-Kriterium und Vorzeichenwechsel auf kanonischem Polynom.
 - **Automatische Schritte:** Schema, Zellableitungen, Bedingungen, numerische RHP-Kontrolle.
-- **Sichtbare Ergebnisse:** Schema, `(20-K_P)/4`, Bereich und Polzahlen.
+- **Sichtbare Ergebnisse:** Das Haupt-LaTeX zeigt das Routh-Schema kompakt als eine Tabelle mit den Zeilen `s^n` bis `s^0`, danach die strikt positive erste Spalte, den Bereich und die Polzahlen. Interne Zellindizes wie `r_{i,j}` bleiben aus dem Hauptbericht entfernt; Worked Steps bewahren die nachvollziehbare Rekursion. Für das Beispiel bleibt das Endgebiet strikt `0 < K_P < 20`.
 - **Manuelle Vorarbeit:** Polynom herleiten.
 - **Manuelle Nacharbeit/Kontrolle:** Nullzeilen-/Nullspalten-Sonderfall fachlich bearbeiten, falls Bericht unvollständig.
 - **Typische Fehlbedienung:** Routh-RHP-Polzahl als E/A-Aussage lesen, obwohl rohes internes Polynom gewählt wurde.
@@ -365,13 +365,13 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Akzeptierte Syntax:** Rationale Syntax wie WF-01.
 - **Gültiges Beispiel:** `(s+1)/(s+2)`.
 - **Bedienfolge:** 1. Eingabeart wechseln. 2. TF eingeben. 3. Analyseziel wählen. 4. Verfahren starten.
-- **Interne Interpretation:** Intern = roher Nenner; E/A = reduzierter Nenner; gemeinsame Faktoren werden berichtet. In der Kursnotation bezeichnet `Z(s)` den Zähler und `N(s)` den Nenner. Roh- und reduzierte Größen werden als `Z_roh(s)`, `N_roh(s)`, `Z_red(s)` und `N_red(s)` ausgewiesen.
+- **Interne Interpretation:** Intern = roher Nenner; E/A = reduzierter Nenner; gemeinsame Faktoren werden berichtet. In der Kursnotation bezeichnet `Z(s)` den Zähler und `N(s)` den Nenner. Roh- und reduzierte Größen werden als `Z_roh(s)`, `N_roh(s)`, `Z_red(s)` und `N_red(s)` ausgewiesen. Bei exakt protokollierten, sicher analysierbaren linearen Faktoren wird die interne Region als Schnitt aus der Stabilität des verbleibenden Nenners und der Faktorbedingung geschlossen; für den entfernten Faktor `s+K` erscheint ausdrücklich `K > 0`.
 - **Automatische Schritte:** TF-Vorbereitung, Kürzung, Nennerauswahl, Stabilitätsworkflow.
 - **Sichtbare Ergebnisse:** Roh-/Reduktionsschritte, Kürzungsprotokoll, ausdrücklich gewählter roher oder reduzierter Nenner als Analyseobjekt, bei Hurwitz getrennte notwendige/hinreichende Bedingungen und exaktes Gebiet, sonst Routh-Schema und Bereich.
 - **Manuelle Vorarbeit:** Richtige Führungsübertragungsfunktion bilden.
 - **Manuelle Nacharbeit/Kontrolle:** Beide Ziele getrennt auswerten, wenn interne Modi relevant sind.
 - **Typische Fehlbedienung:** `Zustandsstabilität` bei TF-Eingabe wählen.
-- **Bekannte Grenze:** Nicht-rationale Eingabe und Zustandsziel werden abgelehnt. Das Gebiet des reduzierten E/A-Nenners beweist keine interne Stabilität; ein entfernter Modus bleibt im Kürzungsprotokoll sichtbar.
+- **Bekannte Grenze:** Nicht-rationale Eingabe und Zustandsziel werden abgelehnt. Das Gebiet des reduzierten E/A-Nenners beweist allein keine interne Stabilität; ein entfernter Modus bleibt im Kürzungsprotokoll sichtbar. Nur exakt bekannte, monische lineare Faktoren mit sicher formulierbarer Stabilitätsbedingung werden automatisch ergänzt. Bei anderen entfernten Faktoren bleibt die interne Region ehrlich teilweise gelöst.
 - **Nachweis:** `ui/stability_workspace.py`, `application/stability_workflow.py`; `tests/application/test_stability_transfer_function_workflow.py`, `tests/ui/test_stability_presenter.py`.
 
 ### WF-07: Direkte Laplace-Transformation
