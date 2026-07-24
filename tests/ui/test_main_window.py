@@ -89,7 +89,7 @@ def test_real_common_end_to_end_offscreen() -> None:
             if kind.value == "poles"
         )
     ].toPlainText()
-    assert "System ist E/A-stabil." in window.workspace.summary_edits[
+    assert "Das System ist E/A-asymptotisch stabil." in window.workspace.summary_edits[
         next(
             kind
             for kind in window.workspace.summary_edits

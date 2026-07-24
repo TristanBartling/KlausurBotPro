@@ -214,7 +214,10 @@ def test_renderers_include_every_structured_equation_and_result() -> None:
                 assert line.right.latex in latex
             elif type(line) is ResultLine:
                 assert line.exact_value.plaintext in plaintext
-                assert line.exact_value.latex in latex
+                if section.kind is SolutionSectionKind.DYNAMIC_BEHAVIOR:
+                    assert line.exact_value.plaintext in latex
+                else:
+                    assert line.exact_value.latex in latex
 
 
 def test_override_reason_is_safely_escaped_in_both_formats() -> None:
@@ -427,7 +430,10 @@ def test_parameter_substitution_shows_existing_specialized_transfer_value() -> N
     ) in latex
     assert r"\[p_{1} = -5" in latex
     assert r"\operatorname{Re}(p_{1}) = -5" in latex
-    assert r"\Longrightarrow \boxed{\mbox{System ist E/A-stabil.}}" in latex
+    assert (
+        r"\Longrightarrow "
+        r"\boxed{\mbox{Das System ist E/A-asymptotisch stabil.}}"
+    ) in latex
 
 
 def test_complex_poles_use_control_engineering_j_in_latex() -> None:

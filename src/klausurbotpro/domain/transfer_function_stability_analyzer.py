@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import sympy as sp
+
 from klausurbotpro.domain._cancelled_location_stability import (
     analyze_cancelled_locations,
+)
+from klausurbotpro.domain._exact_polynomial_root_solver import (
+    exact_root_as_sympy,
 )
 from klausurbotpro.domain._exact_real_part_classifier import (
     RealPartClassificationLimitError,
@@ -24,10 +29,14 @@ from klausurbotpro.domain.diagnostics import (
 from klausurbotpro.domain.root_analysis_contracts import (
     NumericalRootEstimate,
     PolynomialRootStatus,
+    RootOccurrence,
     TransferFunctionRootAnalysisResult,
 )
 from klausurbotpro.domain.stability_analysis_contracts import (
     CancelledLocationNotice,
+    PoleDynamicsClassification,
+    PoleDynamicsInterpretation,
+    PoleDynamicsModelBasis,
     PoleStabilityContribution,
     PoleStabilityContributionKind,
     RealPartSign,
@@ -41,6 +50,16 @@ from klausurbotpro.domain.stability_analysis_contracts import (
 
 _RESOURCE_ERRORS = (MemoryError, RecursionError, OverflowError)
 _DEFAULT_LIMITS = StabilityAnalysisLimits()
+_UNCLASSIFIED_DYNAMICS = PoleDynamicsInterpretation(
+    PoleDynamicsClassification.UNCLASSIFIED,
+    "Keine sichere qualitative Standardaussage im unterstützten Umfang.",
+    (
+        "Die vorhandene E/A-Polstruktur erfüllt keine sicher unterstützte "
+        "asymptotisch stabile Standardklassifikation."
+    ),
+    PoleDynamicsModelBasis.SAFELY_UNCLASSIFIED,
+    False,
+)
 _SOURCE_REFERENCES = (
     StabilitySourceReference(
         document_name="skript.pdf",
@@ -290,12 +309,14 @@ class TransferFunctionStabilityAnalyzer:
         notices: tuple[CancelledLocationNotice, ...],
         diagnostics: tuple[Diagnostic, ...],
     ) -> TransferFunctionStabilityAnalysisResult:
+        pole_dynamics = _interpret_pole_dynamics(root_analysis, status)
         return TransferFunctionStabilityAnalysisResult._create(
             root_analysis=root_analysis,
             status=status,
             pole_contributions=contributions,
             cancelled_location_notices=notices,
             retained_domain_exclusions=root_analysis.retained_domain_exclusions,
+            pole_dynamics=pole_dynamics,
             source_references=_SOURCE_REFERENCES,
             diagnostics=diagnostics,
         )
@@ -312,6 +333,7 @@ class TransferFunctionStabilityAnalyzer:
         return TransferFunctionStabilityAnalysisResult._create(
             root_analysis=root_analysis,
             status=None,
+            pole_dynamics=_UNCLASSIFIED_DYNAMICS,
             diagnostics=(
                 Diagnostic(
                     DiagnosticSeverity.ERROR,
@@ -402,6 +424,84 @@ def _numeric_contradiction(
     return (sign is RealPartSign.NEGATIVE and value > 0) or (
         sign is RealPartSign.POSITIVE and value < 0
     )
+
+
+def _interpret_pole_dynamics(
+    root_analysis: TransferFunctionRootAnalysisResult,
+    status: StabilityStatus,
+) -> PoleDynamicsInterpretation:
+    """Classify only a complete, asymptotically stable reduced E/A pole set."""
+
+    poles = root_analysis.reduced_poles
+    if (
+        status is not StabilityStatus.STABLE
+        or poles is None
+        or poles.status is not PolynomialRootStatus.COMPLETE
+        or not poles.roots
+    ):
+        return _UNCLASSIFIED_DYNAMICS
+
+    exact_poles = tuple(exact_root_as_sympy(root.value) for root in poles.roots)
+    real_flags = tuple(value.is_real for value in exact_poles)
+    if any(flag is None for flag in real_flags):
+        return _UNCLASSIFIED_DYNAMICS
+    if all(flag is True for flag in real_flags):
+        return PoleDynamicsInterpretation(
+            PoleDynamicsClassification.APERIODIC,
+            "Das E/A-Verhalten ist aperiodisch.",
+            (
+                "Alle E/A-Pole sind reell und liegen in der linken Halbebene; "
+                "es entsteht kein schwingender Polanteil."
+            ),
+            PoleDynamicsModelBasis.REDUCED_EA_TRANSFER_FUNCTION,
+            True,
+        )
+    if _has_only_confirmed_nonreal_pairs(poles.roots, exact_poles, real_flags):
+        return PoleDynamicsInterpretation(
+            PoleDynamicsClassification.DAMPED_OSCILLATORY_COMPONENT,
+            (
+                "Das E/A-Verhalten enthält einen gedämpft schwingenden "
+                "Anteil."
+            ),
+            (
+                "Ein konjugiert-komplexes Polpaar mit negativem Realteil "
+                "erzeugt einen abklingenden Schwingungsanteil."
+            ),
+            PoleDynamicsModelBasis.REDUCED_EA_TRANSFER_FUNCTION,
+            True,
+        )
+    return _UNCLASSIFIED_DYNAMICS
+
+
+def _has_only_confirmed_nonreal_pairs(
+    roots: tuple[RootOccurrence, ...],
+    exact_poles: tuple[sp.Expr, ...],
+    real_flags: tuple[bool | None, ...],
+) -> bool:
+    unmatched = [
+        index for index, is_real in enumerate(real_flags) if is_real is False
+    ]
+    if not unmatched:
+        return False
+    while unmatched:
+        first_index = unmatched.pop(0)
+        first_root = roots[first_index]
+        first_multiplicity = first_root.multiplicity
+        conjugate = sp.conjugate(exact_poles[first_index])
+        match_position = next(
+            (
+                position
+                for position, candidate_index in enumerate(unmatched)
+                if roots[candidate_index].multiplicity == first_multiplicity
+                and sp.simplify(exact_poles[candidate_index] - conjugate).is_zero
+                is True
+            ),
+            None,
+        )
+        if match_position is None:
+            return False
+        unmatched.pop(match_position)
+    return True
 
 
 __all__ = ["TransferFunctionStabilityAnalyzer"]

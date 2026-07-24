@@ -62,6 +62,57 @@ class StabilityReasonCode(StrEnum):
     REAL_PART_UNDETERMINED = "real_part_undetermined"
 
 
+class PoleDynamicsClassification(StrEnum):
+    """Supported qualitative interpretation of the reduced E/A poles."""
+
+    APERIODIC = "aperiodic"
+    DAMPED_OSCILLATORY_COMPONENT = "damped_oscillatory_component"
+    UNCLASSIFIED = "unclassified"
+
+
+class PoleDynamicsModelBasis(StrEnum):
+    """Model basis on which a qualitative interpretation is founded."""
+
+    REDUCED_EA_TRANSFER_FUNCTION = "reduced_ea_transfer_function"
+    SAFELY_UNCLASSIFIED = "safely_unclassified"
+
+
+@dataclass(frozen=True, slots=True)
+class PoleDynamicsInterpretation:
+    """Immutable qualitative statement derived from an existing pole result."""
+
+    classification: PoleDynamicsClassification
+    statement: str
+    reason: str
+    model_basis: PoleDynamicsModelBasis
+    is_available: bool
+
+    def __post_init__(self) -> None:
+        if type(self.classification) is not PoleDynamicsClassification:
+            raise TypeError("Invalid pole-dynamics classification.")
+        if type(self.statement) is not str or not self.statement.strip():
+            raise ValueError("A pole-dynamics interpretation needs a statement.")
+        if type(self.reason) is not str or not self.reason.strip():
+            raise ValueError("A pole-dynamics interpretation needs a reason.")
+        if type(self.model_basis) is not PoleDynamicsModelBasis:
+            raise TypeError("Invalid pole-dynamics model basis.")
+        if type(self.is_available) is not bool:
+            raise TypeError("is_available must be bool.")
+        if self.is_available != (
+            self.classification is not PoleDynamicsClassification.UNCLASSIFIED
+        ):
+            raise ValueError(
+                "Availability must agree with the qualitative classification."
+            )
+        expected_basis = (
+            PoleDynamicsModelBasis.REDUCED_EA_TRANSFER_FUNCTION
+            if self.is_available
+            else PoleDynamicsModelBasis.SAFELY_UNCLASSIFIED
+        )
+        if self.model_basis is not expected_basis:
+            raise ValueError("The model basis does not match availability.")
+
+
 @dataclass(frozen=True, slots=True)
 class StabilityReason:
     """Machine-readable reason with optional non-identifying display text."""
@@ -210,6 +261,7 @@ class TransferFunctionStabilityAnalysisResult:
     pole_contributions: tuple[PoleStabilityContribution, ...]
     cancelled_location_notices: tuple[CancelledLocationNotice, ...]
     retained_domain_exclusions: RootAnalysisGroup | None
+    pole_dynamics: PoleDynamicsInterpretation
     source_references: tuple[StabilitySourceReference, ...]
     diagnostics: tuple[Diagnostic, ...]
 
@@ -228,6 +280,7 @@ class TransferFunctionStabilityAnalysisResult:
         pole_contributions: tuple[PoleStabilityContribution, ...] = (),
         cancelled_location_notices: tuple[CancelledLocationNotice, ...] = (),
         retained_domain_exclusions: RootAnalysisGroup | None = None,
+        pole_dynamics: PoleDynamicsInterpretation,
         source_references: tuple[StabilitySourceReference, ...] = (),
         diagnostics: tuple[Diagnostic, ...] = (),
     ) -> TransferFunctionStabilityAnalysisResult:
@@ -255,6 +308,9 @@ class TransferFunctionStabilityAnalysisResult:
         object.__setattr__(
             instance, "retained_domain_exclusions", retained_domain_exclusions
         )
+        if type(pole_dynamics) is not PoleDynamicsInterpretation:
+            raise TypeError("Invalid pole-dynamics interpretation.")
+        object.__setattr__(instance, "pole_dynamics", pole_dynamics)
         object.__setattr__(instance, "source_references", tuple(source_references))
         object.__setattr__(instance, "diagnostics", tuple(diagnostics))
         return instance
@@ -271,6 +327,9 @@ class TransferFunctionStabilityAnalysisResult:
 
 __all__ = [
     "CancelledLocationNotice",
+    "PoleDynamicsClassification",
+    "PoleDynamicsInterpretation",
+    "PoleDynamicsModelBasis",
     "PoleStabilityContribution",
     "PoleStabilityContributionKind",
     "RealPartSign",

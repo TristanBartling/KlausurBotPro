@@ -86,6 +86,7 @@ from klausurbotpro.application.transfer_function_solution_report_builder import 
     TransferFunctionSolutionReportBuilder,
 )
 from klausurbotpro.application.transfer_function_solution_report_contracts import (
+    ApproximationLine,
     ConditionLine,
     EquationLine,
     OverrideLine,
@@ -159,6 +160,7 @@ from klausurbotpro.domain.time_domain_contracts import (
 )
 
 __all__ = [
+    "ApproximationLine",
     "BodeSketchMode",
     "ControllerDesignCandidate",
     "ControllerDesignCandidateStatus",

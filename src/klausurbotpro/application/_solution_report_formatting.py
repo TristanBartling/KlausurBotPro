@@ -116,18 +116,26 @@ def descriptive_math(plaintext: str, latex: str | None = None) -> ReportMathExpr
     return ReportMathExpression(plaintext, latex_value)
 
 
-def numerical_root_text(real: str, imaginary: str) -> str:
-    """Join existing numerical root components without changing precision."""
+def numerical_root_expression(real: str, imaginary: str) -> ReportMathExpression:
+    """Format existing numerical components with at most six significant digits."""
 
-    if imaginary == "0":
-        return real
-    sign = "+" if not imaginary.startswith("-") else "-"
-    magnitude = imaginary.removeprefix("-")
-    return f"{real} {sign} {magnitude}*i"
+    real_text = compact_decimal_text(real)
+    imaginary_text = compact_decimal_text(imaginary)
+    if imaginary_text == "0":
+        return ReportMathExpression(real_text, real_text)
+    sign = "+" if not imaginary_text.startswith("-") else "-"
+    magnitude = imaginary_text.removeprefix("-")
+    if real_text == "0":
+        plain = f"{'-' if sign == '-' else ''}j*{magnitude}"
+        latex = rf"{'-' if sign == '-' else ''}\mathrm{{j}}\,{magnitude}"
+    else:
+        plain = f"{real_text} {sign} j*{magnitude}"
+        latex = rf"{real_text} {sign} \mathrm{{j}}\,{magnitude}"
+    return ReportMathExpression(plain, latex)
 
 
 def compact_decimal_text(value: str) -> str:
-    """Limit an existing decimal presentation to about six significant digits."""
+    """Limit an existing decimal presentation to six significant digits."""
 
     if type(value) is not str:
         raise TypeError("value must be a string.")
@@ -137,16 +145,19 @@ def compact_decimal_text(value: str) -> str:
         number = Decimal(value)
     except (InvalidOperation, ValueError):
         return value
-    if not number.is_finite() or number.is_zero():
+    if not number.is_finite():
         return value
-    exponent = number.adjusted()
-    if exponent >= 6 or exponent <= -4:
-        return f"{number:.5E}".replace("E+", "e+").replace("E-", "e-")
-    decimal_places = max(0, 5 - exponent)
-    formatted = f"{number:.{decimal_places}f}"
+    if number.is_zero():
+        return "0"
+    formatted = format(number, ".6g").lower()
+    if "e" in formatted:
+        mantissa, exponent = formatted.split("e", 1)
+        mantissa = mantissa.rstrip("0").rstrip(".")
+        exponent_value = int(exponent)
+        return f"{mantissa}e{exponent_value:+d}"
     if "." in formatted:
         formatted = formatted.rstrip("0").rstrip(".")
-    return formatted
+    return "0" if Decimal(formatted).is_zero() else formatted
 
 
 def _rootof_polynomial(
@@ -263,6 +274,6 @@ __all__ = [
     "fraction",
     "identifier",
     "literal_text",
-    "numerical_root_text",
+    "numerical_root_expression",
     "transfer_pair",
 ]

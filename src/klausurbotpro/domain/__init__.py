@@ -161,6 +161,9 @@ from klausurbotpro.domain.root_analysis_contracts import (
 )
 from klausurbotpro.domain.stability_analysis_contracts import (
     CancelledLocationNotice,
+    PoleDynamicsClassification,
+    PoleDynamicsInterpretation,
+    PoleDynamicsModelBasis,
     PoleStabilityContribution,
     PoleStabilityContributionKind,
     RealPartSign,
@@ -362,6 +365,9 @@ __all__ = [
     "PolynomialRootStatus",
     "PoleStabilityContribution",
     "PoleStabilityContributionKind",
+    "PoleDynamicsClassification",
+    "PoleDynamicsInterpretation",
+    "PoleDynamicsModelBasis",
     "PoleHalfPlane",
     "PoleRecord",
     "PoleRole",

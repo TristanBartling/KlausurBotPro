@@ -134,7 +134,7 @@ def test_summary_reports_clipboard_tabs_and_reset() -> None:
             if kind.value == "poles"
         )
     ].toPlainText()
-    assert "System ist E/A-stabil." in workspace.summary_edits[
+    assert "Das System ist E/A-asymptotisch stabil." in workspace.summary_edits[
         next(
             kind
             for kind in workspace.summary_edits

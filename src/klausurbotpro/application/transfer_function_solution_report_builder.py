@@ -12,13 +12,14 @@ from klausurbotpro.application._solution_report_formatting import (
     fraction,
     identifier,
     literal_text,
-    numerical_root_text,
+    numerical_root_expression,
     transfer_pair,
 )
 from klausurbotpro.application._workflow_validation import (
     validate_workflow_state,
 )
 from klausurbotpro.application.transfer_function_solution_report_contracts import (
+    ApproximationLine,
     ConditionLine,
     EquationLine,
     OverrideLine,
@@ -48,6 +49,7 @@ from klausurbotpro.application.transfer_function_workflow_contracts import (
 )
 from klausurbotpro.domain import (
     DiagnosticSeverity,
+    ExactExpression,
     PolynomialRootAnalysis,
     PolynomialRootStatus,
     RealPartSign,
@@ -223,6 +225,17 @@ class TransferFunctionSolutionReportBuilder:
                 state.request.variable_name,
                 "N",
                 "p",
+                source_expression_override=(
+                    raw.denominator.expression
+                    if raw is not None
+                    and state.reduction_result is not None
+                    and state.reduction_result.report is not None
+                    and any(
+                        step.kind.value == "remove_common_numeric_factor"
+                        for step in state.reduction_result.report.steps
+                    )
+                    else None
+                ),
             )
             if root is not None and root.reduced_poles is not None
             else ()
@@ -236,6 +249,11 @@ class TransferFunctionSolutionReportBuilder:
         )
         stability_lines = (
             self._stability_lines(stability)
+            if stability is not None and stability.succeeded
+            else ()
+        )
+        dynamics_lines = (
+            self._dynamics_lines(state, stability)
             if stability is not None and stability.succeeded
             else ()
         )
@@ -304,24 +322,6 @@ class TransferFunctionSolutionReportBuilder:
                 pair_lines,
                 WorkflowStage.RAW_TRANSFER_FUNCTION,
             ),
-            reduction_section,
-            _section(
-                SolutionSectionKind.PREREQUISITES,
-                active_record,
-                prerequisite_lines,
-                active_stage,
-            ),
-            _section(
-                SolutionSectionKind.DOMAIN_EXCLUSIONS,
-                active_record,
-                exclusion_lines,
-                active_stage,
-            ),
-            _optional_section(
-                SolutionSectionKind.PARAMETER_SUBSTITUTIONS,
-                substitution_lines,
-                WorkflowStage.ROOT_ANALYSIS,
-            ),
             _section(
                 SolutionSectionKind.ZEROS,
                 records[WorkflowStage.ROOT_ANALYSIS],
@@ -345,6 +345,30 @@ class TransferFunctionSolutionReportBuilder:
                 records[WorkflowStage.STABILITY_ANALYSIS],
                 stability_lines,
                 WorkflowStage.STABILITY_ANALYSIS,
+            ),
+            _section(
+                SolutionSectionKind.DYNAMIC_BEHAVIOR,
+                records[WorkflowStage.STABILITY_ANALYSIS],
+                dynamics_lines,
+                WorkflowStage.STABILITY_ANALYSIS,
+            ),
+            reduction_section,
+            _section(
+                SolutionSectionKind.DOMAIN_EXCLUSIONS,
+                active_record,
+                exclusion_lines,
+                active_stage,
+            ),
+            _section(
+                SolutionSectionKind.PREREQUISITES,
+                active_record,
+                prerequisite_lines,
+                active_stage,
+            ),
+            _optional_section(
+                SolutionSectionKind.PARAMETER_SUBSTITUTIONS,
+                substitution_lines,
+                WorkflowStage.ROOT_ANALYSIS,
             ),
             _section(
                 SolutionSectionKind.SOURCES,
@@ -634,12 +658,19 @@ class TransferFunctionSolutionReportBuilder:
         variable_name: str,
         polynomial_label: str,
         root_label: str,
+        *,
+        source_expression_override: ExactExpression | None = None,
     ) -> tuple[SolutionLine, ...]:
+        source_expression = (
+            analysis.source_expression
+            if source_expression_override is None
+            else source_expression_override
+        )
         lines: list[SolutionLine] = [
             EquationLine(
                 identifier(f"{polynomial_label}({variable_name})"),
                 "=",
-                exact_expression(analysis.source_expression),
+                exact_expression(source_expression),
                 "specialized_polynomial",
             ),
             EquationLine(
@@ -654,25 +685,31 @@ class TransferFunctionSolutionReportBuilder:
                 estimate.root_index: estimate
                 for estimate in analysis.numerical_estimates
             }
+            approximation_lines: list[ApproximationLine] = []
             for root in analysis.roots:
                 estimate = estimates.get(root.index)
-                approximation = (
-                    None
-                    if estimate is None
-                    else numerical_root_text(
-                        estimate.real,
-                        estimate.imaginary,
-                    )
-                )
+                exact_value = exact_root(root.value, variable_name)
                 lines.append(
                     ResultLine(
                         f"{root_label}_{root.index + 1}",
-                        exact_root(root.value, variable_name),
-                        approximation,
-                        root.multiplicity,
-                        root.source.value,
+                        exact_value,
+                        multiplicity=root.multiplicity,
+                        source_role=root.source.value,
                     )
                 )
+                if estimate is not None:
+                    approximation = numerical_root_expression(
+                        estimate.real,
+                        estimate.imaginary,
+                    )
+                    if approximation.plaintext != exact_value.plaintext:
+                        approximation_lines.append(
+                            ApproximationLine(
+                                f"{root_label}_{root.index + 1}",
+                                approximation,
+                            )
+                        )
+            lines.extend(approximation_lines)
         elif analysis.status is PolynomialRootStatus.CONSTANT_NONZERO:
             lines.append(
                 ResultLine(
@@ -710,6 +747,55 @@ class TransferFunctionSolutionReportBuilder:
                     DiagnosticSeverity.WARNING,
                     WorkflowStage.ROOT_ANALYSIS,
                     "Die Wurzelanalyse wurde nicht ausgewertet.",
+                )
+            )
+        return tuple(lines)
+
+    @staticmethod
+    def _dynamics_lines(
+        state: TransferFunctionWorkflowState,
+        stability: TransferFunctionStabilityAnalysisResult,
+    ) -> tuple[SolutionLine, ...]:
+        interpretation = stability.pole_dynamics
+        model_basis = (
+            "Reduzierte E/A-Übertragungsfunktion"
+            if interpretation.is_available
+            else "Sicher nicht klassifiziert"
+        )
+        lines: list[SolutionLine] = [
+            ResultLine(
+                "Aussage",
+                descriptive_math(interpretation.statement),
+                source_role=interpretation.classification.value,
+            ),
+            ResultLine(
+                "Begründung",
+                descriptive_math(interpretation.reason),
+                source_role="qualitative_reason",
+            ),
+            ResultLine(
+                "Modellbasis",
+                descriptive_math(model_basis),
+                source_role=interpretation.model_basis.value,
+            ),
+        ]
+        if (
+            state.reduction_result is not None
+            and state.reduction_result.report is not None
+            and any(
+                step.kind.value != "no_reduction"
+                for step in state.reduction_result.report.steps
+            )
+        ):
+            lines.append(
+                ResultLine(
+                    "Hinweis",
+                    descriptive_math(
+                        "Die qualitative Aussage bezieht sich auf die "
+                        "reduzierte E/A-Übertragungsfunktion; entfernte "
+                        "Faktoren bleiben im Kürzungsprotokoll dokumentiert."
+                    ),
+                    source_role="reduced_model_notice",
                 )
             )
         return tuple(lines)
@@ -774,7 +860,7 @@ class TransferFunctionSolutionReportBuilder:
                     "< 0",
                 )
             )
-            conclusion = "System ist E/A-stabil."
+            conclusion = "Das System ist E/A-asymptotisch stabil."
         elif status is StabilityStatus.BORDERLINE_STABLE:
             lines.extend(
                 (
@@ -1102,6 +1188,8 @@ def _line_expressions(line: SolutionLine) -> tuple[ReportMathExpression, ...]:
         return line.left, line.right
     if type(line) is ResultLine:
         return (line.exact_value,)
+    if type(line) is ApproximationLine:
+        return (line.value,)
     if type(line) is ConditionLine:
         return line.expressions
     if type(line) is TransformationLine:

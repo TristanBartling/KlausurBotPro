@@ -98,7 +98,7 @@ def test_exact_parameter_request_reaches_existing_workflow(
     plaintext = render_solution_report_plaintext(report)
 
     assert expected_pole in plaintext
-    assert "System ist E/A-stabil." in plaintext
+    assert "Das System ist E/A-asymptotisch stabil." in plaintext
 
 
 @pytest.mark.parametrize(

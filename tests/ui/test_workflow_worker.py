@@ -73,7 +73,7 @@ def test_worker_uses_identical_limits_and_returns_structured_result() -> None:
     assert completed.count() == 1
     result = completed.at(0)[0]
     assert type(result) is TransferFunctionWorkflowExecutionResult
-    assert "System ist E/A-stabil." in result.plaintext_report
+    assert "Das System ist E/A-asymptotisch stabil." in result.plaintext_report
 
     thread.quit()
     assert thread.wait(10_000)
