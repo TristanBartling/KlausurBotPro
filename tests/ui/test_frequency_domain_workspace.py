@@ -3,6 +3,7 @@
 import os
 import tomllib
 from pathlib import Path
+from typing import Protocol, cast
 
 import pytest
 
@@ -10,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QHeaderView
+from PySide6.QtWidgets import QApplication, QHeaderView, QTableWidget
 
 from klausurbotpro.application import (
     FrequencyDomainRequestFactory,
@@ -21,6 +22,16 @@ from klausurbotpro.ui import (
     FrequencyDomainPresenter,
     FrequencyDomainWorkspace,
 )
+
+
+class _Drawable(Protocol):
+    def draw(self) -> None: ...
+
+
+def _table_text(table: QTableWidget, row: int, column: int) -> str:
+    item = table.item(row, column)
+    assert item is not None
+    return item.text()
 
 
 def _app() -> QApplication:
@@ -130,9 +141,11 @@ def test_table_scope_switches_without_request_and_preserves_original_selection()
     assert workspace.value_table.rowCount() == len(result.bode_data_result.points)
     assert workspace.presenter.state.selected_bode_index == selected_original
     assert workspace.value_table.currentRow() == selected_original
-    assert str(selected_original + 1) == workspace.value_table.item(
-        selected_original, 0
-    ).text()
+    assert str(selected_original + 1) == _table_text(
+        workspace.value_table,
+        selected_original,
+        0,
+    )
 
     workspace.table_scope_combo.setCurrentIndex(0)
     _app().processEvents()
@@ -159,7 +172,7 @@ def test_f2_real_click_path_switches_modes_and_uses_exam_phase_ticks() -> None:
 
     assert workspace.standard_element_table.rowCount() == 3
     corner_texts = [
-        workspace.standard_element_table.item(row, 5).text()
+        _table_text(workspace.standard_element_table, row, 5)
         for row in range(workspace.standard_element_table.rowCount())
     ]
     assert any("ω_k = 1/10" in text for text in corner_texts)
@@ -298,7 +311,7 @@ def test_bode_axes_share_limits_ticks_and_frequency_positions() -> None:
     assert type(request) is FrequencyDomainWorkflowRequest
     workspace.presenter.accept_result(FrequencyDomainWorkflowService().run(request))
     _app().processEvents()
-    workspace.plot_canvas.draw()
+    cast(_Drawable, workspace.plot_canvas).draw()
 
     assert workspace.magnitude_axes.get_xscale() == "log"
     assert workspace.phase_axes.get_xscale() == "log"

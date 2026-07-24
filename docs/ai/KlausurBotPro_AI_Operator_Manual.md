@@ -5,9 +5,9 @@
 | Merkmal | Wert |
 |---|---|
 | Repository | `TristanBartling/KlausurBotPro` |
-| Geprüfter Baseline-Commit | `67b84a5c2b3f6591e1a390e6265fc8e84dfd0095` |
-| Erfassungsdatum | 2026-07-23 |
-| App-Version | `0.1.0` |
+| Geprüfter Baseline-Commit | `093cfba2b1488e7a3455ead8c584c38379d60104` |
+| Erfassungsdatum | 2026-07-24 |
+| App-Version | `0.1.1` |
 | Startart | Nach Installation: `python -m klausurbotpro` oder Konsolenskript `klausurbotpro` |
 | Zweck | Technische Arbeitsgrundlage für einen KI-Assistenten, der die vorhandene Desktop-App bedient und Bedienprobleme einordnet |
 | Zielgruppe | GPT-/KI-Assistenten, die den implementierten Stand nicht aus der Entwicklung kennen; Menschen ausschließlich als Prüfer oder Maintainer dieser Referenz |

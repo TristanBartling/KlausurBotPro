@@ -725,5 +725,11 @@ python -m ruff check .
 python -m mypy src tests
 ```
 
+Für einen Release-Kandidaten kommen `python -m pip check`,
+`git diff --check`, die Synchronisationsprüfung der Paketversion, der Build von
+Wheel und Source Distribution, ein Wheel-Importtest sowie ein kurzer
+Offscreen-GUI-Starttest hinzu. Buildartefakte und temporäre
+Installationsumgebungen werden nicht eingecheckt.
+
 Mit wachsenden Fachmodulen kommen Coverage-Ziele und plattformübergreifende CI
 erst nach einer dokumentierten Entscheidung hinzu.

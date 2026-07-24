@@ -62,11 +62,27 @@ Maßgeblich sind die
 und die jeweilige Funktionsdokumentation. Vor Nutzung eines solchen Verfahrens
 muss dessen konkreter No-Slycot-Pfad separat getestet werden.
 
+## Releasevalidierung `v0.1.1-exam`
+
+Am 24.07.2026 wurde der Release-Kandidat unter 64-Bit-Windows 11 mit CPython
+3.14.0 vollständig geprüft:
+
+- `1824` pytest-Tests bestanden,
+- Ruff und MyPy 2.3.0 bestanden,
+- `pip check` und Versionssynchronität bestanden,
+- Wheel und Source Distribution mit Version `0.1.1` gebaut,
+- Wheel mit allen deklarierten Produktionsabhängigkeiten in einer neuen,
+  nicht erbenden virtuellen Umgebung installiert,
+- Import sowie Offscreen-Initialisierung aller sechs Haupttabs mit sauberem
+  Shutdown bestanden,
+- Archive auf Paketquellen und notwendige Metadaten begrenzt; keine
+  repositoryweiten Dokumente, Tests, PDFs oder lokalen Artefakte enthalten.
+
 ## Bewertung von Python 3.14
 
 Python 3.14 kann für die aktuelle Entwicklungsphase beibehalten werden. Die
 sechs geplanten Bibliotheken ließen sich gemeinsam installieren und die
-geforderten Grundoperationen liefen erfolgreich. Dies ist noch keine endgültige
-Support- oder Packaging-Entscheidung: Fachfunktionen, längere GUI-Läufe,
-Performance, Drittanbieter-Plugins und ein späterer Klausur-Build benötigen
-eigene Validierung.
+geforderten Grundoperationen sowie das Packaging für `v0.1.1-exam` liefen
+erfolgreich. Dies ist keine plattformübergreifende Supportzusage:
+Langzeitbetrieb, Performance, Drittanbieter-Plugins sowie macOS und Linux
+benötigen eigene Validierung.

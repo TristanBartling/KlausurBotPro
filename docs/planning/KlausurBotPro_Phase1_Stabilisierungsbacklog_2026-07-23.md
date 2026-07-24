@@ -633,3 +633,22 @@ Für KBP-P1-010:
 - erwartete Aktualisierung.
 
 Für alle übrigen ersten PRs reichen die im Abschlussbericht dokumentierten Referenzfälle als Spezifikationsbasis; die konkreten GUI-Eingaben werden im jeweiligen GPT-Fachspezifikationsschritt festgeschrieben.
+
+---
+
+# 10. Abschlussstatus vom 24.07.2026
+
+Phase 1 ist fachlich und manuell abgenommen. Der Release-Kandidat heißt
+`v0.1.1-exam`. Die Statusangaben in den ursprünglichen Backlog-Einträgen
+dokumentieren den Planungsstand vom 23.07.2026; für den Abschluss gilt folgende
+Einordnung:
+
+| Einordnung | Punkte | Abschluss |
+|---|---|---|
+| umgesetzt und abgenommen | KBP-P1-001, -002, -003, -005, -006, -007, -008, -009 und der begrenzte Pilot -011 | In den Phase-1-PRs umgesetzt und anhand der zentralen Referenzfälle in GUI und PDF geprüft. |
+| reproduziert und als Nichtfehler eingeordnet | KBP-P1-010 | Kein fachlicher Fehler; eine spätere UX-Verbesserung bleibt möglich. |
+| nicht reproduziert | KBP-P1-004 | Die vermutete falsche Warnungsprovenienz wurde nicht reproduziert; ohne reproduzierbaren Fehler erfolgte keine Änderung. |
+| bewusst zurückgestellt | KBP-P1-012 und größere neue Funktionen | Eine weitergehende Layoutangleichung sowie neue Workflows bleiben außerhalb von `v0.1.1-exam`. |
+
+Damit werden keine abgeschlossenen Phase-1-Punkte mehr als offen geführt.
+Nachfolgende Phasen bleiben fachlich und releasebezogen getrennt.

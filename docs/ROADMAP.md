@@ -1,13 +1,28 @@
 # KlausurBotPro – Roadmap
 
-**Status:** aktuelle operative Planung  
-**Stand:** 21.07.2026  
+**Status:** Phase 1 fachlich und manuell abgenommen; Release-Kandidat
+`v0.1.1-exam` in Vorbereitung
+
+**Stand:** 24.07.2026
+
 **Planungsziel:** maximale Klausurpunktabdeckung und Rechenzeitersparnis bei
 kontrollierbarem Integrationsrisiko und sparsamer Codex-Nutzung
 
 Diese Datei beschreibt den aktuellen Arbeitsstand und die Reihenfolge der
 nächsten Feature-PRs. Fachliche Regeln stehen in `docs/reference/`,
 implementierungsfertige Zuschnitte in `docs/implementation/`.
+
+## Release-Status vom 24.07.2026
+
+Phase 1 ist umgesetzt und fachlich sowie manuell abgenommen. Der daraus
+entstandene Release-Kandidat ist `v0.1.1-exam`. Die sechs vorhandenen
+Hauptworkflows Transferfunktion, Frequenzbereich, Stabilität, Zeitbereich,
+Zustandsraum und Reglerauslegung bilden den eingefrorenen Funktionsumfang.
+
+Die nachstehenden früheren Feature-Abschnitte dokumentieren die
+Entstehungsplanung. Sie stellen die in Phase 1 abgeschlossenen Pakete nicht
+mehr als offene Arbeiten dar. Nachfolgende Phasen und größere neue Funktionen
+bleiben ausdrücklich außerhalb von `v0.1.1-exam`.
 
 ## 1. Verbindliche Planungsgrundsätze
 
