@@ -227,8 +227,20 @@ def _run_transfer_function(
         cancellation,
     )
     analysis = _analyze(value, draft.method)
-    steps = _transfer_steps(
-        source_text, raw, reduced, factors, external, selected.expression
+    steps = (
+        _hurwitz_transfer_steps(
+            source_text,
+            raw,
+            reduced,
+            factors,
+            external,
+            selected.expression,
+            analysis,
+        )
+        if isinstance(analysis, HurwitzAnalysisResult)
+        else _transfer_steps(
+            source_text, raw, reduced, factors, external, selected.expression
+        )
     )
     latex = _transfer_latex(
         raw, reduced, factors, external, selected.expression, analysis
@@ -308,6 +320,68 @@ def _transfer_steps(
     )
 
 
+def _hurwitz_transfer_steps(
+    source_text: str,
+    raw: object,
+    reduced: object,
+    factors: tuple[ExactExpression, ...],
+    external: bool,
+    selected: ExactExpression,
+    analysis: HurwitzAnalysisResult,
+) -> tuple[tuple[str, str], ...]:
+    from klausurbotpro.domain.raw_transfer_function import RawTransferFunction
+    from klausurbotpro.domain.reduced_transfer_function import ReducedTransferFunction
+
+    assert isinstance(raw, RawTransferFunction)
+    assert isinstance(reduced, ReducedTransferFunction)
+    factor_text = ", ".join(item.canonical_text for item in factors) or "keine"
+    target = "E/A-asymptotische Stabilität" if external else "Interne asymptotische Stabilität"
+    assumptions = ", ".join(
+        item.label for item in analysis.canonical_polynomial.input.assumptions
+    ) or "keine zusätzlichen Parameterannahmen"
+    prefix = (
+        (
+            "Gegeben – Eingegebene Führungsübertragungsfunktion",
+            f"G_W(s)={_fraction_text_raw(raw)}",
+        ),
+        ("Gesucht", target),
+        ("Methode und Stabilitätsbegriff", f"Hurwitz-Kriterium; {target}"),
+        (
+            "Voraussetzungen und Annahmen",
+            f"{assumptions}; der Leitkoeffizient wird sicher positiv orientiert.",
+        ),
+        (
+            "Charakteristisches Polynom",
+            f"N_{'red' if external else 'roh'}(s)={selected.canonical_text}; "
+            f"analysiert wird der {'reduzierte E/A-Nenner' if external else 'roher Nenner'}, "
+            f"weil das Analyseziel {target} lautet.",
+        ),
+        (
+            "Kursnotation Z(s) und N(s)",
+            "Z(s) bezeichnet den Zähler, N(s) den Nenner. "
+            f"Z_roh(s)={raw.numerator.expression.canonical_text}; "
+            f"N_roh(s)={raw.denominator.expression.canonical_text}; "
+            f"Z_red(s)={reduced.numerator.expression.canonical_text}; "
+            f"N_red(s)={reduced.denominator.expression.canonical_text}.",
+        ),
+        ("Kürzungsprotokoll", f"Entfernte gemeinsame Faktoren: {factor_text}."),
+    )
+    remainder = tuple(
+        step for step in analysis.worked_steps if step[0] != "Charakteristisches Polynom"
+    )
+    return (*prefix, *remainder)
+
+
+def _fraction_text_raw(value: object) -> str:
+    from klausurbotpro.domain.raw_transfer_function import RawTransferFunction
+
+    assert isinstance(value, RawTransferFunction)
+    return (
+        f"({value.numerator.expression.canonical_text}) / "
+        f"({value.denominator.expression.canonical_text})"
+    )
+
+
 def _fraction_text(value: object) -> str:
     from klausurbotpro.domain.reduced_transfer_function import ReducedTransferFunction
 
@@ -336,36 +410,81 @@ def _transfer_latex(
     reduced_num = reduced.numerator.expression
     reduced_den = reduced.denominator.expression
     factored_num = ExactExpression._from_sympy(sp.factor(raw_num._as_sympy()))
+    factored_den = ExactExpression._from_sympy(sp.factor(raw_den._as_sympy()))
+    factored_reduced_num = ExactExpression._from_sympy(sp.factor(reduced_num._as_sympy()))
+    factored_reduced_den = ExactExpression._from_sympy(sp.factor(reduced_den._as_sympy()))
     factor_latex = r",\;".join(item.latex for item in factors) or r"\mathrm{keine}"
     target = (
         "E/A-asymptotische Stabilität; analysiert wird der reduzierte Nenner."
         if external
         else "Interne asymptotische Stabilität; analysiert wird der rohe Nenner."
     )
-    blocks = (
-        paragraph("Gegeben", "Führungsübertragungsfunktion:"),
-        latex_transfer_function(
-            raw_num,
-            raw_den,
-            symbol="G_w(s)",
-            variable=raw.variable_name,
-        ),
-        paragraph("Zählerfaktorisierung", "Exakte algebraische Form:"),
-        latex_additive_equation("N(s)", factored_num),
-        paragraph("Kürzung", "Entfernte gemeinsame Faktoren:"),
-        display_math(factor_latex),
-        paragraph("Reduzierte Führungsübertragungsfunktion", "Nach der Kürzung:"),
-        latex_transfer_function(
-            reduced_num,
-            reduced_den,
-            symbol=r"G_{w,\mathrm{red}}(s)",
-            component_subscript="red",
-            variable=raw.variable_name,
-        ),
-        paragraph("Gesucht", target),
-        paragraph("Analyseobjekt", "Ausgewähltes charakteristisches Polynom:"),
-        latex_additive_equation("p(s)", selected, variable=raw.variable_name),
-    )
+    blocks: tuple[str, ...]
+    if isinstance(analysis, HurwitzAnalysisResult):
+        assumptions = ", ".join(
+            item.label for item in analysis.canonical_polynomial.input.assumptions
+        ) or "keine zusätzlichen Parameterannahmen"
+        selected_name = r"N_{\mathrm{red}}(s)" if external else r"N_{\mathrm{roh}}(s)"
+        blocks = (
+            paragraph("Gegeben", "Führungsübertragungsfunktion in Kursnotation:"),
+            latex_additive_equation(r"Z_{\mathrm{roh}}(s)", factored_num),
+            latex_additive_equation(r"N_{\mathrm{roh}}(s)", factored_den),
+            display_math(
+                r"G_W(s)=\frac{Z_{\mathrm{roh}}(s)}{N_{\mathrm{roh}}(s)}"
+            ),
+            paragraph("Gesucht", target),
+            paragraph("Methode", f"Hurwitz-Kriterium für {target}."),
+            paragraph(
+                "Voraussetzungen",
+                "Der Leitkoeffizient wird sicher positiv orientiert; "
+                f"{assumptions}.",
+            ),
+            paragraph("Charakteristisches Polynom", "Analysiert wird:"),
+            latex_additive_equation(selected_name, selected, variable=raw.variable_name),
+            latex_additive_equation("p(s)", selected, variable=raw.variable_name),
+            paragraph(
+                "Kursnotation",
+                "Z(s) bezeichnet den Zähler und N(s) den Nenner. "
+                "Zähler und Nenner werden zur besseren Lesbarkeit getrennt dargestellt.",
+            ),
+            paragraph(
+                "Bezeichnungsabgrenzung",
+                "Die missverständliche ältere N(s)/D(s)-Darstellung wird nicht verwendet.",
+            ),
+            paragraph("Kürzung", "Entfernte gemeinsame Faktoren:"),
+            display_math(factor_latex),
+            latex_additive_equation(r"Z_{\mathrm{red}}(s)", factored_reduced_num),
+            latex_additive_equation(r"N_{\mathrm{red}}(s)", factored_reduced_den),
+            display_math(
+                r"G_W^{\mathrm{red}}(s)="
+                r"\frac{Z_{\mathrm{red}}(s)}{N_{\mathrm{red}}(s)}"
+            ),
+        )
+    else:
+        blocks = (
+            paragraph("Gegeben", "Führungsübertragungsfunktion:"),
+            latex_transfer_function(
+                raw_num,
+                raw_den,
+                symbol="G_w(s)",
+                variable=raw.variable_name,
+            ),
+            paragraph("Zählerfaktorisierung", "Exakte algebraische Form:"),
+            latex_additive_equation("N(s)", factored_num),
+            paragraph("Kürzung", "Entfernte gemeinsame Faktoren:"),
+            display_math(factor_latex),
+            paragraph("Reduzierte Führungsübertragungsfunktion", "Nach der Kürzung:"),
+            latex_transfer_function(
+                reduced_num,
+                reduced_den,
+                symbol=r"G_{w,\mathrm{red}}(s)",
+                component_subscript="red",
+                variable=raw.variable_name,
+            ),
+            paragraph("Gesucht", target),
+            paragraph("Analyseobjekt", "Ausgewähltes charakteristisches Polynom:"),
+            latex_additive_equation("p(s)", selected, variable=raw.variable_name),
+        )
     return "\n\n".join((*blocks, analysis.latex_source))
 
 

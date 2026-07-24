@@ -6,7 +6,13 @@ from typing import Protocol
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from klausurbotpro.application import HurwitzAnalysisResult, RouthDegreeCaseResult
+from klausurbotpro.application import (
+    HurwitzAnalysisResult,
+    HurwitzConditionStatus,
+    HurwitzConditionStep,
+    HurwitzDegreeCaseResult,
+    RouthDegreeCaseResult,
+)
 from klausurbotpro.application.stability_workflow import (
     StabilityInputDraft,
     StabilityInputMode,
@@ -83,12 +89,13 @@ class StabilityPresenter(QObject):
         )
         hurwitz_details = ""
         routh_details = ""
+        parameters = analysis.canonical_polynomial.input.decision_parameters
         if isinstance(analysis, HurwitzAnalysisResult):
             hurwitz_details = "\n\n".join(
-                f"Grad {item.degree_case.degree}\nH={_matrix(item.matrix)}\n"
-                + ", ".join(
-                    f"Delta_{value.order}={value.expression.canonical_text}"
-                    for value in item.determinants
+                _hurwitz_case(
+                    item,
+                    analysis.canonical_polynomial.input.variable,
+                    parameters,
                 )
                 for item in analysis.case_results
             )
@@ -98,20 +105,30 @@ class StabilityPresenter(QObject):
                 else "keine"
                 for item in analysis.case_results
             )
+            regions = "\n\nund\n\n".join(
+                _hurwitz_region(item, parameters) for item in analysis.case_results
+            )
+            short_solution = "\n\n".join(
+                _hurwitz_short(item, parameters) for item in analysis.case_results
+            )
         else:
             routh_details = "\n\n".join(_routh_case(item) for item in analysis.case_results)
             checks = "\n".join(
                 _routh_check(item) for item in analysis.case_results
             )
-        parameters = analysis.canonical_polynomial.input.decision_parameters
-        regions = "\n\nund\n\n".join(
-            format_stability_region(item.parameter_region, parameters)
-            for item in analysis.case_results
-        )
+            regions = "\n\nund\n\n".join(
+                format_stability_region(item.parameter_region, parameters)
+                for item in analysis.case_results
+            )
+            short_solution = f"{analysis.statement}\nNumerische Kontrolle: {checks}"
         diagnostics = "\n".join((*analysis.diagnostics, analysis.cancellation_notice))
+        projected_steps = (
+            result.source_steps
+            if isinstance(analysis, HurwitzAnalysisResult) and result.source_steps
+            else (*result.source_steps, *analysis.worked_steps)
+        )
         steps = "\n".join(
-            f"{name}: {item_value}"
-            for name, item_value in (*result.source_steps, *analysis.worked_steps)
+            f"{name}: {item_value}" for name, item_value in projected_steps
         )
         self._set_state(
             StabilityViewState(
@@ -126,7 +143,7 @@ class StabilityPresenter(QObject):
                 hurwitz_details=hurwitz_details,
                 routh_details=routh_details,
                 parameter_region=regions,
-                short_solution=f"{analysis.statement}\nNumerische Kontrolle: {checks}",
+                short_solution=short_solution,
                 worked_steps=steps,
                 latex_source=result.latex_preamble or analysis.latex_source,
                 diagnostics=diagnostics.strip(),
@@ -161,6 +178,139 @@ class StabilityPresenter(QObject):
 def _matrix(matrix: tuple[tuple[_DisplayExpression, ...], ...]) -> str:
     rows = matrix
     return "[" + "; ".join(", ".join(value.canonical_text for value in row) for row in rows) + "]"
+
+
+def _hurwitz_case(
+    item: HurwitzDegreeCaseResult,
+    variable: str,
+    parameters: tuple[str, ...],
+) -> str:
+    coefficients = "\n".join(
+        f"a_{power} = {coefficient.canonical_text}"
+        for power, coefficient in zip(
+            range(item.degree_case.degree, -1, -1),
+            item.degree_case.coefficients,
+            strict=True,
+        )
+    )
+    necessary = "\n".join(
+        _condition_plain(condition) for condition in item.necessary_condition_steps
+    )
+    reduced_necessary = _reduced_plain(item.necessary_condition_steps)
+    sufficient = "\n".join(
+        _condition_plain(condition) for condition in item.sufficient_condition_steps
+    )
+    reduced_sufficient = _reduced_plain(item.sufficient_condition_steps)
+    region = format_stability_region(item.parameter_region, parameters)
+    return "\n".join(
+        (
+            "Charakteristisches Polynom",
+            f"N({variable}) = {item.degree_case.polynomial.canonical_text}",
+            "",
+            "Koeffizienten",
+            coefficients,
+            "",
+            "Notwendige Bedingungen",
+            necessary,
+            "",
+            "Reduzierte notwendige Bedingungen",
+            reduced_necessary,
+            "",
+            "Hurwitz-Matrix",
+            f"H = {_matrix(item.matrix)}",
+            "",
+            "Hinreichende Bedingungen",
+            sufficient,
+            "",
+            "Reduzierte hinreichende Bedingungen",
+            reduced_sufficient,
+            "",
+            "Schnittmenge",
+            region,
+            "",
+            "Exaktes Stabilitätsgebiet",
+            region,
+        )
+    )
+
+
+def _condition_plain(item: HurwitzConditionStep) -> str:
+    line = f"{item.label} = {item.expression.canonical_text} > 0"
+    if item.solved_text and item.solved_text not in ("wahr", "falsch"):
+        line += f"  ⇔  {item.solved_text}"
+    status = {
+        HurwitzConditionStatus.ACTIVE: "aktiv",
+        HurwitzConditionStatus.ALREADY_SATISFIED: "bereits erfüllt",
+        HurwitzConditionStatus.REDUNDANT_EQUIVALENT: "äquivalent abgedeckt",
+        HurwitzConditionStatus.REDUNDANT_WEAKER: "schwächer und redundant",
+        HurwitzConditionStatus.CONTRADICTORY: "widersprüchlich",
+        HurwitzConditionStatus.UNRESOLVED_SAFE: "sicher ungelöst; bleibt aktiv",
+    }[item.status]
+    return f"{line}  —  {status}" + (f"\n  {item.reason}" if item.reason else "")
+
+
+def _reduced_plain(steps: tuple[HurwitzConditionStep, ...]) -> str:
+    active = tuple(
+        item.solved_text or f"{item.expression.canonical_text} > 0"
+        for item in steps
+        if item.status
+        in (HurwitzConditionStatus.ACTIVE, HurwitzConditionStatus.UNRESOLVED_SAFE)
+    )
+    return "\n".join(active) or "Keine zusätzliche aktive Bedingung."
+
+
+def _hurwitz_region(
+    item: HurwitzDegreeCaseResult,
+    parameters: tuple[str, ...],
+) -> str:
+    minimal = "\n".join(
+        condition.solved_text or f"{condition.expression.canonical_text} > 0"
+        for condition in item.minimal_condition_steps
+    ) or "Keine zusätzliche aktive Bedingung."
+    region = format_stability_region(item.parameter_region, parameters)
+    return "\n".join(
+        (
+            "Aktives minimales Bedingungssystem",
+            minimal,
+            "",
+            "Schnittmenge",
+            region,
+            "",
+            "Exaktes Stabilitätsgebiet",
+            region,
+            "",
+            "Offene Grenzen",
+            "Alle Gleichheitsränder der asymptotischen Stabilität sind ausgeschlossen.",
+        )
+    )
+
+
+def _hurwitz_short(
+    item: HurwitzDegreeCaseResult,
+    parameters: tuple[str, ...],
+) -> str:
+    necessary = _reduced_plain(item.necessary_condition_steps)
+    sufficient = _reduced_plain(item.sufficient_condition_steps)
+    region = format_stability_region(item.parameter_region, parameters)
+    check = (
+        _check_status(item.numerical_check.status.value)
+        if item.numerical_check is not None
+        else "nicht verfügbar"
+    )
+    return "\n".join(
+        (
+            "Notwendige Bedingungen",
+            necessary,
+            "",
+            "Hinreichende Zusatzbedingungen",
+            sufficient,
+            "",
+            "Exaktes Stabilitätsgebiet",
+            region,
+            "",
+            f"Numerische Kontrolle (nachrangig): {check}",
+        )
+    )
 
 
 def _routh_case(item: object) -> str:

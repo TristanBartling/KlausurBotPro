@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import sympy as sp
 
 from klausurbotpro.domain.expression import ExactExpression
 from klausurbotpro.domain.hurwitz_contracts import (
     HurwitzAnalysisResult,
+    HurwitzConditionStatus,
+    HurwitzConditionStep,
     HurwitzDegreeCaseResult,
     HurwitzDeterminant,
     NumericalCheckStatus,
@@ -31,7 +35,6 @@ from klausurbotpro.domain.stability_presentation import (
     display_math,
     format_parameter_region_plain,
     latex_additive_equation,
-    latex_conditions,
     latex_numerical_check,
     latex_parameter_region,
     paragraph,
@@ -125,6 +128,9 @@ def _analyze_case(
             (),
             (),
             (),
+            (),
+            (),
+            (),
             empty,
             None,
             "Hurwitz ist für Grad 0 beziehungsweise das Nullpolynom nicht anwendbar.",
@@ -134,6 +140,9 @@ def _analyze_case(
         empty = solve_parameter_conditions(ParameterConditionProblem((), ()))
         return HurwitzDegreeCaseResult(
             case,
+            (),
+            (),
+            (),
             (),
             (),
             (),
@@ -180,7 +189,9 @@ def _analyze_case(
     )
     active_expressions = _minimal_expressions(case.degree, by_power, determinants)
     assumptions = canonical.input.assumptions
-    positive_symbols = _positive_symbols(assumptions, canonical.input.exclusions)
+    positive_symbols = _positive_symbols(
+        assumptions + case.guard, canonical.input.exclusions
+    )
     solver = tuple(
         AtomicParameterCondition(
             _exact(_strip_positive_factors(expression, positive_symbols)),
@@ -198,6 +209,45 @@ def _analyze_case(
         canonical.input.exclusions,
     )
     region = solve_parameter_conditions(problem)
+    condition_context = assumptions + case.guard
+    necessary_steps = _classify_condition_steps(
+        tuple(
+            _condition_step(
+                label=f"a_{power}",
+                origin=ConditionOrigin.COEFFICIENT,
+                expression=coefficient,
+                parameters=parameters,
+                assumptions=condition_context,
+                positive_symbols=positive_symbols,
+            )
+            for power, coefficient in sorted(by_power.items(), reverse=True)
+        ),
+        parameters,
+        condition_context,
+    )
+    sufficient_steps = _classify_condition_steps(
+        tuple(
+            _condition_step(
+                label=f"Delta_{item.order}",
+                origin=ConditionOrigin.HURWITZ_DETERMINANT,
+                expression=item.expression._as_sympy(),
+                parameters=parameters,
+                assumptions=condition_context,
+                positive_symbols=positive_symbols,
+            )
+            for item in determinants
+        ),
+        parameters,
+        condition_context,
+        prior=necessary_steps,
+        positive_symbols=positive_symbols,
+    )
+    minimal_steps = tuple(
+        item
+        for item in (*necessary_steps, *sufficient_steps)
+        if item.status
+        in (HurwitzConditionStatus.ACTIVE, HurwitzConditionStatus.UNRESOLVED_SAFE)
+    )
     numerical = _numeric_check(case, parameters, region)
     diagnostics: tuple[str, ...] = ()
     if numerical is not None and numerical.status is NumericalCheckStatus.INCONSISTENT:
@@ -214,12 +264,295 @@ def _analyze_case(
         determinants,
         full,
         solver,
+        necessary_steps,
+        sufficient_steps,
+        minimal_steps,
         region,
         numerical,
         statement,
         region.status,
         diagnostics,
     )
+
+
+def _condition_step(
+    *,
+    label: str,
+    origin: ConditionOrigin,
+    expression: sp.Expr,
+    parameters: tuple[str, ...],
+    assumptions: tuple[AtomicParameterCondition, ...],
+    positive_symbols: frozenset[sp.Symbol],
+) -> HurwitzConditionStep:
+    expanded = sp.expand(expression)
+    factored = sp.factor(expression)
+    solved_expression = _strip_positive_factors(expression, positive_symbols)
+    simplified = sp.simplify(solved_expression)
+    if not simplified.free_symbols:
+        if bool(simplified > 0):
+            status = HurwitzConditionStatus.ALREADY_SATISFIED
+            reason = "Die positive Konstante erfüllt die strikte Bedingung bereits."
+        else:
+            status = HurwitzConditionStatus.CONTRADICTORY
+            reason = "Die konstante strikte Bedingung ist nicht erfüllt."
+        return HurwitzConditionStep(
+            label,
+            origin,
+            _exact(expression),
+            _exact(expanded),
+            _exact(factored),
+            _exact(solved_expression),
+            "",
+            "",
+            status,
+            reason=reason,
+        )
+    relevant = tuple(
+        name for name in parameters if sp.Symbol(name) in solved_expression.free_symbols
+    )
+    relevant_symbols = {sp.Symbol(name) for name in relevant}
+    relevant_assumptions = tuple(
+        item
+        for item in assumptions
+        if item.expression._as_sympy().free_symbols <= relevant_symbols
+    )
+    condition = AtomicParameterCondition(
+        _exact(solved_expression),
+        Relation.GT,
+        origin,
+        relevant,
+        f"{label} > 0",
+    )
+    region = solve_parameter_conditions(
+        ParameterConditionProblem(relevant, (condition,), relevant_assumptions)
+    )
+    if region.status is SolveStatus.SOLVED_EXACT:
+        status = HurwitzConditionStatus.ACTIVE
+        solved_text = format_parameter_region_plain(region, relevant)
+        solved_latex = _region_latex_body(region, relevant)
+        reason = ""
+    elif region.status is SolveStatus.EMPTY:
+        status = HurwitzConditionStatus.CONTRADICTORY
+        solved_text = "keine Lösung"
+        solved_latex = r"\varnothing"
+        reason = "Die strikte Bedingung ist widersprüchlich."
+    else:
+        status = HurwitzConditionStatus.UNRESOLVED_SAFE
+        solved_text = region.exact_text
+        solved_latex = region.latex
+        reason = "Die Bedingung bleibt erhalten, weil keine sichere Reduktion bewiesen ist."
+    return HurwitzConditionStep(
+        label,
+        origin,
+        _exact(expression),
+        _exact(expanded),
+        _exact(factored),
+        _exact(solved_expression),
+        solved_text,
+        solved_latex,
+        status,
+        reason=reason,
+    )
+
+
+def _region_latex_body(
+    region: ParameterRegion,
+    parameters: tuple[str, ...],
+) -> str:
+    rendered = latex_parameter_region(region, parameters)
+    body = rendered.removeprefix("\\[\n").removesuffix("\n\\]")
+    if body.startswith(r"\begin{aligned}") and body.endswith(r"\end{aligned}"):
+        body = body.removeprefix(r"\begin{aligned}").removesuffix(r"\end{aligned}")
+        body = body.replace(r"\\", r",\quad ").replace("&", "")
+    return body
+
+
+def _classify_condition_steps(
+    steps: tuple[HurwitzConditionStep, ...],
+    parameters: tuple[str, ...],
+    assumptions: tuple[AtomicParameterCondition, ...],
+    *,
+    prior: tuple[HurwitzConditionStep, ...] = (),
+    positive_symbols: frozenset[sp.Symbol] = frozenset(),
+) -> tuple[HurwitzConditionStep, ...]:
+    classified = list(steps)
+    references = list(prior)
+    for index, item in enumerate(classified):
+        if item.status is not HurwitzConditionStatus.ACTIVE:
+            references.append(item)
+            continue
+        equivalent = next(
+            (
+                other
+                for other in references
+                if other.status
+                not in (
+                    HurwitzConditionStatus.CONTRADICTORY,
+                    HurwitzConditionStatus.UNRESOLVED_SAFE,
+                )
+                and _positive_proportional(
+                    item.expression._as_sympy(),
+                    other.expression._as_sympy(),
+                    positive_symbols,
+                )
+            ),
+            None,
+        )
+        if equivalent is not None:
+            classified[index] = replace(
+                item,
+                status=HurwitzConditionStatus.REDUNDANT_EQUIVALENT,
+                reference_label=equivalent.label,
+                reason=(
+                    f"Bereits durch {equivalent.label} abgedeckt; beide Bedingungen "
+                    "sind unter den gesicherten positiven Faktoren äquivalent."
+                ),
+            )
+        references.append(classified[index])
+
+    for left_index, left in enumerate(classified):
+        if left.status is not HurwitzConditionStatus.ACTIVE:
+            continue
+        for right_index, right in enumerate(classified):
+            if left_index == right_index or right.status is not HurwitzConditionStatus.ACTIVE:
+                continue
+            if _is_weaker_bound(left, right, parameters, assumptions):
+                classified[left_index] = replace(
+                    left,
+                    status=HurwitzConditionStatus.REDUNDANT_WEAKER,
+                    reference_label=right.label,
+                    reason=(
+                        f"Schwächer als {right.label}; die stärkere gleichgerichtete "
+                        "Grenze deckt diese Bedingung ab."
+                    ),
+                )
+                break
+    return tuple(classified)
+
+
+def _positive_proportional(
+    left: sp.Expr,
+    right: sp.Expr,
+    positive_symbols: frozenset[sp.Symbol],
+) -> bool:
+    if right == 0:
+        return False
+    ratio = sp.factor(sp.cancel(left / right))
+    return _known_positive_expression(ratio, positive_symbols)
+
+
+def _known_positive_expression(
+    expression: sp.Expr,
+    positive_symbols: frozenset[sp.Symbol],
+) -> bool:
+    if expression.is_number:
+        return bool(expression.is_positive)
+    numerator, denominator = sp.fraction(sp.factor(expression))
+    return _known_positive_product(numerator, positive_symbols) and _known_positive_product(
+        denominator, positive_symbols
+    )
+
+
+def _known_positive_product(
+    expression: sp.Expr,
+    positive_symbols: frozenset[sp.Symbol],
+) -> bool:
+    coefficient, factors = sp.factor_list(expression)
+    if coefficient <= 0:
+        return False
+    return all(
+        factor in positive_symbols
+        or (
+            factor.is_Pow
+            and factor.base in positive_symbols
+            and factor.exp.is_integer
+        )
+        for factor, _power in factors
+    )
+
+
+def _is_weaker_bound(
+    candidate: HurwitzConditionStep,
+    stronger: HurwitzConditionStep,
+    parameters: tuple[str, ...],
+    assumptions: tuple[AtomicParameterCondition, ...],
+) -> bool:
+    candidate_bound = _affine_bound(candidate.solved_expression._as_sympy(), parameters)
+    stronger_bound = _affine_bound(stronger.solved_expression._as_sympy(), parameters)
+    if candidate_bound is None or stronger_bound is None:
+        return False
+    candidate_name, candidate_direction, candidate_value = candidate_bound
+    stronger_name, stronger_direction, stronger_value = stronger_bound
+    if candidate_name != stronger_name or candidate_direction != stronger_direction:
+        return False
+    if sp.simplify(candidate_value - stronger_value) == 0:
+        return False
+    relation = (
+        sp.Le(candidate_value, stronger_value)
+        if candidate_direction == "lower"
+        else sp.Ge(candidate_value, stronger_value)
+    )
+    symbols = candidate_value.free_symbols | stronger_value.free_symbols
+    return _prove_relation(relation, assumptions, symbols)
+
+
+def _affine_bound(
+    expression: sp.Expr,
+    parameters: tuple[str, ...],
+) -> tuple[str, str, sp.Expr] | None:
+    for name in reversed(parameters):
+        symbol = sp.Symbol(name)
+        try:
+            polynomial = sp.Poly(sp.expand(expression), symbol)
+        except sp.PolynomialError:
+            continue
+        if polynomial.degree() != 1:
+            continue
+        coefficient, constant = polynomial.all_coeffs()
+        if not coefficient.is_number or coefficient == 0:
+            continue
+        boundary = sp.factor(-constant / coefficient)
+        return name, ("lower" if coefficient > 0 else "upper"), boundary
+    return None
+
+
+def _prove_relation(
+    relation: sp.Rel,
+    assumptions: tuple[AtomicParameterCondition, ...],
+    symbols: set[sp.Symbol],
+) -> bool:
+    if relation is sp.true:
+        return True
+    if relation is sp.false or len(symbols) > 1:
+        return False
+    if not symbols:
+        return bool(relation)
+    symbol = next(iter(symbols))
+    relevant = tuple(
+        _sympy_relation(item)
+        for item in assumptions
+        if item.expression._as_sympy().free_symbols <= {symbol}
+    )
+    try:
+        counterexample = sp.reduce_inequalities(
+            (*relevant, sp.Not(relation)), symbol
+        )
+    except (NotImplementedError, TypeError, ValueError):
+        return False
+    return counterexample is sp.false
+
+
+def _sympy_relation(condition: AtomicParameterCondition) -> sp.Rel:
+    expression = condition.expression._as_sympy()
+    constructors = {
+        Relation.EQ: sp.Eq,
+        Relation.NE: sp.Ne,
+        Relation.LT: sp.Lt,
+        Relation.LE: sp.Le,
+        Relation.GT: sp.Gt,
+        Relation.GE: sp.Ge,
+    }
+    return constructors[condition.relation](expression, 0)
 
 
 def _matrix_entry(coefficients: dict[int, sp.Expr], degree: int, row: int, column: int) -> sp.Expr:
@@ -397,58 +730,133 @@ def _worked_steps(
     statement: str,
     notice: str,
 ) -> tuple[tuple[str, str], ...]:
-    steps: list[tuple[str, str]] = [
-        ("1. Eingabepolynom", canonical.input.polynomial.canonical_text),
-        ("2. Rolle und Analyseziel", f"{_role_text(canonical)}; {_concept(canonical)}"),
-        (
-            "3. Annahmen",
-            ", ".join(
-                item.label or str(_relation_text(item)) for item in canonical.input.assumptions
-            )
-            or "keine",
-        ),
-        ("4. Kanonisierung", canonical.expanded_polynomial.canonical_text),
-        (
-            "Hurwitz-Konvention",
-            "Hurwitz-Matrix nach der Konvention des Vorlesungsskripts: "
-            "erste Zeile a_1, a_3, a_5, ...",
-        ),
-    ]
-    for result in results:
+    direct = canonical.input.provenance.producer == "Direkteingabe"
+    steps: list[tuple[str, str]] = []
+    if direct:
         steps.extend(
             (
                 (
-                    "5. Gradfall und Guard",
-                    f"Grad {result.degree_case.degree}; "
-                    + ", ".join(item.label for item in result.degree_case.guard),
+                    "Gegeben",
+                    f"N({canonical.input.variable})=p({canonical.input.variable})="
+                    f"{canonical.input.polynomial.canonical_text}",
                 ),
+                ("Gesucht", _concept(canonical)),
+                ("Methode und Stabilitätsbegriff", f"Hurwitz-Kriterium; {_concept(canonical)}"),
+                ("Polynomrolle", _role_text(canonical)),
                 (
-                    "6. Koeffizienten",
-                    ", ".join(item.canonical_text for item in result.degree_case.coefficients),
-                ),
-                ("7. Hurwitz-Matrix", _matrix_text(result.matrix)),
-                (
-                    "8. Determinanten",
+                    "Voraussetzungen und Annahmen",
                     ", ".join(
-                        f"Delta_{item.order}={item.expression.canonical_text}"
-                        for item in result.determinants
-                    ),
+                        item.label or _relation_text(item)
+                        for item in canonical.input.assumptions
+                    )
+                    or "keine zusätzlichen Parameterannahmen",
                 ),
-                ("9. Bedingungen", ", ".join(item.label for item in result.solver_conditions)),
-                (
-                    "10. Parametergebiet",
-                    format_parameter_region_plain(
-                        result.parameter_region, canonical.input.decision_parameters
-                    ),
-                ),
-                ("11. Offene Grenzen", "Hurwitz-Gleichheitsränder sind ausgeschlossen."),
-                ("12. Numerische Gegenkontrolle", _numeric_text(result.numerical_check)),
+            )
+        )
+    steps.append(
+        (
+            "Charakteristisches Polynom",
+            f"N({canonical.input.variable})="
+            f"{canonical.expanded_polynomial.canonical_text}",
+        )
+    )
+    if direct:
+        steps.append(
+            (
+                "Kursnotation",
+                f"N({canonical.input.variable})=p({canonical.input.variable}) bezeichnet "
+                "das analysierte charakteristische Polynom.",
+            )
+        )
+    for result in results:
+        guard = ", ".join(item.label for item in result.degree_case.guard) or "kein Gradfall-Guard"
+        steps.append(
+            (
+                "Gradfall und Voraussetzungen",
+                f"Grad {result.degree_case.degree}; {guard}; "
+                "der Leitkoeffizient ist sicher positiv orientiert.",
+            )
+        )
+        for power, coefficient in zip(
+            range(result.degree_case.degree, -1, -1),
+            result.degree_case.coefficients,
+            strict=True,
+        ):
+            steps.append((f"Koeffizient a_{power}", coefficient.canonical_text))
+        steps.append(
+            (
+                "Notwendige Bedingungen",
+                "Nach positiver Orientierung gilt a_i>0 für alle Koeffizienten.",
+            )
+        )
+        steps.extend(
+            (f"Notwendige Bedingung {item.label}", _condition_step_text(item))
+            for item in result.necessary_condition_steps
+        )
+        steps.extend(
+            (f"Redundanzhinweis {item.label}", item.reason)
+            for item in result.necessary_condition_steps
+            if item.status
+            in (
+                HurwitzConditionStatus.REDUNDANT_EQUIVALENT,
+                HurwitzConditionStatus.REDUNDANT_WEAKER,
+            )
+        )
+        steps.append(("Hurwitz-Matrix", _matrix_text(result.matrix)))
+        steps.append(
+            (
+                "Hinreichende Bedingungen",
+                "Für alle Hurwitz-Determinanten gilt Delta_i>0.",
+            )
+        )
+        steps.extend(
+            (f"Hinreichende Bedingung {item.label}", _condition_step_text(item))
+            for item in result.sufficient_condition_steps
+        )
+        steps.extend(
+            (f"Redundanzhinweis {item.label}", item.reason)
+            for item in result.sufficient_condition_steps
+            if item.status
+            in (
+                HurwitzConditionStatus.REDUNDANT_EQUIVALENT,
+                HurwitzConditionStatus.REDUNDANT_WEAKER,
+            )
+        )
+        minimal = ", ".join(
+            item.solved_text or f"{item.expression.canonical_text}>0"
+            for item in result.minimal_condition_steps
+        ) or "keine zusätzliche aktive Bedingung"
+        region = format_parameter_region_plain(
+            result.parameter_region, canonical.input.decision_parameters
+        )
+        steps.extend(
+            (
+                ("Verbleibendes minimales Bedingungssystem", minimal),
+                ("Schnittmenge", region),
+                ("Exaktes Stabilitätsgebiet", region),
+                ("Offene Grenzen", "Alle Hurwitz-Gleichheitsränder sind ausgeschlossen."),
+                ("Numerische Gegenkontrolle", _numeric_text(result.numerical_check)),
             )
         )
     if notice:
         steps.append(("Kürzungswarnung", notice))
-    steps.append(("13. Endaussage", statement))
+    steps.append(("Endaussage", statement))
     return tuple(steps)
+
+
+def _condition_step_text(step: HurwitzConditionStep) -> str:
+    base = f"{step.label}={step.expression.canonical_text}>0"
+    if step.solved_text and step.solved_text not in ("wahr", "falsch"):
+        base += f" ⇔ {step.solved_text}"
+    status = {
+        HurwitzConditionStatus.ACTIVE: "bleibt aktiv",
+        HurwitzConditionStatus.ALREADY_SATISFIED: "bereits erfüllt",
+        HurwitzConditionStatus.REDUNDANT_EQUIVALENT: "äquivalent abgedeckt",
+        HurwitzConditionStatus.REDUNDANT_WEAKER: "als schwächere Grenze redundant",
+        HurwitzConditionStatus.CONTRADICTORY: "widersprüchlich",
+        HurwitzConditionStatus.UNRESOLVED_SAFE: "sicher ungelöst und weiterhin aktiv",
+    }[step.status]
+    return f"{base}; {status}" + (f"; {step.reason}" if step.reason else "")
 
 
 def _relation_text(condition: AtomicParameterCondition) -> str:
@@ -481,34 +889,99 @@ def _latex(
     results: tuple[HurwitzDegreeCaseResult, ...],
     notice: str,
 ) -> str:
-    blocks = [
-        paragraph("Stabilitätsbegriff", _concept(canonical)),
-        latex_additive_equation(
-            f"p({canonical.input.variable})",
-            canonical.expanded_polynomial,
-            variable=canonical.input.variable,
-        ),
-        paragraph(
-            "Hurwitz-Konvention",
-            "Hurwitz-Matrix nach der Konvention des Vorlesungsskripts: "
-            "erste Zeile a_1, a_3, a_5, ...",
-        ),
-    ]
+    direct = canonical.input.provenance.producer == "Direkteingabe"
+    blocks: list[str] = []
+    if direct:
+        blocks.extend(
+            (
+                paragraph("Gegeben", "Direkte Eingabe eines charakteristischen Polynoms."),
+                latex_additive_equation(
+                    f"p({canonical.input.variable})",
+                    canonical.input.polynomial,
+                    variable=canonical.input.variable,
+                ),
+                display_math(
+                    f"N({canonical.input.variable})=p({canonical.input.variable})"
+                ),
+                paragraph("Gesucht", _concept(canonical)),
+                paragraph("Methode", f"Hurwitz-Kriterium für {_concept(canonical)}."),
+                paragraph(
+                    "Voraussetzungen",
+                    "Der Leitkoeffizient wird sicher positiv orientiert; "
+                    + (
+                        ", ".join(
+                            item.label or _relation_text(item)
+                            for item in canonical.input.assumptions
+                        )
+                        or "keine zusätzlichen Parameterannahmen"
+                    )
+                    + ".",
+                ),
+            )
+        )
+    blocks.extend(
+        (
+            paragraph("Charakteristisches Polynom", "Analysiert wird:"),
+            latex_additive_equation(
+                f"N({canonical.input.variable})",
+                canonical.expanded_polynomial,
+                variable=canonical.input.variable,
+            ),
+        )
+    )
     for result in results:
         matrix_latex = sp.latex(
             sp.Matrix([[item._as_sympy() for item in row] for row in result.matrix])
         )
-        blocks.append(paragraph("Gradfall", f"Grad {result.degree_case.degree}."))
-        blocks.append(display_math(r"H=" + matrix_latex))
-        blocks.extend(
-            latex_additive_equation(rf"\Delta_{{{item.order}}}", item.expression)
-            for item in result.determinants
+        coefficient_lines = tuple(
+            rf"a_{{{power}}}&={coefficient.latex}"
+            for power, coefficient in zip(
+                range(result.degree_case.degree, -1, -1),
+                result.degree_case.coefficients,
+                strict=True,
+            )
         )
-        blocks.append(paragraph("Bedingungssystem", "Vollständige strikte Bedingungen:"))
+        blocks.append(paragraph("Koeffizienten", f"Für Grad {result.degree_case.degree} gilt:"))
         blocks.append(
-            latex_conditions(tuple(item.expression for item in result.solver_conditions))
+            display_math(r"\begin{aligned}" + r"\\".join(coefficient_lines) + r"\end{aligned}")
         )
-        blocks.append(paragraph("Parametergebiet", "Exaktes Ergebnis:"))
+        blocks.append(
+            paragraph("Notwendige Bedingungen", r"Für alle Koeffizienten gilt \(a_i>0\).")
+        )
+        blocks.extend(_latex_condition_step(item) for item in result.necessary_condition_steps)
+        blocks.append(
+            paragraph(
+                "Reduzierte notwendige Bedingungen",
+                _reduced_condition_text(result.necessary_condition_steps),
+            )
+        )
+        blocks.append(
+            paragraph(
+                "Hurwitz-Matrix",
+                "Hurwitz-Matrix nach der Konvention des Vorlesungsskripts: "
+                "erste Zeile a_1, a_3, a_5, ...",
+            )
+        )
+        blocks.append(display_math(r"H=" + matrix_latex))
+        blocks.append(
+            paragraph("Hinreichende Bedingungen", r"Für alle Determinanten gilt \(\Delta_i>0\).")
+        )
+        blocks.extend(_latex_condition_step(item) for item in result.sufficient_condition_steps)
+        blocks.append(
+            paragraph(
+                "Reduzierte hinreichende Bedingungen",
+                _reduced_condition_text(result.sufficient_condition_steps),
+            )
+        )
+        blocks.append(
+            paragraph(
+                "Bedingungssystem",
+                "Die aktiven notwendigen und hinreichenden Bedingungen werden geschnitten.",
+            )
+        )
+        blocks.append(
+            paragraph("Schnittmenge", "Minimales Bedingungssystem und exaktes Gebiet:")
+        )
         blocks.append(
             latex_parameter_region(
                 result.parameter_region,
@@ -518,8 +991,68 @@ def _latex(
         blocks.append(latex_numerical_check(result.numerical_check))
     if notice:
         blocks.append(paragraph("Warnung", notice))
+    blocks.append(paragraph("Ergebnis", "Das exakte Stabilitätsgebiet lautet:"))
     blocks.append(_latex_final_box(canonical, results))
     return "\n\n".join(blocks)
+
+
+def _latex_condition_step(step: HurwitzConditionStep) -> str:
+    status = {
+        HurwitzConditionStatus.ACTIVE: "bleibt aktiv",
+        HurwitzConditionStatus.ALREADY_SATISFIED: "bereits erfüllt",
+        HurwitzConditionStatus.REDUNDANT_EQUIVALENT: "bereits äquivalent abgedeckt",
+        HurwitzConditionStatus.REDUNDANT_WEAKER: "schwächer und redundant",
+        HurwitzConditionStatus.CONTRADICTORY: "widersprüchlich",
+        HurwitzConditionStatus.UNRESOLVED_SAFE: "sicher ungelöst; bleibt aktiv",
+    }[step.status]
+    label = _latex_label(step.label)
+    if len(step.expression.latex) > 85:
+        definition = latex_additive_equation(label, step.expression, terms_per_line=2)
+        lines = [rf"{label}&>0"]
+        if step.solved_latex and step.solved_text not in ("wahr", "falsch"):
+            lines.append(rf"&\Longleftrightarrow {step.solved_latex}")
+        lines.append(rf"&\quad\text{{{_escape_latex_text(status)}}}")
+        condition = display_math(
+            r"\begin{aligned}" + r"\\".join(lines) + r"\end{aligned}"
+        )
+        return definition + "\n\n" + condition
+    lines = [rf"{label}&={step.expression.latex}>0"]
+    if step.expanded_expression != step.expression:
+        lines.append(rf"&={step.expanded_expression.latex}>0")
+    if step.factored_expression not in (step.expression, step.expanded_expression):
+        lines.append(rf"&={step.factored_expression.latex}>0")
+    if step.solved_latex and step.solved_text not in ("wahr", "falsch"):
+        lines.append(rf"&\Longleftrightarrow {step.solved_latex}")
+    lines.append(rf"&\quad\text{{{_escape_latex_text(status)}}}")
+    return display_math(r"\begin{aligned}" + r"\\".join(lines) + r"\end{aligned}")
+
+
+def _latex_label(label: str) -> str:
+    if label.startswith("Delta_"):
+        return rf"\Delta_{{{label.removeprefix('Delta_')}}}"
+    if label.startswith("a_"):
+        return rf"a_{{{label.removeprefix('a_')}}}"
+    return _escape_latex_text(label)
+
+
+def _reduced_condition_text(steps: tuple[HurwitzConditionStep, ...]) -> str:
+    active = tuple(
+        item.solved_text or f"{item.expression.canonical_text}>0"
+        for item in steps
+        if item.status
+        in (HurwitzConditionStatus.ACTIVE, HurwitzConditionStatus.UNRESOLVED_SAFE)
+    )
+    redundant = tuple(
+        f"{item.label} gegenüber {item.reference_label}"
+        for item in steps
+        if item.status
+        in (
+            HurwitzConditionStatus.REDUNDANT_EQUIVALENT,
+            HurwitzConditionStatus.REDUNDANT_WEAKER,
+        )
+    )
+    text = "Aktiv: " + (", ".join(active) or "keine zusätzliche Bedingung")
+    return text + (". Redundant: " + ", ".join(redundant) if redundant else "")
 
 
 def _latex_final_box(

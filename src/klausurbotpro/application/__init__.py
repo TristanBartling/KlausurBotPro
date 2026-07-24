@@ -130,7 +130,12 @@ from klausurbotpro.application.transfer_function_workflow_contracts import (
 from klausurbotpro.application.transfer_function_workflow_service import (
     TransferFunctionWorkflowService,
 )
-from klausurbotpro.domain.hurwitz_contracts import HurwitzAnalysisResult
+from klausurbotpro.domain.hurwitz_contracts import (
+    HurwitzAnalysisResult,
+    HurwitzConditionStatus,
+    HurwitzConditionStep,
+    HurwitzDegreeCaseResult,
+)
 from klausurbotpro.domain.routh_contracts import RouthDegreeCaseResult
 from klausurbotpro.domain.standard_element_bode_contributions import (
     BodeSketchMode,
@@ -190,6 +195,9 @@ __all__ = [
     "FrequencyPhasePresentation",
     "FrequencyTableScope",
     "HurwitzAnalysisResult",
+    "HurwitzConditionStatus",
+    "HurwitzConditionStep",
+    "HurwitzDegreeCaseResult",
     "OverrideProvenance",
     "OverrideLine",
     "ParameterInputDraft",
