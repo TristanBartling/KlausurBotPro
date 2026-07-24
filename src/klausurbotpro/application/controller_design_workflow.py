@@ -8,6 +8,8 @@ from decimal import Decimal
 from fractions import Fraction
 from math import isfinite
 
+import sympy as sp
+
 from klausurbotpro.application.frequency_domain_request_factory import (
     FrequencyDomainInputDraft,
     FrequencyDomainRequestFactory,
@@ -49,6 +51,7 @@ from klausurbotpro.domain import (
     FrequencyReserveAnalyzer,
     FrequencySampleSet,
     ParameterSubstitutions,
+    ReducedTransferFunction,
     StabilityReserve,
     TransferFunctionFrequencyResponseAnalyzer,
     design_cohen_coon,
@@ -100,6 +103,23 @@ class ControllerDesignCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class ControllerFrequencyPresentation:
+    """Already-computed P-design data prepared for UI projection."""
+
+    candidate_index: int
+    target_frequency: str
+    target_phase: str
+    target_margin: str
+    original_magnitude: str
+    positive_k_p: str
+    new_open_loop: str
+    magnitude_control: ControllerDesignControl
+    phase_margin_control: ControllerDesignControl
+    global_margin_control: ControllerDesignControl
+    nyquist_control: ControllerDesignControl
+
+
+@dataclass(frozen=True, slots=True)
 class ControllerDesignResult:
     input: ControllerDesignInputDraft
     method: ControllerDesignMethod
@@ -124,6 +144,8 @@ class ControllerDesignResult:
     primary_result_latex: str = ""
     equivalent_result_plain: str = ""
     equivalent_result_latex: str = ""
+    target_frequency_formula: ControllerFormulaStep | None = None
+    frequency_presentations: tuple[ControllerFrequencyPresentation, ...] = ()
 
     @property
     def has_copyable_solution(self) -> bool:
@@ -273,13 +295,30 @@ class ControllerDesignWorkflowService:
             return _failure(draft, code, str(error))
 
         result_steps = _controller_result_steps(parameters)
+        presented_validity = _presented_validity_steps(formula, validity_steps)
+        validity_controls: tuple[ControllerDesignControl, ...]
+        if formula == "Ziegler–Nichols, geschlossener Kreis":
+            validity_controls = (
+                ControllerDesignControl(
+                    "Voraussetzungen",
+                    True,
+                    "; ".join(step.substitution_plain for step in presented_validity)
+                    + ". Alle Voraussetzungen sind erfüllt.",
+                ),
+            )
+        else:
+            validity_controls = (
+                ControllerDesignControl(
+                    "Positivitätsbedingungen",
+                    True,
+                    "; ".join(step.substitution_plain for step in presented_validity[:-1]),
+                ),
+                ControllerDesignControl(
+                    "Quellenbereich", True, presented_validity[-1].substitution_plain
+                ),
+            )
         controls = (
-            ControllerDesignControl(
-                "Positivitätsbedingungen",
-                True,
-                "; ".join(step.substitution_plain for step in validity_steps[:-1]),
-            ),
-            ControllerDesignControl("Quellenbereich", True, validity_steps[-1].substitution_plain),
+            *validity_controls,
             ControllerDesignControl(
                 "Reglerformen",
                 parameters.forms_identical,
@@ -466,13 +505,27 @@ class ControllerDesignWorkflowService:
             if decision.selected_candidate_index is not None
             else None
         )
-        formula_steps = _phase_formula_steps(tuple(candidates))
+        target_frequency_formula = _recognized_target_frequency_formula(
+            preparation.reduced_value, target, tuple(candidates)
+        )
+        formula_steps = (
+            () if target_frequency_formula is None else (target_frequency_formula,)
+        ) + _phase_formula_steps(tuple(candidates))
         validity_steps = _phase_validity_steps(target, tuple(candidates))
+        frequency_presentations = _frequency_presentations(target, target_phase, tuple(candidates))
         result_steps = () if parameters is None else _controller_result_steps(parameters)
         primary_plain = "" if parameters is None else _controller_parallel_plain(parameters)
         primary_latex = "" if parameters is None else _controller_parallel_latex(parameters)
+        open_loop_latex = _prepared_open_loop_latex(preparation.reduced_value)
         latex = prepend_latex_task_heading(
-            _phase_margin_latex(draft, target, target_phase, tuple(candidates)), draft.task_name
+            _phase_margin_latex(
+                open_loop_latex,
+                target,
+                target_phase,
+                tuple(candidates),
+                target_frequency_formula,
+            ),
+            draft.task_name,
         )
         return ControllerDesignResult(
             draft,
@@ -491,7 +544,11 @@ class ControllerDesignWorkflowService:
                 else None
             ),
             tuple(item for candidate in candidates for item in candidate.controls),
-            tuple(_phase_margin_steps(target, target_phase, tuple(candidates))),
+            tuple(
+                _phase_margin_steps(
+                    target, target_phase, tuple(candidates), target_frequency_formula
+                )
+            ),
             latex,
             diagnostics,
             decision.status,
@@ -502,6 +559,8 @@ class ControllerDesignWorkflowService:
             primary_latex,
             primary_plain,
             primary_latex,
+            target_frequency_formula,
+            frequency_presentations,
         )
 
     def _frequency_draft(
@@ -593,7 +652,7 @@ def _failure(
 
 def _numeric_p_parameters(kp: float) -> ControllerParameters:
     numeric = ControllerScalar(
-        None, format(kp, ".16g"), ControllerValueProvenance.NUMERIC_FREQUENCY_DESIGN
+        None, format(kp, ".12g"), ControllerValueProvenance.NUMERIC_FREQUENCY_DESIGN
     )
     zero = ControllerScalar(ExactRationalValue(0), "0", ControllerValueProvenance.EXACT_RATIONAL)
     return ControllerParameters(
@@ -603,7 +662,7 @@ def _numeric_p_parameters(kp: float) -> ControllerParameters:
         zero,
         None,
         None,
-        f"G_R(s)={format(kp, '.16g')}",
+        f"G_R(s)={format(kp, '.12g')}",
         rf"G_R(s)={kp:.12g}",
         rf"G_R(s)={kp:.12g}",
         True,
@@ -1309,6 +1368,60 @@ def _units_latex(unit: str) -> str:
     return ""
 
 
+def _presented_validity_steps(
+    formula: str, validity_steps: tuple[ControllerValidityStep, ...]
+) -> tuple[ControllerValidityStep, ...]:
+    if formula == "Ziegler–Nichols, geschlossener Kreis":
+        return tuple(item for item in validity_steps if item.label != "Voraussetzungen")
+    return validity_steps
+
+
+def _symbol_legend_plain(formula: str, controller_type: ControllerType) -> str:
+    controller = ["k_P ist der Proportionalbeiwert des Reglers"]
+    if controller_type in (ControllerType.PI, ControllerType.PID):
+        controller.extend(("k_I ist der Integralbeiwert", "T_I ist die Nachstellzeit"))
+    if controller_type is ControllerType.PID:
+        controller.extend(("k_D ist der Differentialbeiwert", "T_D ist die Vorhaltezeit"))
+    if formula == "Ziegler–Nichols, geschlossener Kreis":
+        method = [
+            "K_crit ist die kritische Verstärkung",
+            "T_crit ist die kritische Periodendauer",
+        ]
+    else:
+        method = [
+            "K_S ist die Streckenverstärkung",
+            "K_T ist die Totzeit",
+            "T ist die Streckenzeitkonstante",
+        ]
+    return "; ".join((*method, *controller)) + "."
+
+
+def _symbol_legend_latex(formula: str, controller_type: ControllerType) -> str:
+    controller = [r"$k_P$: Proportionalbeiwert des Reglers"]
+    if controller_type in (ControllerType.PI, ControllerType.PID):
+        controller.extend((r"$k_I$: Integralbeiwert", r"$T_I$: Nachstellzeit"))
+    if controller_type is ControllerType.PID:
+        controller.extend((r"$k_D$: Differentialbeiwert", r"$T_D$: Vorhaltezeit"))
+    if formula == "Ziegler–Nichols, geschlossener Kreis":
+        method = [
+            r"$K_{\mathrm{crit}}$: kritische Verstärkung",
+            r"$T_{\mathrm{crit}}$: kritische Periodendauer",
+        ]
+    else:
+        method = [
+            r"$K_S$: Streckenverstärkung",
+            r"$K_T$: Totzeit",
+            r"$T$: Streckenzeitkonstante",
+        ]
+    return r"\par\noindent " + "; ".join((*method, *controller)) + r".\par"
+
+
+def _validity_conclusion_plain(formula: str) -> str:
+    if formula == "Ziegler–Nichols, geschlossener Kreis":
+        return "Alle Voraussetzungen sind erfüllt."
+    return "Der Quellenbereich ist erfüllt."
+
+
 def _table_steps(
     formula: str,
     values: tuple[tuple[str, str], ...],
@@ -1325,15 +1438,18 @@ def _table_steps(
         for item in result_steps
         if item.approximation_plain
     )
+    presented_validity = _presented_validity_steps(formula, validity_steps)
+    validity_text = " ".join(item.substitution_plain for item in presented_validity)
+    conclusion = _validity_conclusion_plain(formula)
+    if conclusion not in validity_text:
+        validity_text += f" {conclusion}"
     return (
         "Gegeben: " + ", ".join(f"{key}={value}" for key, value in values) + ".",
         f"Gesucht: {parameters.controller_type.value.upper()}-Regler G_R(s).",
         f"Verfahren und Reglertyp: {formula}, {parameters.controller_type.value.upper()}.",
-        "Symbollegende: K_S ist die Streckenverstärkung; k_P ist der Proportionalbeiwert "
-        "des Reglers; K_T ist die Totzeit; T ist die Streckenzeitkonstante.",
-        "Voraussetzungen: " + "; ".join(item.condition_plain for item in validity_steps) + ".",
-        "Konkrete Gültigkeitsprüfung: "
-        + " ".join(item.substitution_plain for item in validity_steps),
+        "Symbollegende: " + _symbol_legend_plain(formula, parameters.controller_type),
+        "Voraussetzungen: " + "; ".join(item.condition_plain for item in presented_validity) + ".",
+        "Konkrete Gültigkeitsprüfung: " + validity_text,
         "Allgemeine Tabellenformeln: "
         + "; ".join(item.general_plain for item in formula_steps)
         + ".",
@@ -1365,10 +1481,12 @@ def _table_latex(
     given = r",\quad ".join(rf"{_input_symbol_latex(key)}={value}" for key, value in values)
     general = "\n".join(rf"\[{item.general_latex}\]" for item in formula_steps)
     substituted = "\n".join(rf"\[{item.substituted_latex}\]" for item in formula_steps)
+    presented_validity = _presented_validity_steps(formula, validity_steps)
     validity = "\n".join(
         rf"\[{item.condition_latex}\]" + "\n" + rf"\[{item.substitution_latex}\]"
-        for item in validity_steps
+        for item in presented_validity
     )
+    validity += "\n" + rf"\par\noindent {_validity_conclusion_plain(formula)}" + r"\par"
     exact = "\n".join(
         rf"\[{item.symbol}={item.exact_latex}{_units_latex(item.unit)}\]" for item in result_steps
     )
@@ -1395,8 +1513,7 @@ def _table_latex(
             r"\textbf{Methode}",
             method_line,
             r"\textbf{Symbollegende}",
-            r"\par\noindent $K_S$: Streckenverstärkung; $K_T$: Totzeit; $T$: "
-            r"Streckenzeitkonstante; $k_P$: Proportionalbeiwert des Reglers.\par",
+            _symbol_legend_latex(formula, parameters.controller_type),
             r"\textbf{Voraussetzungen und Gültigkeitsbereich}",
             validity,
             r"\textbf{Allgemeine Formeln}",
@@ -1416,6 +1533,75 @@ def _table_latex(
             r"\textbf{Ergebnis}",
             rf"\[\boxed{{{_controller_parallel_latex(parameters)}}}\]",
         )
+    )
+
+
+def _prepared_open_loop_latex(reduced: ReducedTransferFunction) -> str:
+    numerator = sp.factor(reduced.numerator.expression._as_sympy())
+    denominator = sp.factor(reduced.denominator.expression._as_sympy())
+    return (
+        rf"G_0(s)=\frac{{{sp.latex(numerator, order='lex')}}}"
+        rf"{{{sp.latex(denominator, order='lex')}}}"
+    )
+
+
+def _recognized_target_frequency_formula(
+    reduced: ReducedTransferFunction,
+    target_margin: float,
+    candidates: tuple[ControllerDesignCandidate, ...],
+) -> ControllerFormulaStep | None:
+    if len(candidates) != 1 or target_margin != 20.0:
+        return None
+    s = sp.Symbol(reduced.variable_name)
+    expression = sp.cancel(
+        reduced.numerator.expression._as_sympy() / reduced.denominator.expression._as_sympy()
+    )
+    reference = sp.cancel(100 / (s * (10 * s + 1)))
+    if sp.cancel(expression - reference) != 0:
+        return None
+    numeric = f"{candidates[0].target_frequency:.12g}"
+    return ControllerFormulaStep(
+        "ω_*",
+        "arg G_0(jω)=-90°-arctan(10ω)",
+        "-90°-arctan(10ω_*)=-160°; arctan(10ω_*)=70°",
+        "ω_*=tan(70°)/10",
+        f"ω_*≈{numeric}",
+        r"s^-1",
+        "Analytisch erkannte Referenzstruktur G_0(s)=100/(s(10s+1))",
+        r"\arg G_0(j\omega)=-90^\circ-\arctan(10\omega)",
+        (
+            r"-90^\circ-\arctan(10\omega_\ast)=-160^\circ,"
+            r"\quad \arctan(10\omega_\ast)=70^\circ"
+        ),
+        r"\omega_\ast=\frac{\tan70^\circ}{10}",
+        rf"\omega_\ast\approx {numeric}",
+    )
+
+
+def _control(candidate: ControllerDesignCandidate, label: str) -> ControllerDesignControl:
+    return next(item for item in candidate.controls if item.label == label)
+
+
+def _frequency_presentations(
+    target_margin: float,
+    target_phase: float,
+    candidates: tuple[ControllerDesignCandidate, ...],
+) -> tuple[ControllerFrequencyPresentation, ...]:
+    return tuple(
+        ControllerFrequencyPresentation(
+            candidate.candidate_index,
+            f"{candidate.target_frequency:.12g}",
+            f"{target_phase:.12g}",
+            f"{target_margin:.12g}",
+            f"{candidate.original_magnitude:.12g}",
+            f"{candidate.positive_k_p:.12g}",
+            "G_0,neu(s)=k_PG_0(s)",
+            _control(candidate, "Betrag nach Skalierung"),
+            _control(candidate, "Phasenreserve"),
+            _control(candidate, "Globale Phasenreserve"),
+            _control(candidate, "Nyquist-Nachprüfung"),
+        )
+        for candidate in candidates
     )
 
 
@@ -1488,12 +1674,24 @@ def _phase_validity_steps(
 
 
 def _phase_margin_steps(
-    target: float, target_phase: float, candidates: tuple[ControllerDesignCandidate, ...]
+    target: float,
+    target_phase: float,
+    candidates: tuple[ControllerDesignCandidate, ...],
+    target_frequency_formula: ControllerFormulaStep | None,
 ) -> list[str]:
-    candidate_text = "; ".join(
-        f"Kandidat {item.candidate_index}: ω_*={item.target_frequency:.12g} rad/s"
-        for item in candidates
-    )
+    if target_frequency_formula is None:
+        candidate_text = "; ".join(
+            f"Kandidat {item.candidate_index}: ω_*≈{item.target_frequency:.12g} rad/s "
+            "(numerische Zielphasensuche)"
+            for item in candidates
+        )
+    else:
+        candidate_text = (
+            f"{target_frequency_formula.general_plain}; "
+            f"{target_frequency_formula.substituted_plain}; "
+            f"{target_frequency_formula.exact_plain}; "
+            f"{target_frequency_formula.approximation_plain} s^-1"
+        )
     magnitude_text = "; ".join(f"|G_0(jω_*)|={item.original_magnitude:.12g}" for item in candidates)
     substitution_text = "; ".join(
         f"k_P=1/{item.original_magnitude:.12g}={item.positive_k_p:.12g}" for item in candidates
@@ -1523,15 +1721,15 @@ def _phase_margin_steps(
 
 
 def _phase_margin_latex(
-    draft: ControllerDesignInputDraft,
+    open_loop_latex: str,
     target: float,
     target_phase: float,
     candidates: tuple[ControllerDesignCandidate, ...],
+    target_frequency_formula: ControllerFormulaStep | None,
 ) -> str:
     lines = [
         r"\textbf{Gegeben}",
-        rf"\[G_0(s)=\frac{{{draft.numerator_text}}}{{{draft.denominator_text}}},\qquad "
-        rf"\Phi_{{R,\mathrm{{soll}}}}={target:.12g}^\circ\]",
+        rf"\[{open_loop_latex},\qquad \Phi_{{R,\mathrm{{soll}}}}={target:.12g}^\circ\]",
         r"\textbf{Gesucht}",
         r"\[G_R(s)=k_P,\qquad k_P>0\]",
         r"\textbf{Voraussetzungen und Gültigkeitsbereich}",
@@ -1539,24 +1737,40 @@ def _phase_margin_latex(
         rf"\[0^\circ<{target:.12g}^\circ<180^\circ\]",
         r"\textbf{Zielphasensuche}",
         rf"\[\varphi_{{\mathrm{{ziel}}}}=-180^\circ+{target:.12g}^\circ={target_phase:.12g}^\circ\]",
-        r"\textbf{Allgemeine Formeln}",
-        r"\[k_P=\frac1{|G_0(j\omega_\ast)|}\]",
     ]
+    if target_frequency_formula is None:
+        lines.append(
+            r"\par\noindent Die Zielphasenfrequenz wird numerisch aus der entfalteten "
+            r"Phase bestimmt; keine kompakte symbolische Herleitung wird angenommen.\par"
+        )
+    else:
+        lines.extend(
+            (
+                rf"\[{target_frequency_formula.general_latex}\]",
+                rf"\[{target_frequency_formula.substituted_latex}\]",
+                rf"\[{target_frequency_formula.exact_latex}\]",
+                rf"\[{target_frequency_formula.approximation_latex}\,\mathrm{{s^{{-1}}}}\]",
+            )
+        )
+    lines.extend((r"\textbf{Allgemeine Formeln}", r"\[k_P=\frac1{|G_0(j\omega_\ast)|}\]"))
     for candidate in candidates:
         omega = (
             r"\omega_\ast" if len(candidates) == 1 else rf"\omega_{{{candidate.candidate_index}}}"
         )
-        lines.extend(
+        candidate_lines = [rf"\textbf{{Einsetzen - Kandidat {candidate.candidate_index}}}"]
+        if target_frequency_formula is None:
+            candidate_lines.append(
+                rf"\[{omega}\approx {candidate.target_frequency:.12g}\,\mathrm{{s^{{-1}}}}\]"
+            )
+        candidate_lines.extend(
             (
-                rf"\[{omega}={candidate.target_frequency:.12g}\,\mathrm{{s^{{-1}}}}\]",
-                rf"\textbf{{Einsetzen - Kandidat {candidate.candidate_index}}}",
                 rf"\[|G_0(j\omega_\ast)|={candidate.original_magnitude:.12g}\]",
                 rf"\[k_P=\frac1{{{candidate.original_magnitude:.12g}}}"
                 rf"={candidate.positive_k_p:.12g}\]",
                 r"\textbf{Frequenz- und Reservennachprüfung}",
                 r"\[G_{0,\mathrm{neu}}(s)=k_PG_0(s)\]",
                 rf"\[|k_PG_0(j\omega_\ast)|="
-                rf"{candidate.positive_k_p * candidate.original_magnitude:.12g}=1\]",
+                rf"{candidate.positive_k_p * candidate.original_magnitude:.12g}\]",
                 rf"\[\Phi_{{R,\mathrm{{ist}}}}={candidate.achieved_phase_margin_degrees:.8g}^\circ"
                 rf"\ge\Phi_{{R,\mathrm{{soll}}}}={target:.8g}^\circ\]",
                 r"\par\noindent Die Durchtritte und Reserven wurden vollständig neu "
@@ -1566,6 +1780,7 @@ def _phase_margin_latex(
                 r"Kreis erneut ausgeführt.\par",
             )
         )
+        lines.extend(candidate_lines)
     successful = tuple(
         item for item in candidates if item.status is ControllerDesignCandidateStatus.TARGET_MET
     )
@@ -1582,11 +1797,13 @@ def _phase_margin_latex(
 __all__ = [
     "ControllerDesignCandidate",
     "ControllerDesignCandidateStatus",
+    "ControllerDesignControl",
     "ControllerDesignInputDraft",
     "ControllerDesignMethod",
     "ControllerDesignOutcomeDecision",
     "ControllerDesignResult",
     "ControllerDesignWorkflowService",
+    "ControllerFrequencyPresentation",
     "ControllerType",
     "controller_design_candidate_status_text",
     "controller_design_method_text",

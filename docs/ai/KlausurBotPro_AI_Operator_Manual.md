@@ -255,7 +255,7 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 | `Reglerauslegung berechnen`, `Zurücksetzen`, `LaTeX kopieren` | Schaltflächen | — | Start/Reset/Kopieren | Nicht laufend/LaTeX vorhanden | Bei Fehler kein altes LaTeX kopierbar |
 | Ergebnis-Tabs | Tabs | Übersicht, Verfahren/Eingaben, Formel und Einsetzen, Reglerparameter, Frequenznachprüfung, Kontrollen, Worked Steps, LaTeX, Diagnosen | Wählt Ausgabe | Ergebnisabhängig | — |
 
-**Ausgaben:** Verfahrensdaten, konkrete Quellenbereichsprüfung, allgemeine Formel vor der Einsetzung, exakte Werte vor optionalen Näherungen, parallele Reglerform als primäres Ergebnis, äquivalente Idealform, numerische Kandidaten/Frequenznachprüfung, Kontrollen, Worked Steps und LaTeX. `K_S` bezeichnet die Streckenverstärkung, `k_P` den Proportionalbeiwert des Reglers.
+**Ausgaben:** Verfahrensdaten, konkrete Quellenbereichsprüfung mit ausdrücklicher Bewertung, allgemeine Formel vor der Einsetzung, exakte Werte vor optionalen Näherungen, parallele Reglerform als primäres Ergebnis, äquivalente Idealform, vollständige Kandidaten-/Frequenznachprüfung, Kontrollen, Worked Steps und LaTeX. Der Frequenztab zeigt Zielphase, Betrag, eingesetzten P-Faktor, neuen offenen Kreis, Durchtritt, globale Reserve und den tatsächlichen Nyquist-Kontrollstatus. Strukturierte interne Diagnosecodes bleiben im Ergebnisvertrag, die sichtbare Diagnose zeigt ausschließlich die verständliche Nachricht. Symbollegenden sind methodenabhängig; `K_S` bezeichnet die Streckenverstärkung, `k_P` den Proportionalbeiwert des Reglers.
 
 **Grenzen:** P-Phasenreserve ist numerisch und kann eine manuelle Kandidatenauswahl verlangen. Ziegler–Nichols offen gilt hier nur für `K_T/T < 0,5`, Cohen–Coon nur für `0 < K_T/T < 2`. Die App bildet nicht automatisch eine Strecke aus einem Blockschaltbild. Totzeit-Frequenzrechnung und Lead-Auslegung bleiben nicht unterstützt.
 
@@ -558,12 +558,12 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 - **Gültiges Beispiel:** Zähler `100`, Nenner `s*(10*s+1)`, Ziel `20`, Bereich `1e-4` bis `1e2`, `32` Punkte/Dekade.
 - **Bedienfolge:** 1. Verfahren wählen. 2. Strecke/Ziel/Bereich eingeben. 3. `Reglerauslegung berechnen`.
 - **Interne Interpretation:** Sucht entfaltete Phase `-180°+Φ_R`, setzt `k_P=1/|G_0(jω*)|` und analysiert neu.
-- **Automatische Schritte:** Zielphasensuche, Kandidaten, neue Durchtritte/Reserven und Nyquist.
-- **Sichtbare Ergebnisse:** Zielwerte, `k_P`, Kandidatenstatus, Frequenznachprüfung und LaTeX.
+- **Automatische Schritte:** Zielphasensuche, Kandidaten, neue Durchtritte/Reserven und Nyquist. Beim exakt erkannten Referenzmodell `100/(s*(10*s+1))` mit Zielreserve `20°` wird zusätzlich die sichere Beziehung `ω*=tan(70°)/10` vor dem Näherungswert dargestellt; andere Fälle bleiben ausdrücklich numerisch.
+- **Sichtbare Ergebnisse:** Zielphase, Zielfrequenz, Betrag am Zielpunkt, allgemeiner und eingesetzter `k_P`-Wert, neuer offener Kreis, Durchtritt, erreichte und globale Reserve, Nyquist-Kontrollstatus und symbolisch gesetztes LaTeX ohne rohe Eingabesterne.
 - **Manuelle Vorarbeit:** Offene Strecke bilden und sinnvollen Suchbereich wählen.
 - **Manuelle Nacharbeit/Kontrolle:** Bei mehreren erfolgreichen Kandidaten Auswahl treffen; globale Reserve prüfen.
 - **Typische Fehlbedienung:** Suchbereich verfehlt Zielphase; ungelöste Parameter.
-- **Bekannte Grenze:** Rein numerische Auslegung; kein Kandidat ergibt keine LaTeX-Lösung.
+- **Bekannte Grenze:** Außerhalb der sicher erkannten Referenzstruktur bleibt die Zielphasensuche numerisch; kein Kandidat ergibt keine LaTeX-Lösung.
 - **Nachweis:** `ui/controller_design_workspace.py`, `application/controller_design_workflow.py`; `tests/ui/test_controller_design_workspace.py`, `tests/application/test_controller_design_workflow.py`.
 
 ### WF-17: Ziegler–Nichols – offener Kreis

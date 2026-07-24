@@ -57,7 +57,7 @@ def test_g1_uses_reused_frequency_reserve_and_nyquist_kernels() -> None:
     assert candidate.status is ControllerDesignCandidateStatus.TARGET_MET
     assert result.input.task_name == "SS 2025 Aufgabe 2e"
     assert result.latex.count(r"\section*{") == 1
-    assert r"\omega_\ast=0.274747741945" in result.latex
+    assert r"\omega_\ast\approx 0.274747741945" in result.latex
     assert r"G_{0,\mathrm{neu}}(s)=k_PG_0(s)" in result.latex
     assert "L_mathrm" not in result.latex
     assert result.latex.count(r"\[") == result.latex.count(r"\]")
@@ -67,6 +67,53 @@ def test_g1_uses_reused_frequency_reserve_and_nyquist_kernels() -> None:
         r"\[", 0, explanation_position
     )
     assert r"\par\noindent " + explanation in result.latex
+
+
+def test_g1_uses_symbolic_transfer_latex_and_exact_frequency_relation_first() -> None:
+    result = ControllerDesignWorkflowService().run(
+        ControllerDesignInputDraft(
+            ControllerDesignMethod.P_PHASE_MARGIN,
+            ControllerType.P,
+            "SS 2025 Aufgabe 2e",
+            "100",
+            "s*(10*s+1)",
+            (),
+            "20",
+            "1e-4",
+            "1e2",
+            "32",
+        )
+    )
+    assert "s*(10*s+1)" not in result.latex
+    assert r"\frac{100}{s \left(10 s + 1\right)}" in result.latex
+    exact = r"\omega_\ast=\frac{\tan70^\circ}{10}"
+    approximate = r"\omega_\ast\approx 0.274747741945"
+    assert exact in result.latex
+    assert result.latex.index(exact) < result.latex.index(approximate)
+    assert "s*(" not in result.latex
+    assert ")*(" not in result.latex
+    assert "*s" not in result.latex
+
+
+def test_non_reference_phase_design_stays_explicitly_numerical() -> None:
+    result = ControllerDesignWorkflowService().run(
+        ControllerDesignInputDraft(
+            ControllerDesignMethod.P_PHASE_MARGIN,
+            ControllerType.P,
+            "Numerischer Fall",
+            "1",
+            "s*(s+1)",
+            (),
+            "45",
+            "1e-4",
+            "1e2",
+            "32",
+        )
+    )
+    assert result.status is ControllerDesignStatus.COMPLETE
+    assert result.target_frequency_formula is None
+    assert "numerisch aus der entfalteten Phase" in result.latex
+    assert r"\frac{\tan70^\circ}{10}" not in result.latex
 
 
 def test_g2_workflow_exact_values_and_latex() -> None:
@@ -276,9 +323,7 @@ def test_g3_exact_values_precede_numerical_approximations_and_no_5_4_rounding() 
         "72/17",
     )
     assert "k_P=5.4" not in result.latex
-    assert result.latex.index(r"k_P=\frac{49}{9}") < result.latex.index(
-        r"k_P\approx 5.44444"
-    )
+    assert result.latex.index(r"k_P=\frac{49}{9}") < result.latex.index(r"k_P\approx 5.44444")
     assert result.latex.count(r"\boxed") == 1
 
 
@@ -296,6 +341,46 @@ def test_g4_shows_both_positive_inputs_and_exact_terminating_decimals() -> None:
         "1.5",
         "0.36",
     )
+
+
+def test_g4_legend_is_method_specific_and_validity_formulas_are_not_duplicated() -> None:
+    result = ControllerDesignWorkflowService().run(
+        draft(ControllerDesignMethod.ZIEGLER_NICHOLS_CLOSED_LOOP)
+    )
+    legend = result.latex[
+        result.latex.index(r"\textbf{Symbollegende}") : result.latex.index(
+            r"\textbf{Voraussetzungen und Gültigkeitsbereich}"
+        )
+    ]
+    assert r"K_{\mathrm{crit}}" in legend
+    assert r"T_{\mathrm{crit}}" in legend
+    assert "K_S" not in legend
+    assert "K_T" not in legend
+    assert "Streckenzeitkonstante" not in legend
+    validity = result.latex[
+        result.latex.index(r"\textbf{Voraussetzungen und Gültigkeitsbereich}") : result.latex.index(
+            r"\textbf{Allgemeine Formeln}"
+        )
+    ]
+    assert validity.count(r"K_{\mathrm{crit}}>0") == 1
+    assert validity.count(r"T_{\mathrm{crit}}>0") == 1
+    assert "Alle Voraussetzungen sind erfüllt." in validity
+
+
+@pytest.mark.parametrize(
+    "method",
+    (
+        ControllerDesignMethod.ZIEGLER_NICHOLS_OPEN_LOOP,
+        ControllerDesignMethod.COHEN_COON,
+    ),
+)
+def test_valid_table_source_range_is_explicitly_concluded(
+    method: ControllerDesignMethod,
+) -> None:
+    result = ControllerDesignWorkflowService().run(draft(method))
+    assert "Der Quellenbereich ist erfüllt." in "\n".join(result.worked_steps)
+    assert "Der Quellenbereich ist erfüllt." in result.latex
+    assert any("Der Quellenbereich ist erfüllt." in control.message for control in result.controls)
 
 
 @pytest.mark.parametrize(
@@ -333,6 +418,8 @@ def test_boundary_diagnostics_are_field_related_and_use_k_t() -> None:
     )
     assert "K_T/T < 0,5" in zn.diagnostics[0].message
     assert "K_T" in cc.diagnostics[0].message
+    assert "Der Quellenbereich ist erfüllt." not in zn.diagnostics[0].message
+    assert "Der Quellenbereich ist erfüllt." not in cc.diagnostics[0].message
     assert not zn.has_copyable_solution
     assert not cc.has_copyable_solution
 
@@ -359,3 +446,37 @@ def test_worked_steps_follow_required_table_order_and_separate_symbols() -> None
     )
     assert "K_S ist die Streckenverstärkung" in result.worked_steps[3]
     assert "k_P ist der Proportionalbeiwert des Reglers" in result.worked_steps[3]
+
+
+def test_reference_cases_keep_one_primary_box_and_hide_internal_names() -> None:
+    service = ControllerDesignWorkflowService()
+    results = (
+        service.run(
+            ControllerDesignInputDraft(
+                ControllerDesignMethod.P_PHASE_MARGIN,
+                ControllerType.P,
+                "G1",
+                "100",
+                "s*(10*s+1)",
+                (),
+                "20",
+                "1e-4",
+                "1e2",
+                "32",
+            )
+        ),
+        service.run(draft(ControllerDesignMethod.ZIEGLER_NICHOLS_OPEN_LOOP)),
+        service.run(draft(ControllerDesignMethod.COHEN_COON)),
+        service.run(draft(ControllerDesignMethod.ZIEGLER_NICHOLS_CLOSED_LOOP)),
+    )
+    for result in results:
+        visible = result.latex + "\n" + "\n".join(result.worked_steps)
+        assert result.latex.count(r"\boxed") == 1
+        for internal in (
+            "p_phase_margin",
+            "ziegler_nichols_open_loop",
+            "ziegler_nichols_closed_loop",
+            "cohen_coon",
+            "dead_time_text",
+        ):
+            assert internal not in visible

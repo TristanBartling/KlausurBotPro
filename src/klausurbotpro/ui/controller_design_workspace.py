@@ -19,11 +19,11 @@ from PySide6.QtWidgets import (
 )
 
 from klausurbotpro.application import (
+    ControllerDesignControl,
     ControllerDesignInputDraft,
     ControllerDesignMethod,
     ControllerType,
     ParameterInputDraft,
-    controller_design_candidate_status_text,
     controller_design_method_text,
 )
 from klausurbotpro.ui.controller_design_presenter import ControllerDesignPresenter
@@ -261,12 +261,26 @@ class ControllerDesignWorkspace(QWidget):
             )
         )
         self.outputs["frequency"].setPlainText(
-            "\n".join(
-                f"Kandidat {item.candidate_index}: ω={item.target_frequency:.12g} rad/s, "
-                f"k_P={item.positive_k_p:.12g}, "
-                f"Φ_R={item.achieved_phase_margin_degrees:.8g}°, "
-                f"Status: {controller_design_candidate_status_text(item.status)}"
-                for item in result.candidates
+            "\n\n".join(
+                "\n".join(
+                    (
+                        f"Kandidat {item.candidate_index}",
+                        "",
+                        f"ω_* = {item.target_frequency} rad/s",
+                        f"φ_ziel = {item.target_phase}°",
+                        f"|G_0(jω_*)| = {item.original_magnitude}",
+                        f"k_P = 1/|G_0(jω_*)| = {item.positive_k_p}",
+                        "",
+                        item.new_open_loop,
+                        f"Durchtrittskontrolle: {item.magnitude_control.message}",
+                        f"{item.phase_margin_control.message} >= Φ_R,soll={item.target_margin}°",
+                        "",
+                        "Globale Reservenprüfung: "
+                        + _control_projection(item.global_margin_control),
+                        "Nyquist-Nachprüfung: " + _control_projection(item.nyquist_control),
+                    )
+                )
+                for item in result.frequency_presentations
             )
         )
         self.outputs["controls"].setPlainText(
@@ -279,9 +293,7 @@ class ControllerDesignWorkspace(QWidget):
             "\n".join(f"{index}. {item}" for index, item in enumerate(result.worked_steps, 1))
         )
         self.outputs["latex"].setPlainText(result.latex)
-        self.outputs["diagnostics"].setPlainText(
-            "\n".join(f"{item.code}: {item.message}" for item in result.diagnostics)
-        )
+        self.outputs["diagnostics"].setPlainText("\n".join(value.visible_diagnostics))
         self.copy_button.setEnabled(result.has_copyable_solution)
         if result.has_copyable_solution:
             preferred = (
@@ -333,6 +345,10 @@ class ControllerDesignWorkspace(QWidget):
 def _visible(row: tuple[QLabel, QWidget], visible: bool) -> None:
     row[0].setVisible(visible)
     row[1].setVisible(visible)
+
+
+def _control_projection(control: ControllerDesignControl) -> str:
+    return f"{'bestanden' if control.passed else 'nicht bestanden'} ({control.message})"
 
 
 def _line(text: str, name: str) -> QLineEdit:
