@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from klausurbotpro.application._solution_report_formatting import (
+    compact_decimal_text,
     descriptive_math,
     exact_expression,
     exact_rational,
@@ -41,6 +42,7 @@ from klausurbotpro.application.transfer_function_solution_report_contracts impor
 from klausurbotpro.application.transfer_function_workflow_contracts import (
     TransferFunctionWorkflowLimits,
     TransferFunctionWorkflowState,
+    WorkflowDiagnosticEntry,
     WorkflowInputForm,
     WorkflowStage,
     WorkflowStageRecord,
@@ -59,6 +61,7 @@ from klausurbotpro.domain import (
     TransferFunctionDomainExclusion,
     TransferFunctionPrerequisite,
     TransferFunctionPrerequisiteKind,
+    TransferFunctionReductionStepKind,
     TransferFunctionStabilityAnalysisResult,
 )
 
@@ -277,7 +280,9 @@ class TransferFunctionSolutionReportBuilder:
                 entry.stage,
                 entry.diagnostic.message,
             )
-            for entry in state.aggregated_diagnostics
+            for entry in _deduplicated_notice_entries(
+                state.aggregated_diagnostics
+            )
         )
 
         records = {record.stage: record for record in state.stage_records}
@@ -702,7 +707,12 @@ class TransferFunctionSolutionReportBuilder:
                         estimate.real,
                         estimate.imaginary,
                     )
-                    if approximation.plaintext != exact_value.plaintext:
+                    if _approximation_adds_information(
+                        exact_value.plaintext,
+                        approximation.plaintext,
+                        estimate.real,
+                        estimate.imaginary,
+                    ):
                         approximation_lines.append(
                             ApproximationLine(
                                 f"{root_label}_{root.index + 1}",
@@ -783,7 +793,10 @@ class TransferFunctionSolutionReportBuilder:
             state.reduction_result is not None
             and state.reduction_result.report is not None
             and any(
-                step.kind.value != "no_reduction"
+                step.kind
+                is TransferFunctionReductionStepKind.REMOVE_COMMON_POLYNOMIAL_FACTOR
+                and step.factor is not None
+                and state.request.variable_name in step.factor.symbol_names
                 for step in state.reduction_result.report.steps
             )
         ):
@@ -1214,6 +1227,61 @@ def _line_expressions(line: SolutionLine) -> tuple[ReportMathExpression, ...]:
         )
         return (*direct, *retained)
     return ()
+
+
+def _deduplicated_notice_entries(
+    entries: Iterable[WorkflowDiagnosticEntry],
+) -> tuple[WorkflowDiagnosticEntry, ...]:
+    """Keep the first paper notice for each structured visible identity."""
+
+    result: list[WorkflowDiagnosticEntry] = []
+    seen: set[tuple[object, ...]] = set()
+    for entry in entries:
+        diagnostic = entry.diagnostic
+        key = (
+            entry.stage,
+            diagnostic.severity,
+            diagnostic.code,
+            diagnostic.field,
+            diagnostic.message,
+            entry.override_provenance,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(entry)
+    return tuple(result)
+
+
+def _approximation_adds_information(
+    exact_plaintext: str,
+    approximation_plaintext: str,
+    real: str,
+    imaginary: str,
+) -> bool:
+    """Suppress a decimal line when a Gaussian integer is already exact."""
+
+    if approximation_plaintext == exact_plaintext:
+        return False
+    real_text = compact_decimal_text(real)
+    imaginary_text = compact_decimal_text(imaginary)
+    if not (
+        real_text.removeprefix("-").isdigit()
+        and imaginary_text.removeprefix("-").isdigit()
+    ):
+        return True
+    imaginary_value = int(imaginary_text)
+    if imaginary_value == 0:
+        return True
+    magnitude = abs(imaginary_value)
+    imaginary_term = "I" if magnitude == 1 else f"{magnitude}*I"
+    sign = "-" if imaginary_value < 0 else "+"
+    gaussian_integer = (
+        f"{'-' if imaginary_value < 0 else ''}{imaginary_term}"
+        if real_text == "0"
+        else f"{real_text} {sign} {imaginary_term}"
+    )
+    return exact_plaintext != gaussian_integer
 
 
 __all__ = ["TransferFunctionSolutionReportBuilder"]

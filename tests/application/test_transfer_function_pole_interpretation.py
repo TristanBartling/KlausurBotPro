@@ -8,6 +8,7 @@ import pytest
 
 from klausurbotpro.application import (
     ApproximationLine,
+    OverrideProvenance,
     ResultLine,
     SolutionSectionKind,
     TransferFunctionSolutionReport,
@@ -15,14 +16,23 @@ from klausurbotpro.application import (
     TransferFunctionWorkflowRequest,
     TransferFunctionWorkflowService,
     TransferFunctionWorkflowState,
+    WorkflowDiagnosticEntry,
     WorkflowInputForm,
+    WorkflowOverrideOriginKind,
+    WorkflowStage,
     render_solution_report_latex,
     render_solution_report_plaintext,
 )
 from klausurbotpro.application._solution_report_formatting import (
     compact_decimal_text,
 )
+from klausurbotpro.application.transfer_function_solution_report_builder import (
+    _deduplicated_notice_entries,
+)
 from klausurbotpro.domain import (
+    Diagnostic,
+    DiagnosticCode,
+    DiagnosticSeverity,
     PoleDynamicsClassification,
     PoleDynamicsModelBasis,
 )
@@ -165,7 +175,7 @@ def test_safety_cases_receive_only_supported_classifications(
 
 
 def test_mixed_stable_poles_claim_only_an_oscillatory_component() -> None:
-    _state, _report, plaintext, _latex = _result(
+    state, report, plaintext, _latex = _result(
         "1/((s+5)*(s^2+2*s+5))"
     )
 
@@ -174,6 +184,23 @@ def test_mixed_stable_poles_claim_only_an_oscillatory_component() -> None:
         in plaintext
     )
     assert "reine Zweipolschwingung" not in plaintext
+    assert not state.aggregated_diagnostics
+    assert not any(
+        type(line) is ApproximationLine
+        for line in _lines(report, SolutionSectionKind.POLES)
+    )
+
+
+def test_unstable_gaussian_integer_poles_have_no_false_numeric_warning() -> None:
+    state, report, plaintext, latex = _result("1/(s^2-2*s+5)")
+
+    assert not state.aggregated_diagnostics
+    assert not any(
+        type(line) is ApproximationLine
+        for line in _lines(report, SolutionSectionKind.POLES)
+    )
+    assert "numerische Prüfung ist jedoch fehlgeschlagen" not in plaintext
+    assert "numerische Prüfung ist jedoch fehlgeschlagen" not in latex
 
 
 def test_unassigned_parameter_has_no_invented_numeric_or_qualitative_result() -> None:
@@ -222,8 +249,39 @@ def test_cancellation_interpretation_uses_reduced_ea_model_and_keeps_provenance(
     assert pole.multiplicity == 1
 
 
+def test_numeric_factor_reduction_does_not_claim_removed_dynamics() -> None:
+    _state, report, plaintext, latex = _result("4*s/(2*s^2+8*s+6)")
+    dynamics = _lines(report, SolutionSectionKind.DYNAMIC_BEHAVIOR)
+
+    assert not any(
+        type(line) is ResultLine
+        and line.source_role == "reduced_model_notice"
+        for line in dynamics
+    )
+    assert "entfernte Faktoren bleiben im Kürzungsprotokoll" not in plaintext
+    assert "entfernte Faktoren bleiben im Kürzungsprotokoll" not in latex
+
+
+def test_sign_normalization_does_not_claim_removed_dynamics() -> None:
+    state, report, plaintext, latex = _result("-s/(-s^2-4*s-3)")
+    reduction = state.reduction_result
+    assert reduction is not None
+    assert reduction.report is not None
+
+    assert [step.kind.value for step in reduction.report.steps] == [
+        "normalize_sign"
+    ]
+    assert not any(
+        type(line) is ResultLine
+        and line.source_role == "reduced_model_notice"
+        for line in _lines(report, SolutionSectionKind.DYNAMIC_BEHAVIOR)
+    )
+    assert "entfernte Faktoren bleiben im Kürzungsprotokoll" not in plaintext
+    assert "entfernte Faktoren bleiben im Kürzungsprotokoll" not in latex
+
+
 def test_repeated_real_pole_keeps_multiplicity_and_is_aperiodic() -> None:
-    _state, report, plaintext, _latex = _result("1/(s+2)^2")
+    state, report, plaintext, latex = _result("1/(s+2)^2")
     pole = next(
         line
         for line in _lines(report, SolutionSectionKind.POLES)
@@ -233,6 +291,87 @@ def test_repeated_real_pole_keeps_multiplicity_and_is_aperiodic() -> None:
     assert pole.exact_value.plaintext == "-2"
     assert pole.multiplicity == 2
     assert "Das E/A-Verhalten ist aperiodisch." in plaintext
+    assert len(state.aggregated_diagnostics) == 2
+    notice = "Mehrfachwurzeln können numerisch schlecht konditioniert sein."
+    assert plaintext.count(notice) == 1
+    assert latex.count(notice) == 1
+
+
+def test_notice_deduplication_preserves_stage_field_and_override_provenance() -> None:
+    base = Diagnostic(
+        DiagnosticSeverity.WARNING,
+        DiagnosticCode.ROOT_ANALYSIS_ILL_CONDITIONED,
+        "Hinweis",
+        "Nenner",
+        (("root_index", "0"),),
+    )
+    same_visible_identity = Diagnostic(
+        DiagnosticSeverity.WARNING,
+        DiagnosticCode.ROOT_ANALYSIS_ILL_CONDITIONED,
+        "Hinweis",
+        "Nenner",
+        (("root_index", "1"),),
+    )
+    other_field = Diagnostic(
+        DiagnosticSeverity.WARNING,
+        DiagnosticCode.ROOT_ANALYSIS_ILL_CONDITIONED,
+        "Hinweis",
+        "Zähler",
+    )
+    other_diagnostic = Diagnostic(
+        DiagnosticSeverity.WARNING,
+        DiagnosticCode.ROOT_ANALYSIS_CONJUGATE_MISMATCH,
+        "Hinweis",
+        "Nenner",
+    )
+    provenance = OverrideProvenance(
+        WorkflowOverrideOriginKind.MANUAL,
+        "Geprüfte Vorgabe",
+        1,
+        WorkflowStage.ROOT_ANALYSIS,
+    )
+    entries = (
+        WorkflowDiagnosticEntry(WorkflowStage.ROOT_ANALYSIS, 0, base, 1),
+        WorkflowDiagnosticEntry(
+            WorkflowStage.ROOT_ANALYSIS,
+            1,
+            same_visible_identity,
+            1,
+        ),
+        WorkflowDiagnosticEntry(
+            WorkflowStage.STABILITY_ANALYSIS,
+            0,
+            base,
+            1,
+        ),
+        WorkflowDiagnosticEntry(
+            WorkflowStage.ROOT_ANALYSIS,
+            2,
+            other_field,
+            1,
+        ),
+        WorkflowDiagnosticEntry(
+            WorkflowStage.ROOT_ANALYSIS,
+            3,
+            other_diagnostic,
+            1,
+        ),
+        WorkflowDiagnosticEntry(
+            WorkflowStage.ROOT_ANALYSIS,
+            4,
+            base,
+            1,
+            provenance,
+        ),
+    )
+
+    assert _deduplicated_notice_entries(entries) == (
+        entries[0],
+        entries[2],
+        entries[3],
+        entries[4],
+        entries[5],
+    )
 
 
 def test_plaintext_and_latex_prioritize_primary_results_before_technical_sections() -> None:

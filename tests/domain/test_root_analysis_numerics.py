@@ -134,3 +134,67 @@ def test_precision_exhaustion_keeps_exact_roots_and_is_structured(
     assert DiagnosticCode.ROOT_ANALYSIS_NUMERIC_CHECK_SKIPPED in {
         item.code for item in result.diagnostics
     }
+
+
+def test_candidate_matching_is_independent_of_candidate_order() -> None:
+    limits = RootAnalysisLimits()
+
+    matches = numeric_module._match_numerical_candidates(
+        (sp.Integer(-1) - 2 * sp.I, sp.Integer(-1) + 2 * sp.I),
+        (1, 1),
+        (sp.Integer(-1) + 2 * sp.I, sp.Integer(-1) - 2 * sp.I),
+        (1, 1),
+        sp.Rational(1, 10) ** 20,
+        52,
+        limits,
+    )
+
+    assert matches == (1, 0)
+
+
+def test_candidate_matching_respects_root_multiplicity() -> None:
+    limits = RootAnalysisLimits()
+
+    matches = numeric_module._match_numerical_candidates(
+        (sp.Integer(-2), sp.Integer(-2)),
+        (1, 2),
+        (sp.Integer(-2), sp.Integer(-2)),
+        (2, 1),
+        sp.Rational(1, 10) ** 20,
+        52,
+        limits,
+    )
+
+    assert matches == (1, 0)
+
+
+def test_candidate_matching_rejects_a_false_candidate() -> None:
+    limits = RootAnalysisLimits()
+
+    with pytest.raises(ValueError, match="No valid numerical candidate"):
+        numeric_module._match_numerical_candidates(
+            (sp.Integer(-1),),
+            (1,),
+            (sp.Integer(1),),
+            (1,),
+            sp.Rational(1, 10) ** 20,
+            52,
+            limits,
+        )
+
+
+def test_candidate_matching_uses_relative_tolerance_for_large_roots() -> None:
+    limits = RootAnalysisLimits()
+    exact = sp.Integer(10) ** 20
+
+    matches = numeric_module._match_numerical_candidates(
+        (exact,),
+        (1,),
+        (exact + sp.Rational(1, 2),),
+        (1,),
+        sp.Rational(1, 10) ** 20,
+        52,
+        limits,
+    )
+
+    assert matches == (0,)
