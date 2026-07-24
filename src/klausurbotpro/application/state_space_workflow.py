@@ -41,6 +41,10 @@ from klausurbotpro.domain.transfer_function_root_analyzer import TransferFunctio
 from klausurbotpro.parsing import ParserConfig, SafeExpressionParser, SafeRationalExpressionParser
 
 _IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
+_PARAMETER_EIGENVALUE_HINT = (
+    "Eigenwerte parameterabhängig; für die Stabilitätsentscheidung wird das "
+    "Hurwitz-Kriterium verwendet."
+)
 
 
 def run_state_space_workflow(draft: StateSpaceInputDraft) -> StateSpaceAnalysisResult:
@@ -180,7 +184,13 @@ def _analyze(
     si_minus_a = s * sp.eye(model.state_dimension) - a
     determinant = sp.expand(si_minus_a.det())
     characteristic = sp.Poly(determinant, s).as_expr()
-    determinant_steps = _determinant_steps(si_minus_a, characteristic)
+    matrix_label = (
+        "A_R"
+        if draft.task_type is StateSpaceTaskType.ODE_TO_CONTROLLABLE_CANONICAL
+        and draft.analysis_target is StateSpaceAnalysisTarget.STATE_STABILITY
+        else "A"
+    )
+    determinant_steps = _determinant_steps(si_minus_a, characteristic, matrix_label)
     adjugate_expression = sp.cancel((c * si_minus_a.adjugate() * b)[0] / characteristic + d)
     raw_numerator = sp.expand((c * si_minus_a.adjugate() * b)[0] + d * characteristic)
     raw_expression = raw_numerator / characteristic
@@ -311,6 +321,7 @@ def _analyze(
         exact_eigenvalues,
         numerical,
         state_stability,
+        stability.analysis,
         raw_expression,
         reduced_expression,
         cancellation,
@@ -344,6 +355,7 @@ def _analyze(
         determinant_steps,
         real_part_checks,
         visible_checks,
+        _polynomial_plain(characteristic),
     )
 
 
@@ -567,11 +579,13 @@ def _state_stability_text(hurwitz_statement: str, counts: tuple[int, int, int] |
     return "Das Zustandsmodell ist nicht asymptotisch stabil" + suffix + "."
 
 
-def _determinant_steps(matrix: sp.Matrix, characteristic: sp.Expr) -> tuple[str, ...]:
+def _determinant_steps(
+    matrix: sp.Matrix, characteristic: sp.Expr, matrix_label: str
+) -> tuple[str, ...]:
     matrix_text = str(matrix.tolist()).replace("**", "^")
     steps: tuple[str, ...] = (
-        f"sI-A = {matrix_text}",
-        "p_A(s) = det(sI-A)",
+        f"sI-{matrix_label} = {matrix_text}",
+        f"p_A(s) = det(sI-{matrix_label})",
     )
     if matrix.rows == 2:
         a, b, c, d = matrix[0, 0], matrix[0, 1], matrix[1, 0], matrix[1, 1]
@@ -580,7 +594,7 @@ def _determinant_steps(matrix: sp.Matrix, characteristic: sp.Expr) -> tuple[str,
             f"- {_plain_factor(b)}*{_plain_factor(c)}"
         )
         steps += ("Für 2x2 gilt det([[a,b],[c,d]]) = a*d - b*c.", concrete)
-    return (*steps, f"p_A(s) = {str(sp.expand(characteristic)).replace('**', '^')}")
+    return (*steps, f"p_A(s) = {_polynomial_plain(characteristic)}")
 
 
 def _real_part_checks(
@@ -716,7 +730,7 @@ def _worked_steps(
                 "Keine kompakte exakte Darstellung verfügbar; numerische Eigenwerte als "
                 f"Näherung: {', '.join(numerical)}."
                 if numerical
-                else "Eigenwerte sind parameterabhängig; keine numerischen Werte eingesetzt."
+                else _PARAMETER_EIGENVALUE_HINT
             )
         )
         real_steps = tuple(
@@ -724,14 +738,20 @@ def _worked_steps(
             f"{' ≈' if item.approximate else ' ='} {item.real_part_text} {item.comparison}."
             for item in real_part_checks
         )
+        violation_steps = tuple(
+            f"lambda={item.eigenvalue_text} verletzt das Kriterium Re(lambda) < 0."
+            for item in real_part_checks
+            if item.comparison != "< 0"
+        )
         return (
             *prefix,
-            f"sI-A = {str(si_minus_a.tolist()).replace('**', '^')}.",
+            determinant_steps[0] + ".",
             *determinant_steps[1:],
             eigen_step,
             "Allgemeines Kriterium: A ist genau dann asymptotisch stabil, wenn für alle "
             "Eigenwerte Re(lambda_i) < 0 gilt.",
             *real_steps,
+            *violation_steps,
             (
                 "Parameterbedingungen: " + stability
                 if not real_part_checks
@@ -779,6 +799,7 @@ def _latex(
     exact_eigenvalues: tuple[tuple[ExactExpression, int], ...],
     numerical: tuple[str, ...],
     stability: str,
+    hurwitz_analysis: HurwitzAnalysisResult,
     raw: sp.Expr,
     reduced: sp.Expr,
     cancellation: str,
@@ -829,6 +850,7 @@ def _latex(
             numerical,
             real_part_checks,
             stability,
+            hurwitz_analysis,
             checks,
         )
     exact_text = (
@@ -917,6 +939,7 @@ def _stability_latex(
     numerical: tuple[str, ...],
     real_part_checks: tuple[StateSpaceRealPartCheck, ...],
     stability: str,
+    hurwitz_analysis: HurwitzAnalysisResult,
     checks: tuple[StateSpaceCheck, ...],
 ) -> str:
     matrix_line = (
@@ -935,7 +958,11 @@ def _stability_latex(
             r"\quad \text{Zustandsstabilität}\]"
         )
     )
-    exact_line = _exact_eigenvalue_latex(exact_eigenvalues)
+    parameter_dependent = bool(draft.decision_parameters_text.strip())
+    matrix_label = "A_R" if canonical_mode else "A"
+    exact_line = _exact_eigenvalue_latex(
+        exact_eigenvalues, parameter_dependent=parameter_dependent
+    )
     numeric_line = (
         r"\[\text{Numerische Kontrolle:}\quad "
         + r",\ ".join(value.replace("i", r"\,\mathrm{i}") for value in numerical)
@@ -948,11 +975,23 @@ def _stability_latex(
         + rf"{item.real_part_latex}\ {_comparison_latex(item.comparison)}\]"
         for item in real_part_checks
     )
+    violation_lines = tuple(
+        rf"\[\lambda={item.eigenvalue_latex}\text{{ verletzt das Kriterium }}"
+        r"\operatorname{Re}(\lambda)<0.\]"
+        for item in real_part_checks
+        if item.comparison != "< 0"
+    )
     check_lines = r"\\".join(
         rf"\text{{{_escape_text(item.name)}: {'bestanden' if item.passed else 'fehlgeschlagen'}}}"
         for item in checks
     )
-    if real_part_checks:
+    parameter_result_lines: tuple[str, ...] = ()
+    if parameter_dependent:
+        parameter_result_lines = (
+            r"\[\text{Asymptotische Zustandsstabilität genau für:}\]",
+        )
+        conclusion = _parameter_conditions_latex(hurwitz_analysis)
+    elif real_part_checks:
         conclusion = rf"\[\boxed{{\text{{{_escape_text(_base_stability_statement(stability))}}}}}\]"
     else:
         conclusion = (
@@ -969,52 +1008,65 @@ def _stability_latex(
             r"\textbf{Lösung}",
             *ode_lines,
             matrix_line,
-            rf"\[sI-A={sp.latex(si_minus_a)}\]",
-            *_determinant_latex_lines(si_minus_a, characteristic),
+            rf"\[sI-{matrix_label}={sp.latex(si_minus_a)}\]",
+            *_determinant_latex_lines(si_minus_a, characteristic, matrix_label),
             exact_line,
             *numeric_lines,
             r"\[\boxed{A\text{ asymptotisch stabil}\iff"
             r"\forall i:\operatorname{Re}(\lambda_i)<0}\]",
             *real_lines,
+            *violation_lines,
             (
                 rf"\[\text{{{_escape_text(stability)}}}\]"
-                if not real_part_checks
+                if not real_part_checks and not parameter_dependent
                 else ""
             ),
+            *parameter_result_lines,
             rf"\[\begin{{aligned}}{check_lines}\end{{aligned}}\]",
             conclusion,
         )
     )
 
 
-def _determinant_latex_lines(matrix: sp.Matrix, characteristic: sp.Expr) -> tuple[str, ...]:
+def _determinant_latex_lines(
+    matrix: sp.Matrix, characteristic: sp.Expr, matrix_label: str = "A"
+) -> tuple[str, ...]:
     if matrix.rows != 2:
         return (
-            r"\[p_A(s)=\det(sI-A)\]",
-            rf"\[p_A(s)={sp.latex(characteristic)}\]",
+            rf"\[p_A(s)=\det(sI-{matrix_label})\]",
+            rf"\[p_A(s)={_polynomial_latex(characteristic)}\]",
         )
     a, b, c, d = matrix[0, 0], matrix[0, 1], matrix[1, 0], matrix[1, 1]
     concrete = (
         _latex_factor(a)
+        + r"\cdot "
         + _latex_factor(d)
         + "-"
         + _latex_factor(b)
+        + r"\cdot "
         + _latex_factor(c)
     )
     return (
         r"\[\det\begin{pmatrix}a&b\\c&d\end{pmatrix}=ad-bc\]",
         r"\[\begin{aligned}"
-        r"p_A(s)&=\det(sI-A)\\"
+        rf"p_A(s)&=\det(sI-{matrix_label})\\"
         rf"&={concrete}\\"
-        rf"&={sp.latex(characteristic)}"
+        rf"&={_polynomial_latex(characteristic)}"
         r"\end{aligned}\]",
     )
 
 
 def _exact_eigenvalue_latex(
     eigenvalues: tuple[tuple[ExactExpression, int], ...],
+    *,
+    parameter_dependent: bool = False,
 ) -> str:
     if not eigenvalues:
+        if parameter_dependent:
+            return (
+                r"\[\lambda_i:\ \text{Eigenwerte parameterabhängig; für die "
+                r"Stabilitätsentscheidung wird das Hurwitz-Kriterium verwendet.}\]"
+            )
         return r"\[\lambda_i:\ \text{keine kompakte exakte Darstellung verfügbar}\]"
     if len(eigenvalues) == 2 and all(multiplicity == 1 for _, multiplicity in eigenvalues):
         first = eigenvalues[0][0]._as_sympy()
@@ -1022,11 +1074,13 @@ def _exact_eigenvalue_latex(
         if sp.simplify(sp.conjugate(first) - second) == 0:
             real_part = sp.simplify(sp.re(first))
             imag_part = sp.simplify(abs(sp.im(first)))
+            real_text = "" if real_part.is_zero else str(sp.latex(real_part))
+            imag_text = "" if imag_part == 1 else str(sp.latex(imag_part))
             return (
                 r"\[\lambda_{1,2}="
-                + str(sp.latex(real_part))
+                + real_text
                 + r"\pm j"
-                + str(sp.latex(imag_part))
+                + imag_text
                 + r"\]"
             )
     values = r",\ ".join(
@@ -1044,6 +1098,22 @@ def _comparison_latex(comparison: str) -> str:
     if comparison.startswith("\\nless"):
         return r"\nless0"
     return r"\text{nicht ohne Parameterbedingungen entscheidbar}"
+
+
+def _parameter_conditions_latex(analysis: HurwitzAnalysisResult) -> str:
+    blocks: list[str] = []
+    for case in analysis.case_results:
+        conditions = tuple(
+            dict.fromkeys(item.expression.latex for item in case.solver_conditions)
+        )
+        relations = tuple(condition + "&>0" for condition in conditions)
+        body = (
+            relations[0].replace("&", "")
+            if len(relations) == 1
+            else r"\begin{aligned}" + r",\\".join(relations) + r"\end{aligned}"
+        )
+        blocks.append(r"\[\boxed{" + body + r"}\]")
+    return "\n".join(blocks)
 
 
 def _base_stability_statement(stability: str) -> str:
@@ -1118,6 +1188,52 @@ def _plain(value: sp.Expr) -> str:
     return str(sp.factor(value)).replace("**", "^")
 
 
+def _polynomial_plain(value: sp.Expr) -> str:
+    variable = sp.Symbol("s")
+    terms = sp.Poly(value, variable).terms()
+    rendered: list[str] = []
+    for index, ((power,), coefficient) in enumerate(terms):
+        negative = coefficient.could_extract_minus_sign()
+        magnitude = -coefficient if negative else coefficient
+        if power == 0:
+            body = str(magnitude)
+        else:
+            variable_text = "s" if power == 1 else f"s^{power}"
+            if magnitude == 1:
+                body = variable_text
+            elif isinstance(magnitude, sp.Rational) and magnitude.p == 1:
+                body = f"{variable_text}/{magnitude.q}"
+            else:
+                coefficient_text = _plain_factor(magnitude)
+                body = f"{coefficient_text}*{variable_text}"
+        prefix = ("-" if negative else "") if index == 0 else " - " if negative else " + "
+        rendered.append(prefix + body)
+    return "".join(rendered)
+
+
+def _polynomial_latex(value: sp.Expr) -> str:
+    variable = sp.Symbol("s")
+    terms = sp.Poly(value, variable).terms()
+    rendered: list[str] = []
+    for index, ((power,), coefficient) in enumerate(terms):
+        negative = coefficient.could_extract_minus_sign()
+        magnitude = -coefficient if negative else coefficient
+        if power == 0:
+            body = sp.latex(magnitude)
+        else:
+            variable_text = "s" if power == 1 else rf"s^{{{power}}}"
+            if magnitude == 1:
+                body = variable_text
+            else:
+                coefficient_text = sp.latex(magnitude)
+                if magnitude.is_Add:
+                    coefficient_text = rf"\left({coefficient_text}\right)"
+                body = coefficient_text + " " + variable_text
+        prefix = ("-" if negative else "") if index == 0 else "-" if negative else "+"
+        rendered.append(prefix + body)
+    return "".join(rendered)
+
+
 def _plain_factor(value: sp.Expr) -> str:
     text = str(value).replace("**", "^")
     return f"({text})" if value.is_Add or value.could_extract_minus_sign() else text
@@ -1150,7 +1266,10 @@ def _derivative_latex(name: str, order: int) -> str:
 def _format_complex(value: complex) -> str:
     if abs(value.imag) < 1e-12:
         return f"{value.real:.9g}"
-    return f"{value.real:.9g}{value.imag:+.9g}i"
+    real = "" if abs(value.real) < 1e-12 else f"{value.real:.9g}"
+    sign = "+" if value.imag > 0 else "-"
+    magnitude = "" if abs(abs(value.imag) - 1) < 1e-12 else f"{abs(value.imag):.9g}"
+    return f"{real}{sign}{magnitude}i"
 
 
 def _escape_text(text: str) -> str:

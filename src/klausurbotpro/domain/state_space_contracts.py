@@ -117,6 +117,7 @@ class StateSpaceAnalysisResult:
     determinant_steps: tuple[str, ...] = ()
     real_part_checks: tuple[StateSpaceRealPartCheck, ...] = ()
     visible_checks: tuple[StateSpaceCheck, ...] = ()
+    characteristic_polynomial_text: str = ""
 
     @property
     def succeeded(self) -> bool:

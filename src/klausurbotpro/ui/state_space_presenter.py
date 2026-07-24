@@ -52,17 +52,29 @@ class StateSpacePresenter(QObject):
                 f"rechte Halbebene: {counts[2]}"
             )
         )
-        exact = (
-            ", ".join(
-                value.canonical_text + (f" (m={multiplicity})" if multiplicity > 1 else "")
-                for value, multiplicity in result.exact_eigenvalues
+        exact_values = ", ".join(
+            value.canonical_text + (f" (m={multiplicity})" if multiplicity > 1 else "")
+            for value, multiplicity in result.exact_eigenvalues
+        )
+        exact_line = (
+            f"Exakte Eigenwerte: {exact_values}"
+            if exact_values
+            else (
+                "Eigenwerte parameterabhängig; für die Stabilitätsentscheidung wird das "
+                "Hurwitz-Kriterium verwendet."
+                if counts is None
+                else "Keine kompakte exakte Eigenwertdarstellung verfügbar."
             )
-            or "keine kompakte exakte Darstellung"
         )
         real_parts = "\n".join(
             f"Re({item.eigenvalue_text})"
             f"{' ≈' if item.approximate else ' ='} {item.real_part_text} {item.comparison}"
             for item in result.real_part_checks
+        )
+        violations = "\n".join(
+            f"lambda={item.eigenvalue_text} verletzt das Kriterium Re(lambda) < 0."
+            for item in result.real_part_checks
+            if item.comparison != "< 0"
         )
         reduced = result.reduced_transfer_function
         raw = result.raw_transfer_function
@@ -75,11 +87,11 @@ class StateSpacePresenter(QObject):
         stability_summary = (
             "Charakteristisches Polynom: "
             + (
-                result.characteristic_polynomial.canonical_text
+                result.characteristic_polynomial_text
                 if result.characteristic_polynomial
                 else ""
             )
-            + f"\nExakte Eigenwerte: {exact}\n{result.state_stability}"
+            + f"\n{exact_line}\n{result.state_stability}"
         )
         self.state = StateSpaceViewState(
             summary=(
@@ -110,13 +122,14 @@ class StateSpacePresenter(QObject):
             ),
             characteristic="\n".join(result.determinant_steps),
             eigenvalues_stability=(
-                f"Exakte Eigenwerte: {exact}\n"
+                f"{exact_line}\n"
                 "Numerische Eigenwerte: "
                 f"{', '.join(result.numerical_eigenvalues) or 'parameterabhängig'}\n"
                 f"{count_text}\n\n"
                 "Allgemeines Stabilitätskriterium:\n"
                 "A asymptotisch stabil genau dann, wenn für alle i gilt: Re(lambda_i) < 0.\n\n"
-                f"{real_parts or result.state_stability}\n"
+                f"{real_parts}\n"
+                f"{violations}\n"
                 f"{result.state_stability}"
             ),
             transfer_function=("" if stability_target else (

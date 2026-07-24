@@ -115,6 +115,50 @@ def test_stability_target_hides_transfer_and_opens_stability_tab() -> None:
     window.close()
 
 
+def test_stability_target_renders_polished_matrix_outputs() -> None:
+    _app()
+    window = MainWindow()
+    workspace = window.state_space_workspace
+    workspace.task_combo.setCurrentIndex(1)
+    workspace.analysis_target_combo.setCurrentIndex(1)
+    workspace.matrix_a_edit.setPlainText("0,-1;1,0")
+    workspace.vector_b_edit.setPlainText("1;0")
+    workspace.vector_c_edit.setPlainText("1,0")
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    _app().processEvents()
+
+    characteristic = workspace.result_edits["characteristic"].toPlainText()
+    eigen = workspace.result_edits["eigen"].toPlainText()
+    latex = workspace.result_edits["latex"].toPlainText()
+    assert "s*s - 1*(-1)" in characteristic
+    assert "Numerische Eigenwerte: -i, +i" in eigen
+    assert r"\lambda_{1,2}=\pm j" in latex
+    assert r"s\cdot s-1\cdot \left(-1\right)" in latex
+    assert window.shutdown()
+    window.close()
+
+
+def test_dgl_stability_target_renders_si_minus_ar() -> None:
+    _app()
+    window = MainWindow()
+    workspace = window.state_space_workspace
+    workspace.analysis_target_combo.setCurrentIndex(1)
+    workspace.order_combo.setCurrentIndex(1)
+    for edit, value in zip(workspace.coefficient_edits, ("2", "3", "1"), strict=False):
+        edit.setText(value)
+    workspace.input_factor_edit.setText("1")
+
+    QTest.mouseClick(workspace.calculate_button, Qt.MouseButton.LeftButton)
+    _app().processEvents()
+
+    assert workspace.result_edits["characteristic"].toPlainText().startswith("sI-A_R")
+    assert "sI-A_R" in workspace.result_edits["steps"].toPlainText()
+    assert r"sI-A_R=" in workspace.result_edits["latex"].toPlainText()
+    assert window.shutdown()
+    window.close()
+
+
 def test_reset_restores_full_analysis_target_and_transfer_tab() -> None:
     _app()
     window = MainWindow()
