@@ -38,9 +38,12 @@ from klausurbotpro.domain import (
     ControllerDesignDiagnostic,
     ControllerDesignMethod,
     ControllerDesignStatus,
+    ControllerFormulaStep,
     ControllerParameters,
+    ControllerResultStep,
     ControllerScalar,
     ControllerType,
+    ControllerValidityStep,
     ControllerValueProvenance,
     ExactRationalValue,
     FrequencyReserveAnalyzer,
@@ -114,6 +117,13 @@ class ControllerDesignResult:
     latex: str
     diagnostics: tuple[ControllerDesignDiagnostic, ...]
     status: ControllerDesignStatus
+    formula_steps: tuple[ControllerFormulaStep, ...] = ()
+    validity_steps: tuple[ControllerValidityStep, ...] = ()
+    result_steps: tuple[ControllerResultStep, ...] = ()
+    primary_result_plain: str = ""
+    primary_result_latex: str = ""
+    equivalent_result_plain: str = ""
+    equivalent_result_latex: str = ""
 
     @property
     def has_copyable_solution(self) -> bool:
@@ -210,42 +220,70 @@ class ControllerDesignWorkflowService:
                 gain = self._scalar(draft.critical_gain_text, "K_crit")
                 period = self._scalar(draft.critical_period_text, "T_crit", time=True)
                 parameters = design_ziegler_nichols_closed(draft.controller_type, gain, period)
-                normalized = (("K_crit", _plain(gain)), ("T_crit [s]", _plain(period)))
+                normalized = (
+                    ("K_crit", _rational_display(gain)),
+                    ("T_crit [s]", _rational_display(period)),
+                )
                 formula = "Ziegler–Nichols, geschlossener Kreis"
+                formula_steps = _closed_formula_steps(
+                    draft.controller_type, gain, period, parameters
+                )
+                validity_steps = _closed_validity_steps(gain, period)
             else:
                 gain = self._scalar(draft.process_gain_text, "K_S")
-                dead = self._scalar(draft.dead_time_text, "L", time=True)
+                dead = self._scalar(draft.dead_time_text, "K_T", time=True)
                 lag = self._scalar(draft.lag_time_text, "T", time=True)
                 normalized = (
-                    ("K_S", _plain(gain)),
-                    ("L [s]", _plain(dead)),
-                    ("T [s]", _plain(lag)),
+                    ("K_S", _rational_display(gain)),
+                    ("K_T [s]", _rational_display(dead)),
+                    ("T [s]", _rational_display(lag)),
                 )
+                ratio_fraction = _fraction(dead) / _fraction(lag)
                 if draft.method is ControllerDesignMethod.ZIEGLER_NICHOLS_OPEN_LOOP:
+                    if ratio_fraction >= Fraction(1, 2):
+                        return _failure(
+                            draft,
+                            "OUTSIDE_SOURCE_DOMAIN",
+                            "K_T: Die strikte Bedingung K_T/T < 0,5 ist nicht erfüllt "
+                            f"({_fraction_plain(ratio_fraction)} >= 1/2).",
+                        )
                     parameters = design_ziegler_nichols_open(draft.controller_type, gain, dead, lag)
                     formula = "Ziegler–Nichols, offener Kreis"
+                    formula_steps = _open_formula_steps(
+                        draft.controller_type, gain, dead, lag, parameters
+                    )
+                    validity_steps = _open_validity_steps(gain, dead, lag)
                 else:
+                    if ratio_fraction >= 2:
+                        return _failure(
+                            draft,
+                            "OUTSIDE_SOURCE_DOMAIN",
+                            "K_T: Die strikte Bedingung 0 < r=K_T/T < 2 ist nicht erfüllt "
+                            f"(r={_fraction_plain(ratio_fraction)}).",
+                        )
                     ratio, parameters = design_cohen_coon(draft.controller_type, gain, dead, lag)
-                    normalized = (*normalized, ("r=L/T", _plain(ratio)))
+                    normalized = (*normalized, ("r=K_T/T", _rational_display(ratio)))
                     formula = "Cohen–Coon"
+                    formula_steps = _cohen_coon_formula_steps(
+                        draft.controller_type, gain, dead, lag, ratio, parameters
+                    )
+                    validity_steps = _cohen_coon_validity_steps(gain, dead, lag, ratio)
         except ValueError as error:
-            if str(error) == "outside_source_domain":
-                message = (
-                    "Ziegler–Nichols für den offenen Kreis ist nach der "
-                    "verwendeten Kursregel nur für L < 0,5 T vorgesehen."
-                    if draft.method is ControllerDesignMethod.ZIEGLER_NICHOLS_OPEN_LOOP
-                    else "Cohen–Coon ist nach der verwendeten Kursregel nur für L < 2 T vorgesehen."
-                )
-                return _failure(draft, "OUTSIDE_SOURCE_DOMAIN", message)
             code = "UNIT_MISMATCH" if "Sekunden" in str(error) else "INVALID_INPUT"
             return _failure(draft, code, str(error))
+
+        result_steps = _controller_result_steps(parameters)
         controls = (
             ControllerDesignControl(
-                "Positivitätsbedingungen", True, "Alle Eingabewerte sind positiv."
+                "Positivitätsbedingungen",
+                True,
+                "; ".join(step.substitution_plain for step in validity_steps[:-1]),
             ),
-            ControllerDesignControl("Quellenbereich", True, "Der Quellenbereich ist erfüllt."),
+            ControllerDesignControl("Quellenbereich", True, validity_steps[-1].substitution_plain),
             ControllerDesignControl(
-                "PID-Form", parameters.forms_identical, "Parallele und ideale Form sind identisch."
+                "Reglerformen",
+                parameters.forms_identical,
+                "Parallele und ideale Form sind symbolisch identisch.",
             ),
             ControllerDesignControl(
                 "Keine Zwischenrundung",
@@ -253,9 +291,19 @@ class ControllerDesignWorkflowService:
                 "Alle Tabellenwerte wurden exakt rational weitergerechnet.",
             ),
         )
-        steps = _table_steps(formula, normalized, parameters)
+        steps = _table_steps(
+            formula, normalized, parameters, formula_steps, validity_steps, result_steps
+        )
         latex = prepend_latex_task_heading(
-            _table_latex(formula, normalized, parameters), draft.task_name
+            _table_latex(
+                formula,
+                normalized,
+                parameters,
+                formula_steps,
+                validity_steps,
+                result_steps,
+            ),
+            draft.task_name,
         )
         return ControllerDesignResult(
             draft,
@@ -264,7 +312,7 @@ class ControllerDesignWorkflowService:
             draft.controller_type,
             normalized,
             normalized,
-            formula,
+            formula_steps[0].general_plain,
             parameters,
             (),
             None,
@@ -274,6 +322,13 @@ class ControllerDesignWorkflowService:
             latex,
             (),
             ControllerDesignStatus.COMPLETE,
+            formula_steps,
+            validity_steps,
+            result_steps,
+            _controller_parallel_plain(parameters),
+            _controller_parallel_latex(parameters),
+            _controller_ideal_plain(parameters),
+            _controller_ideal_latex(parameters),
         )
 
     def _run_phase_margin(self, draft: ControllerDesignInputDraft) -> ControllerDesignResult:
@@ -411,6 +466,11 @@ class ControllerDesignWorkflowService:
             if decision.selected_candidate_index is not None
             else None
         )
+        formula_steps = _phase_formula_steps(tuple(candidates))
+        validity_steps = _phase_validity_steps(target, tuple(candidates))
+        result_steps = () if parameters is None else _controller_result_steps(parameters)
+        primary_plain = "" if parameters is None else _controller_parallel_plain(parameters)
+        primary_latex = "" if parameters is None else _controller_parallel_latex(parameters)
         latex = prepend_latex_task_heading(
             _phase_margin_latex(draft, target, target_phase, tuple(candidates)), draft.task_name
         )
@@ -435,6 +495,13 @@ class ControllerDesignWorkflowService:
             latex,
             diagnostics,
             decision.status,
+            formula_steps,
+            validity_steps,
+            result_steps,
+            primary_plain,
+            primary_latex,
+            primary_plain,
+            primary_latex,
         )
 
     def _frequency_draft(
@@ -574,94 +641,6 @@ def _finite_phase_margins(result: FrequencyDomainWorkflowResult) -> tuple[float,
     )
 
 
-def _table_steps(
-    formula: str, values: tuple[tuple[str, str], ...], parameters: ControllerParameters
-) -> tuple[str, ...]:
-    return (
-        f"Verfahren: {formula}.",
-        "Gegebene Werte: " + ", ".join(f"{key}={value}" for key, value in values) + ".",
-        "Quellenbereich geprüft.",
-        f"Tabellenzeile {parameters.controller_type.value.upper()} exakt eingesetzt.",
-        _parameter_summary_plain(parameters),
-        _ideal_summary_plain(parameters),
-        "Parallele und ideale Reglerform symbolisch rekonstruiert.",
-        "Keine Zwischenrundung verwendet.",
-    )
-
-
-def _parameter_summary_plain(parameters: ControllerParameters) -> str:
-    values = [f"k_P={_display(parameters.k_p)}"]
-    if parameters.controller_type in (ControllerType.PI, ControllerType.PID):
-        values.append(f"k_I={_display(parameters.k_i)}")
-    if parameters.controller_type is ControllerType.PID:
-        values.append(f"k_D={_display(parameters.k_d)}")
-    return ", ".join(values) + "."
-
-
-def _ideal_summary_plain(parameters: ControllerParameters) -> str:
-    if parameters.controller_type is ControllerType.P:
-        return "Der P-Regler benötigt keine Idealparameter."
-    if parameters.controller_type is ControllerType.PI:
-        return "Idealparameter aus T_I=k_P/k_I bestimmt."
-    return "Idealparameter aus T_I=k_P/k_I und T_D=k_D/k_P bestimmt."
-
-
-def _table_latex(
-    formula: str, values: tuple[tuple[str, str], ...], parameters: ControllerParameters
-) -> str:
-    given = r",\quad ".join(rf"{_input_symbol_latex(key)}={value}" for key, value in values)
-    parallel_latex = _controller_parallel_latex(parameters)
-    ideal_latex = _controller_ideal_latex(parameters)
-    parameter_lines: tuple[str, ...]
-    if parameters.controller_type is ControllerType.P:
-        parameter_lines = (
-            rf"\[k_P={_latex_scalar(parameters.k_p)}\]",
-            rf"\[{parallel_latex}\]",
-        )
-    elif parameters.controller_type is ControllerType.PI:
-        assert parameters.ideal_t_i is not None
-        parameter_lines = (
-            rf"\[k_P={_latex_scalar(parameters.k_p)},\quad "
-            rf"k_I={_latex_scalar(parameters.k_i)}\]",
-            rf"\[T_I={_latex_scalar(parameters.ideal_t_i)}\]",
-            rf"\[{parallel_latex}\]",
-            rf"\[{ideal_latex}\]",
-            r"\[k_P+\frac{k_I}{s}\equiv k_P\left(1+\frac{1}{T_Is}\right)\]",
-        )
-    else:
-        assert parameters.ideal_t_i is not None and parameters.ideal_t_d is not None
-        parameter_lines = (
-            rf"\[k_P={_latex_scalar(parameters.k_p)},\quad "
-            rf"k_I={_latex_scalar(parameters.k_i)},\quad "
-            rf"k_D={_latex_scalar(parameters.k_d)}\]",
-            rf"\[T_I={_latex_scalar(parameters.ideal_t_i)},\qquad "
-            rf"T_D={_latex_scalar(parameters.ideal_t_d)}\]",
-            rf"\[{parallel_latex}\]",
-            rf"\[{ideal_latex}\]",
-            r"\[k_P+\frac{k_I}{s}+k_Ds\equiv "
-            r"k_P\left(1+\frac{1}{T_Is}+T_Ds\right)\]",
-        )
-    return "\n".join(
-        (
-            r"\textbf{Gegeben}",
-            rf"\[{given}\]",
-            r"\textbf{Gesucht}",
-            rf"\[\text{{Parameter des {parameters.controller_type.value.upper()}-Reglers "
-            r"und seine Übertragungsfunktion}\]",
-            r"\textbf{Lösung}",
-            rf"\par\noindent Verfahren: {formula}; Quellenbereich erfüllt.\par",
-            rf"\par\noindent Tabellenzeile: {parameters.controller_type.value.upper()}.\par",
-            _selected_formula_latex(formula, parameters.controller_type),
-            *parameter_lines,
-            r"\par\noindent Kontrolle: exakte Weiterrechnung ohne Zwischenrundung; "
-            r"Formen identisch.\par",
-            rf"\[\boxed{{{parallel_latex}}}\]",
-            r"\par\noindent Verstärkungsdimension gemäß Aufgabenstellung; "
-            r"nicht separat angegeben.\par",
-        )
-    )
-
-
 _SYMBOL_LATEX = {
     "K_S": r"K_S",
     "K_crit": r"K_{\mathrm{crit}}",
@@ -671,18 +650,18 @@ _SYMBOL_LATEX = {
     "k_D": r"k_D",
     "T_I": r"T_I",
     "T_D": r"T_D",
-    "L": "L",
+    "K_T": r"K_T",
     "T": "T",
-    "r": r"r=\frac{L}{T}",
+    "r": r"r=\frac{K_T}{T}",
 }
 
 _INPUT_SYMBOL_KEYS = {
     "K_S": "K_S",
-    "L [s]": "L",
+    "K_T [s]": "K_T",
     "T [s]": "T",
     "K_crit": "K_crit",
     "T_crit [s]": "T_crit",
-    "r=L/T": "r",
+    "r=K_T/T": "r",
 }
 
 
@@ -694,18 +673,18 @@ def _input_symbol_latex(name: str) -> str:
 
 
 def _controller_parallel_latex(parameters: ControllerParameters) -> str:
-    kp = _latex_scalar(parameters.k_p)
+    kp = _exact_display_latex(parameters.k_p)
     if parameters.controller_type is ControllerType.P:
         return rf"G_R(s)={kp}"
     integral_term = _parallel_integral_term_latex(parameters.k_i)
     if parameters.controller_type is ControllerType.PI:
         return rf"G_R(s)={kp}+{integral_term}"
-    kd = _latex_scalar(parameters.k_d)
+    kd = _exact_display_latex(parameters.k_d)
     return rf"G_R(s)={kp}+{integral_term}+{kd}s"
 
 
 def _controller_ideal_latex(parameters: ControllerParameters) -> str:
-    kp = _latex_scalar(parameters.k_p)
+    kp = _exact_display_latex(parameters.k_p)
     if parameters.controller_type is ControllerType.P:
         return rf"G_R(s)={kp}"
     assert parameters.ideal_t_i is not None
@@ -715,7 +694,7 @@ def _controller_ideal_latex(parameters: ControllerParameters) -> str:
     assert parameters.ideal_t_d is not None
     return (
         rf"G_R(s)={kp}\left(1+{integral_term}"
-        rf"+{_latex_scalar(parameters.ideal_t_d)}s\right)"
+        rf"+{_exact_display_latex(parameters.ideal_t_d)}s\right)"
     )
 
 
@@ -737,151 +716,6 @@ def _parallel_integral_term_latex(value: ControllerScalar) -> str:
     if denominator == 1:
         return rf"\frac{{{numerator}}}{{s}}"
     return rf"\frac{{{numerator}}}{{{denominator}s}}"
-
-
-def _selected_formula_latex(formula: str, controller_type: ControllerType) -> str:
-    rows = {
-        (
-            "Ziegler–Nichols, offener Kreis",
-            ControllerType.P,
-        ): r"\[k_P=\frac{T}{K_S L}\]",
-        (
-            "Ziegler–Nichols, offener Kreis",
-            ControllerType.PI,
-        ): r"\[k_P=\frac{0.9T}{K_S L},\quad T_I=3.33L,\quad k_I=\frac{k_P}{3.33L}\]",
-        (
-            "Ziegler–Nichols, offener Kreis",
-            ControllerType.PID,
-        ): r"\[k_P=\frac{1.2T}{K_S L},\quad k_I=\frac{k_P}{2L},\quad k_D=0.5k_P L\]",
-        (
-            "Ziegler–Nichols, geschlossener Kreis",
-            ControllerType.P,
-        ): r"\[k_P=0.5K_{\mathrm{crit}}\]",
-        (
-            "Ziegler–Nichols, geschlossener Kreis",
-            ControllerType.PI,
-        ): (
-            r"\[k_P=0.45K_{\mathrm{crit}},\quad T_I=0.85T_{\mathrm{crit}},"
-            r"\quad k_I=\frac{k_P}{T_I}\]"
-        ),
-        (
-            "Ziegler–Nichols, geschlossener Kreis",
-            ControllerType.PID,
-        ): (
-            r"\[k_P=0.6K_{\mathrm{crit}},\quad "
-            r"k_I=\frac{k_P}{0.5T_{\mathrm{crit}}},\quad "
-            r"k_D=0.12k_PT_{\mathrm{crit}}\]"
-        ),
-        (
-            "Cohen–Coon",
-            ControllerType.P,
-        ): r"\[r=\frac{L}{T},\quad k_P=\frac{1}{K_S}\frac{T}{L}\left(1+\frac{r}{3}\right)\]",
-        (
-            "Cohen–Coon",
-            ControllerType.PI,
-        ): (
-            r"\[k_P=\frac{0.9}{K_S}\frac{T}{L}"
-            r"\left(0.9+\frac{r}{12}\right),\quad "
-            r"k_I=\frac{k_P(9+20r)}{L(30+3r)}\]"
-        ),
-        (
-            "Cohen–Coon",
-            ControllerType.PID,
-        ): (
-            r"\[k_P=\frac{1.2}{K_S}\frac{T}{L}"
-            r"\left(1.35+\frac{r}{15}\right),\quad "
-            r"k_I=\frac{k_P(13+8r)}{L(32+6r)},\quad "
-            r"k_D=k_PL\frac{4}{11+2r}\]"
-        ),
-    }
-    return rows[(formula, controller_type)]
-
-
-def _phase_margin_steps(
-    target: float, target_phase: float, candidates: tuple[ControllerDesignCandidate, ...]
-) -> list[str]:
-    steps = [
-        f"Gewünschte Phasenreserve: {target:.12g}°.",
-        f"Zielphase: -180°+{target:.12g}°={target_phase:.12g}°.",
-        "Entfaltete Phase segmentweise durchsucht; Singularitätslücken wurden nicht verbunden.",
-    ]
-    for candidate in candidates:
-        steps.extend(
-            (
-                f"Kandidat {candidate.candidate_index}: ω={candidate.target_frequency:.12g} rad/s.",
-                f"|G_0(jω)|={candidate.original_magnitude:.12g}; "
-                f"k_P={candidate.positive_k_p:.12g}.",
-                "Vollständige Frequenz-, Reserven- und Nyquist-Nachrechnung: "
-                f"Φ_R,ist={candidate.achieved_phase_margin_degrees:.8g}°.",
-                f"Kandidatenstatus: {controller_design_candidate_status_text(candidate.status)}.",
-            )
-        )
-    return steps
-
-
-def _phase_margin_latex(
-    draft: ControllerDesignInputDraft,
-    target: float,
-    target_phase: float,
-    candidates: tuple[ControllerDesignCandidate, ...],
-) -> str:
-    lines = [
-        r"\textbf{Gegeben}",
-        rf"\[G_0(s)=\frac{{{draft.numerator_text}}}{{{draft.denominator_text}}},"
-        rf"\qquad \Phi_{{R,\mathrm{{soll}}}}={target:.12g}^\circ\]",
-        r"\textbf{Gesucht}",
-        r"\[G_R(s)=k_P,\qquad k_P>0\]",
-        r"\textbf{Lösung}",
-        rf"\[\varphi_{{\mathrm{{ziel}}}}=-180^\circ+{target:.12g}^\circ={target_phase:.12g}^\circ\]",
-        r"\par\noindent Die entfaltete Phase wird in jedem regulären Frequenzsegment "
-        r"getrennt durchsucht.\par",
-    ]
-    for candidate in candidates:
-        frequency_symbol = (
-            r"\omega_\ast"
-            if len(candidates) == 1
-            else rf"\omega_{{{candidate.candidate_index}}}"
-        )
-        lines.extend(
-            (
-                rf"\textbf{{Kandidat {candidate.candidate_index}}}",
-                rf"\[{frequency_symbol}="
-                rf"{candidate.target_frequency:.12g}\,\mathrm{{rad/s}},\quad "
-                rf"|G_0(j\omega)|={candidate.original_magnitude:.12g}\]",
-                rf"\[k_{{P,{candidate.candidate_index}}}="
-                rf"\frac{{1}}{{|G_0(j\omega)|}}={candidate.positive_k_p:.12g}\]",
-                rf"\[G_R(s)={candidate.positive_k_p:.12g}\]",
-                r"\[L_{\mathrm{neu}}(s)=k_PG_0(s)\]",
-                rf"\[|k_PG_0(j\omega)|\approx1,\qquad "
-                rf"\Phi_{{R,\mathrm{{ist}}}}="
-                rf"{candidate.achieved_phase_margin_degrees:.8g}^\circ\]",
-                r"\par\noindent Die Durchtritte und Reserven wurden vollständig neu berechnet. "
-                r"Der vorhandene Nyquist-Kern wurde erneut ausgeführt.\par",
-                rf"\par\noindent Status: "
-                rf"{controller_design_candidate_status_text(candidate.status)}.\par",
-            )
-        )
-    successful = tuple(
-        candidate
-        for candidate in candidates
-        if candidate.status is ControllerDesignCandidateStatus.TARGET_MET
-    )
-    if len(candidates) == 1 and successful:
-        lines.append(rf"\[\boxed{{G_R(s)={successful[0].positive_k_p:.12g}}}\]")
-    elif len(candidates) > 1 and successful:
-        lines.append(
-            r"\par\noindent Mindestens ein gültiger Kandidat ist vorhanden; "
-            r"eine Auswahl ist erforderlich.\par"
-        )
-    else:
-        lines.append(
-            r"\par\noindent Kein Kandidat erfüllt die geforderte globale Phasenreserve.\par"
-        )
-    return "\n".join(lines)
-
-
-def _display(value: ControllerScalar) -> str:
-    return _plain(value.exact) if value.exact is not None else value.numerical
 
 
 def _latex_scalar(value: ControllerScalar) -> str:
@@ -907,6 +741,842 @@ def _fraction(value: ExactRationalValue) -> Fraction:
 def _exact_from_decimal(text: str) -> ExactRationalValue:
     value = Fraction(Decimal(text))
     return ExactRationalValue(value.numerator, value.denominator)
+
+
+def _fraction_plain(value: Fraction) -> str:
+    return (
+        str(value.numerator) if value.denominator == 1 else f"{value.numerator}/{value.denominator}"
+    )
+
+
+def _fraction_latex(value: Fraction) -> str:
+    return (
+        str(value.numerator)
+        if value.denominator == 1
+        else rf"\frac{{{value.numerator}}}{{{value.denominator}}}"
+    )
+
+
+def _rational_display(value: ExactRationalValue) -> str:
+    fraction = _fraction(value)
+    decimal = _terminating_decimal(fraction)
+    return decimal if decimal is not None else _fraction_plain(fraction)
+
+
+def _terminating_decimal(value: Fraction) -> str | None:
+    denominator = value.denominator
+    while denominator % 2 == 0:
+        denominator //= 2
+    while denominator % 5 == 0:
+        denominator //= 5
+    if denominator != 1:
+        return None
+    return format(Decimal(value.numerator) / Decimal(value.denominator), "f")
+
+
+def _exact_display(value: ControllerScalar) -> str:
+    if value.exact is None:
+        return value.numerical
+    fraction = _fraction(value.exact)
+    decimal = _terminating_decimal(fraction)
+    return decimal if decimal is not None else _fraction_plain(fraction)
+
+
+def _exact_display_latex(value: ControllerScalar) -> str:
+    if value.exact is None:
+        return value.numerical
+    fraction = _fraction(value.exact)
+    decimal = _terminating_decimal(fraction)
+    return decimal if decimal is not None else _fraction_latex(fraction)
+
+
+def _approximation(value: ControllerScalar) -> str:
+    if value.exact is None:
+        return value.numerical
+    fraction = _fraction(value.exact)
+    return "" if _terminating_decimal(fraction) is not None else f"{float(fraction):.6g}"
+
+
+def _formula(
+    quantity: str,
+    general_plain: str,
+    substituted_plain: str,
+    value: ControllerScalar,
+    unit: str,
+    source: str,
+    general_latex: str,
+    substituted_latex: str,
+) -> ControllerFormulaStep:
+    exact = _exact_display(value)
+    exact_latex = _exact_display_latex(value)
+    approximation = _approximation(value)
+    return ControllerFormulaStep(
+        quantity,
+        general_plain,
+        substituted_plain,
+        f"{quantity}={exact}",
+        "" if not approximation else f"{quantity}≈{approximation}",
+        unit,
+        source,
+        general_latex,
+        substituted_latex,
+        rf"{quantity}={exact_latex}",
+        "" if not approximation else rf"{quantity}\approx{approximation}",
+    )
+
+
+def _open_formula_steps(
+    controller_type: ControllerType,
+    gain: ExactRationalValue,
+    dead: ExactRationalValue,
+    lag: ExactRationalValue,
+    parameters: ControllerParameters,
+) -> tuple[ControllerFormulaStep, ...]:
+    ks, kt, t = map(_rational_display, (gain, dead, lag))
+    source = f"Ziegler–Nichols offen, Tabellenzeile {controller_type.value.upper()}"
+    if controller_type is ControllerType.P:
+        return (
+            _formula(
+                "k_P",
+                "k_P=T/(K_S K_T)",
+                f"k_P={t}/({ks}·{kt})",
+                parameters.k_p,
+                "Verstärkung",
+                source,
+                r"k_P=\frac{T}{K_SK_T}",
+                rf"k_P=\frac{{{t}}}{{{ks}\cdot {kt}}}",
+            ),
+        )
+    kp_factor = "0.9" if controller_type is ControllerType.PI else "1.2"
+    time_factor = "3.33" if controller_type is ControllerType.PI else "2"
+    steps = [
+        _formula(
+            "k_P",
+            f"k_P={kp_factor}T/(K_S K_T)",
+            f"k_P={kp_factor}·{t}/({ks}·{kt})",
+            parameters.k_p,
+            "Verstärkung",
+            source,
+            rf"k_P=\frac{{{kp_factor}T}}{{K_SK_T}}",
+            rf"k_P=\frac{{{kp_factor}\cdot {t}}}{{{ks}\cdot {kt}}}",
+        ),
+        _formula(
+            "T_I",
+            f"T_I={time_factor}K_T",
+            f"T_I={time_factor}·{kt}",
+            parameters.ideal_t_i,  # type: ignore[arg-type]
+            "s",
+            source,
+            rf"T_I={time_factor}K_T",
+            rf"T_I={time_factor}\cdot {kt}",
+        ),
+        _formula(
+            "k_I",
+            "k_I=k_P/T_I",
+            f"k_I={_exact_display(parameters.k_p)}/{_exact_display(parameters.ideal_t_i)}",  # type: ignore[arg-type]
+            parameters.k_i,
+            r"s^-1",
+            source,
+            r"k_I=\frac{k_P}{T_I}",
+            rf"k_I=\frac{{{_exact_display_latex(parameters.k_p)}}}"
+            rf"{{{_exact_display_latex(parameters.ideal_t_i)}}}",  # type: ignore[arg-type]
+        ),
+    ]
+    if controller_type is ControllerType.PID:
+        assert parameters.ideal_t_d is not None
+        steps.extend(
+            (
+                _formula(
+                    "T_D",
+                    "T_D=0.5K_T",
+                    f"T_D=0.5·{kt}",
+                    parameters.ideal_t_d,
+                    "s",
+                    source,
+                    r"T_D=0.5K_T",
+                    rf"T_D=0.5\cdot {kt}",
+                ),
+                _formula(
+                    "k_D",
+                    "k_D=k_PT_D=0.5k_PK_T",
+                    f"k_D=0.5·{_exact_display(parameters.k_p)}·{kt}",
+                    parameters.k_d,
+                    "s",
+                    source,
+                    r"k_D=k_PT_D=0.5k_PK_T",
+                    rf"k_D=0.5\cdot {_exact_display_latex(parameters.k_p)}\cdot {kt}",
+                ),
+            )
+        )
+    return tuple(steps)
+
+
+def _closed_formula_steps(
+    controller_type: ControllerType,
+    gain: ExactRationalValue,
+    period: ExactRationalValue,
+    parameters: ControllerParameters,
+) -> tuple[ControllerFormulaStep, ...]:
+    kg, tp = _rational_display(gain), _rational_display(period)
+    source = f"Ziegler–Nichols geschlossen, Tabellenzeile {controller_type.value.upper()}"
+    kp_factor = {
+        ControllerType.P: "0.5",
+        ControllerType.PI: "0.45",
+        ControllerType.PID: "0.6",
+    }[controller_type]
+    steps = [
+        _formula(
+            "k_P",
+            f"k_P={kp_factor}K_crit",
+            f"k_P={kp_factor}·{kg}",
+            parameters.k_p,
+            "Verstärkung",
+            source,
+            rf"k_P={kp_factor}K_{{\mathrm{{crit}}}}",
+            rf"k_P={kp_factor}\cdot {kg}",
+        )
+    ]
+    if controller_type is ControllerType.P:
+        return tuple(steps)
+    assert parameters.ideal_t_i is not None
+    ti_factor = "0.85" if controller_type is ControllerType.PI else "0.5"
+    steps.extend(
+        (
+            _formula(
+                "T_I",
+                f"T_I={ti_factor}T_crit",
+                f"T_I={ti_factor}·{tp}",
+                parameters.ideal_t_i,
+                "s",
+                source,
+                rf"T_I={ti_factor}T_{{\mathrm{{crit}}}}",
+                rf"T_I={ti_factor}\cdot {tp}",
+            ),
+            _formula(
+                "k_I",
+                "k_I=k_P/T_I",
+                f"k_I={_exact_display(parameters.k_p)}/{_exact_display(parameters.ideal_t_i)}",
+                parameters.k_i,
+                r"s^-1",
+                source,
+                r"k_I=\frac{k_P}{T_I}",
+                rf"k_I=\frac{{{_exact_display_latex(parameters.k_p)}}}"
+                rf"{{{_exact_display_latex(parameters.ideal_t_i)}}}",
+            ),
+        )
+    )
+    if controller_type is ControllerType.PID:
+        assert parameters.ideal_t_d is not None
+        steps.extend(
+            (
+                _formula(
+                    "T_D",
+                    "T_D=0.12T_crit",
+                    f"T_D=0.12·{tp}",
+                    parameters.ideal_t_d,
+                    "s",
+                    source,
+                    r"T_D=0.12T_{\mathrm{crit}}",
+                    rf"T_D=0.12\cdot {tp}",
+                ),
+                _formula(
+                    "k_D",
+                    "k_D=k_PT_D",
+                    f"k_D={_exact_display(parameters.k_p)}·{_exact_display(parameters.ideal_t_d)}",
+                    parameters.k_d,
+                    "s",
+                    source,
+                    r"k_D=k_PT_D",
+                    rf"k_D={_exact_display_latex(parameters.k_p)}"
+                    rf"\cdot {_exact_display_latex(parameters.ideal_t_d)}",
+                ),
+            )
+        )
+    return tuple(steps)
+
+
+def _cohen_coon_formula_steps(
+    controller_type: ControllerType,
+    gain: ExactRationalValue,
+    dead: ExactRationalValue,
+    lag: ExactRationalValue,
+    ratio: ExactRationalValue,
+    parameters: ControllerParameters,
+) -> tuple[ControllerFormulaStep, ...]:
+    ks, kt, t, r = map(_rational_display, (gain, dead, lag, ratio))
+    source = f"Cohen–Coon, Tabellenzeile {controller_type.value.upper()}"
+    ratio_scalar = ControllerScalar(
+        ratio,
+        f"{ratio.numerator / ratio.denominator:.12g}",
+        ControllerValueProvenance.EXACT_RATIONAL,
+    )
+    steps = [
+        _formula(
+            "r",
+            "r=K_T/T",
+            f"r={kt}/{t}",
+            ratio_scalar,
+            "dimensionslos",
+            source,
+            r"r=\frac{K_T}{T}",
+            rf"r=\frac{{{kt}}}{{{t}}}",
+        )
+    ]
+    if controller_type is ControllerType.P:
+        general_plain = "k_P=(1/K_S)(T/K_T)(1+r/3)"
+        general_latex = r"k_P=\frac1{K_S}\frac{T}{K_T}\left(1+\frac r3\right)"
+    elif controller_type is ControllerType.PI:
+        general_plain = "k_P=(0.9/K_S)(T/K_T)(0.9+r/12)"
+        general_latex = r"k_P=\frac{0.9}{K_S}\frac{T}{K_T}\left(0.9+\frac r{12}\right)"
+    else:
+        general_plain = "k_P=(1.2/K_S)(T/K_T)(1.35+r/15)"
+        general_latex = r"k_P=\frac{1.2}{K_S}\frac{T}{K_T}\left(1.35+\frac r{15}\right)"
+    steps.append(
+        _formula(
+            "k_P",
+            general_plain,
+            (
+                f"k_P=(1/{ks})({t}/{kt})(1+{r}/3)"
+                if controller_type is ControllerType.P
+                else (
+                    f"k_P=(0.9/{ks})({t}/{kt})(0.9+{r}/12)"
+                    if controller_type is ControllerType.PI
+                    else f"k_P=(1.2/{ks})({t}/{kt})(1.35+{r}/15)"
+                )
+            ),
+            parameters.k_p,
+            "Verstärkung",
+            source,
+            general_latex,
+            (
+                rf"k_P=\frac1{{{ks}}}\frac{{{t}}}{{{kt}}}\left(1+\frac{{{r}}}3\right)"
+                if controller_type is ControllerType.P
+                else (
+                    rf"k_P=\frac{{0.9}}{{{ks}}}\frac{{{t}}}{{{kt}}}"
+                    rf"\left(0.9+\frac{{{r}}}{{12}}\right)"
+                    if controller_type is ControllerType.PI
+                    else rf"k_P=\frac{{1.2}}{{{ks}}}\frac{{{t}}}{{{kt}}}"
+                    rf"\left(1.35+\frac{{{r}}}{{15}}\right)"
+                )
+            ),
+        )
+    )
+    if controller_type is ControllerType.P:
+        return tuple(steps)
+    assert parameters.ideal_t_i is not None
+    if controller_type is ControllerType.PI:
+        ki_plain = "k_I=k_P(9+20r)/(K_T(30+3r))"
+        ki_latex = r"k_I=\frac{k_P(9+20r)}{K_T(30+3r)}"
+        ti_plain = "T_I=K_T(30+3r)/(9+20r)"
+        ti_latex = r"T_I=K_T\frac{30+3r}{9+20r}"
+    else:
+        ki_plain = "k_I=k_P(13+8r)/(K_T(32+6r))"
+        ki_latex = r"k_I=\frac{k_P(13+8r)}{K_T(32+6r)}"
+        ti_plain = "T_I=K_T(32+6r)/(13+8r)"
+        ti_latex = r"T_I=K_T\frac{32+6r}{13+8r}"
+    steps.extend(
+        (
+            _formula(
+                "k_I",
+                ki_plain,
+                (
+                    f"k_I={_exact_display(parameters.k_p)}(9+20·{r})/({kt}(30+3·{r}))"
+                    if controller_type is ControllerType.PI
+                    else f"k_I={_exact_display(parameters.k_p)}(13+8·{r})/({kt}(32+6·{r}))"
+                ),
+                parameters.k_i,
+                r"s^-1",
+                source,
+                ki_latex,
+                (
+                    rf"k_I=\frac{{{_exact_display_latex(parameters.k_p)}(9+20\cdot {r})}}"
+                    rf"{{{kt}(30+3\cdot {r})}}"
+                    if controller_type is ControllerType.PI
+                    else rf"k_I=\frac{{{_exact_display_latex(parameters.k_p)}(13+8\cdot {r})}}"
+                    rf"{{{kt}(32+6\cdot {r})}}"
+                ),
+            ),
+            _formula(
+                "T_I",
+                ti_plain,
+                (
+                    f"T_I={kt}(30+3·{r})/(9+20·{r})"
+                    if controller_type is ControllerType.PI
+                    else f"T_I={kt}(32+6·{r})/(13+8·{r})"
+                ),
+                parameters.ideal_t_i,
+                "s",
+                source,
+                ti_latex,
+                (
+                    rf"T_I={kt}\frac{{30+3\cdot {r}}}{{9+20\cdot {r}}}"
+                    if controller_type is ControllerType.PI
+                    else rf"T_I={kt}\frac{{32+6\cdot {r}}}{{13+8\cdot {r}}}"
+                ),
+            ),
+        )
+    )
+    if controller_type is ControllerType.PID:
+        assert parameters.ideal_t_d is not None
+        steps.extend(
+            (
+                _formula(
+                    "k_D",
+                    "k_D=k_PK_T·4/(11+2r)",
+                    f"k_D={_exact_display(parameters.k_p)}·{kt}·4/(11+2·{r})",
+                    parameters.k_d,
+                    "s",
+                    source,
+                    r"k_D=k_PK_T\frac4{11+2r}",
+                    rf"k_D={_exact_display_latex(parameters.k_p)}\cdot {kt}"
+                    rf"\frac4{{11+2\cdot {r}}}",
+                ),
+                _formula(
+                    "T_D",
+                    "T_D=K_T·4/(11+2r)",
+                    f"T_D={kt}·4/(11+2·{r})",
+                    parameters.ideal_t_d,
+                    "s",
+                    source,
+                    r"T_D=K_T\frac4{11+2r}",
+                    rf"T_D={kt}\frac4{{11+2\cdot {r}}}",
+                ),
+            )
+        )
+    return tuple(steps)
+
+
+def _validity(
+    label: str,
+    condition_plain: str,
+    substitution_plain: str,
+    source: str,
+    condition_latex: str,
+    substitution_latex: str,
+) -> ControllerValidityStep:
+    return ControllerValidityStep(
+        label,
+        condition_plain,
+        substitution_plain,
+        True,
+        "Die Bedingung ist erfüllt.",
+        source,
+        condition_latex,
+        substitution_latex,
+    )
+
+
+def _open_validity_steps(
+    gain: ExactRationalValue, dead: ExactRationalValue, lag: ExactRationalValue
+) -> tuple[ControllerValidityStep, ...]:
+    ks, kt, t = map(_rational_display, (gain, dead, lag))
+    ratio = _fraction(dead) / _fraction(lag)
+    source = "Skript, Tabelle 6.1 und Theorem 6.10"
+    return (
+        _validity("Streckenverstärkung", "K_S>0", f"K_S={ks}>0", source, "K_S>0", rf"K_S={ks}>0"),
+        _validity(
+            "Totzeit", "K_T>0", f"K_T={kt} s>0", source, "K_T>0", rf"K_T={kt}\,\mathrm{{s}}>0"
+        ),
+        _validity("Zeitkonstante", "T>0", f"T={t} s>0", source, "T>0", rf"T={t}\,\mathrm{{s}}>0"),
+        _validity(
+            "Quellenbereich",
+            "K_T/T<1/2",
+            f"K_T/T={kt}/{t}={_fraction_plain(ratio)}<1/2. Der Quellenbereich ist erfüllt.",
+            source,
+            r"\frac{K_T}{T}<\frac12",
+            rf"\frac{{K_T}}{{T}}=\frac{{{kt}}}{{{t}}}={_fraction_latex(ratio)}<\frac12",
+        ),
+    )
+
+
+def _cohen_coon_validity_steps(
+    gain: ExactRationalValue,
+    dead: ExactRationalValue,
+    lag: ExactRationalValue,
+    ratio: ExactRationalValue,
+) -> tuple[ControllerValidityStep, ...]:
+    ks, kt, t, r = map(_rational_display, (gain, dead, lag, ratio))
+    source = "Skript, Tabelle 6.3 und Bemerkung 6.16"
+    ratio_latex = _latex_scalar(
+        ControllerScalar(ratio, r, ControllerValueProvenance.EXACT_RATIONAL)
+    )
+    return (
+        _validity("Streckenverstärkung", "K_S>0", f"K_S={ks}>0", source, "K_S>0", rf"K_S={ks}>0"),
+        _validity(
+            "Totzeit", "K_T>0", f"K_T={kt} s>0", source, "K_T>0", rf"K_T={kt}\,\mathrm{{s}}>0"
+        ),
+        _validity("Zeitkonstante", "T>0", f"T={t} s>0", source, "T>0", rf"T={t}\,\mathrm{{s}}>0"),
+        _validity(
+            "Quellenbereich",
+            "0<r=K_T/T<2",
+            f"r=K_T/T={kt}/{t}={r}; 0<{r}<2. Der Quellenbereich ist erfüllt.",
+            source,
+            r"0<r=\frac{K_T}{T}<2",
+            rf"r=\frac{{K_T}}{{T}}=\frac{{{kt}}}{{{t}}}={ratio_latex},"
+            rf"\quad 0<{ratio_latex}<2",
+        ),
+    )
+
+
+def _closed_validity_steps(
+    gain: ExactRationalValue, period: ExactRationalValue
+) -> tuple[ControllerValidityStep, ...]:
+    kg, tp = _rational_display(gain), _rational_display(period)
+    source = "Skript, Tabelle 6.2"
+    return (
+        _validity(
+            "Kritische Verstärkung",
+            "K_crit>0",
+            f"K_crit={kg}>0",
+            source,
+            r"K_{\mathrm{crit}}>0",
+            rf"K_{{\mathrm{{crit}}}}={kg}>0",
+        ),
+        _validity(
+            "Kritische Periodendauer",
+            "T_crit>0",
+            f"T_crit={tp} s>0",
+            source,
+            r"T_{\mathrm{crit}}>0",
+            rf"T_{{\mathrm{{crit}}}}={tp}\,\mathrm{{s}}>0",
+        ),
+        _validity(
+            "Voraussetzungen",
+            "K_crit>0 und T_crit>0",
+            f"K_crit={kg}>0 und T_crit={tp} s>0. Die Voraussetzungen sind erfüllt.",
+            source,
+            r"K_{\mathrm{crit}}>0,\quad T_{\mathrm{crit}}>0",
+            rf"K_{{\mathrm{{crit}}}}={kg}>0,\quad T_{{\mathrm{{crit}}}}={tp}\,\mathrm{{s}}>0",
+        ),
+    )
+
+
+def _controller_result_steps(parameters: ControllerParameters) -> tuple[ControllerResultStep, ...]:
+    values: list[tuple[str, ControllerScalar, str, str]] = [
+        ("k_P", parameters.k_p, "Verstärkung", "Proportionalbeiwert des Reglers"),
+        ("k_I", parameters.k_i, r"s^-1", "Integralbeiwert des Reglers"),
+        ("k_D", parameters.k_d, "s", "Differentialbeiwert des Reglers"),
+    ]
+    if parameters.ideal_t_i is not None:
+        values.append(("T_I", parameters.ideal_t_i, "s", "Nachstellzeit des Reglers"))
+    if parameters.ideal_t_d is not None:
+        values.append(("T_D", parameters.ideal_t_d, "s", "Vorhaltezeit des Reglers"))
+    return tuple(
+        ControllerResultStep(
+            symbol,
+            _exact_display(value),
+            _approximation(value),
+            unit,
+            kind,
+            _exact_display_latex(value),
+            _approximation(value),
+        )
+        for symbol, value, unit, kind in values
+    )
+
+
+def _controller_parallel_plain(parameters: ControllerParameters) -> str:
+    kp = _exact_display(parameters.k_p)
+    if parameters.controller_type is ControllerType.P:
+        return f"G_R(s)={kp}"
+    ki = _exact_display(parameters.k_i)
+    if parameters.controller_type is ControllerType.PI:
+        return f"G_R(s)={kp}+({ki})/s"
+    return f"G_R(s)={kp}+({ki})/s+({_exact_display(parameters.k_d)})s"
+
+
+def _controller_ideal_plain(parameters: ControllerParameters) -> str:
+    kp = _exact_display(parameters.k_p)
+    if parameters.controller_type is ControllerType.P:
+        return f"G_R(s)={kp}"
+    assert parameters.ideal_t_i is not None
+    ti = _exact_display(parameters.ideal_t_i)
+    if parameters.controller_type is ControllerType.PI:
+        return f"G_R(s)={kp}(1+1/({ti}s))"
+    assert parameters.ideal_t_d is not None
+    return f"G_R(s)={kp}(1+1/({ti}s)+{_exact_display(parameters.ideal_t_d)}s)"
+
+
+def _units_plain(unit: str) -> str:
+    return "" if unit in ("", "Verstärkung", "dimensionslos") else f" {unit}"
+
+
+def _units_latex(unit: str) -> str:
+    if unit == "s":
+        return r"\,\mathrm{s}"
+    if unit == r"s^-1":
+        return r"\,\mathrm{s^{-1}}"
+    return ""
+
+
+def _table_steps(
+    formula: str,
+    values: tuple[tuple[str, str], ...],
+    parameters: ControllerParameters,
+    formula_steps: tuple[ControllerFormulaStep, ...],
+    validity_steps: tuple[ControllerValidityStep, ...],
+    result_steps: tuple[ControllerResultStep, ...],
+) -> tuple[str, ...]:
+    exact = ", ".join(
+        f"{item.symbol}={item.exact_plain}{_units_plain(item.unit)}" for item in result_steps
+    )
+    approximate = ", ".join(
+        f"{item.symbol}≈{item.approximation_plain}{_units_plain(item.unit)}"
+        for item in result_steps
+        if item.approximation_plain
+    )
+    return (
+        "Gegeben: " + ", ".join(f"{key}={value}" for key, value in values) + ".",
+        f"Gesucht: {parameters.controller_type.value.upper()}-Regler G_R(s).",
+        f"Verfahren und Reglertyp: {formula}, {parameters.controller_type.value.upper()}.",
+        "Symbollegende: K_S ist die Streckenverstärkung; k_P ist der Proportionalbeiwert "
+        "des Reglers; K_T ist die Totzeit; T ist die Streckenzeitkonstante.",
+        "Voraussetzungen: " + "; ".join(item.condition_plain for item in validity_steps) + ".",
+        "Konkrete Gültigkeitsprüfung: "
+        + " ".join(item.substitution_plain for item in validity_steps),
+        "Allgemeine Tabellenformeln: "
+        + "; ".join(item.general_plain for item in formula_steps)
+        + ".",
+        "Einsetzen der Werte: " + "; ".join(item.substituted_plain for item in formula_steps) + ".",
+        f"Exakte Reglerparameter: {exact}.",
+        "Numerische Näherungen: " + (approximate if approximate else "nicht erforderlich") + ".",
+        f"Parallele Reglerform: {_controller_parallel_plain(parameters)}.",
+        "Umrechnung in T_I und T_D: "
+        + (
+            "für einen P-Regler nicht erforderlich."
+            if parameters.controller_type is ControllerType.P
+            else "T_I=k_P/k_I"
+            + (", T_D=k_D/k_P." if parameters.controller_type is ControllerType.PID else ".")
+        ),
+        f"Idealform: {_controller_ideal_plain(parameters)}.",
+        "Identitätskontrolle: Parallele und ideale Form sind symbolisch identisch.",
+        f"Eindeutiges Endergebnis: {_controller_parallel_plain(parameters)}.",
+    )
+
+
+def _table_latex(
+    formula: str,
+    values: tuple[tuple[str, str], ...],
+    parameters: ControllerParameters,
+    formula_steps: tuple[ControllerFormulaStep, ...],
+    validity_steps: tuple[ControllerValidityStep, ...],
+    result_steps: tuple[ControllerResultStep, ...],
+) -> str:
+    given = r",\quad ".join(rf"{_input_symbol_latex(key)}={value}" for key, value in values)
+    general = "\n".join(rf"\[{item.general_latex}\]" for item in formula_steps)
+    substituted = "\n".join(rf"\[{item.substituted_latex}\]" for item in formula_steps)
+    validity = "\n".join(
+        rf"\[{item.condition_latex}\]" + "\n" + rf"\[{item.substitution_latex}\]"
+        for item in validity_steps
+    )
+    exact = "\n".join(
+        rf"\[{item.symbol}={item.exact_latex}{_units_latex(item.unit)}\]" for item in result_steps
+    )
+    approximate = "\n".join(
+        rf"\[{item.symbol}\approx {item.approximation_latex}{_units_latex(item.unit)}\]"
+        for item in result_steps
+        if item.approximation_latex
+    )
+    ideal = (
+        r"\par\noindent Für einen P-Regler sind keine Idealzeitparameter erforderlich.\par"
+        if parameters.controller_type is ControllerType.P
+        else rf"\[{_controller_ideal_latex(parameters)}\]"
+    )
+    method_line = (
+        rf"\par\noindent {formula}, Tabellenzeile "
+        rf"{parameters.controller_type.value.upper()}.\par"
+    )
+    return "\n".join(
+        (
+            r"\textbf{Gegeben}",
+            rf"\[{given}\]",
+            r"\textbf{Gesucht}",
+            rf"\[\text{{{parameters.controller_type.value.upper()}-Regler }}G_R(s)\]",
+            r"\textbf{Methode}",
+            method_line,
+            r"\textbf{Symbollegende}",
+            r"\par\noindent $K_S$: Streckenverstärkung; $K_T$: Totzeit; $T$: "
+            r"Streckenzeitkonstante; $k_P$: Proportionalbeiwert des Reglers.\par",
+            r"\textbf{Voraussetzungen und Gültigkeitsbereich}",
+            validity,
+            r"\textbf{Allgemeine Formeln}",
+            general,
+            r"\textbf{Einsetzen}",
+            substituted,
+            r"\textbf{Reglerparameter}",
+            exact,
+            approximate,
+            r"\textbf{Parallele Reglerform}",
+            rf"\[{_controller_parallel_latex(parameters)}\]",
+            r"\textbf{Idealform}",
+            ideal,
+            r"\textbf{Kontrollen}",
+            r"\par\noindent Exakte Weiterrechnung ohne Zwischenrundung; parallele und "
+            r"ideale Form sind symbolisch identisch.\par",
+            r"\textbf{Ergebnis}",
+            rf"\[\boxed{{{_controller_parallel_latex(parameters)}}}\]",
+        )
+    )
+
+
+def _phase_formula_steps(
+    candidates: tuple[ControllerDesignCandidate, ...],
+) -> tuple[ControllerFormulaStep, ...]:
+    return tuple(
+        ControllerFormulaStep(
+            "k_P",
+            "k_P=1/|G_0(jω_*)|",
+            f"k_P=1/{candidate.original_magnitude:.12g}",
+            f"k_P={candidate.positive_k_p:.12g}",
+            "",
+            "Verstärkung",
+            "P-Auslegung über gewünschte Phasenreserve",
+            r"k_P=\frac1{|G_0(j\omega_\ast)|}",
+            rf"k_P=\frac1{{{candidate.original_magnitude:.12g}}}",
+            rf"k_P={candidate.positive_k_p:.12g}",
+            "",
+        )
+        for candidate in candidates
+    )
+
+
+def _phase_validity_steps(
+    target: float, candidates: tuple[ControllerDesignCandidate, ...]
+) -> tuple[ControllerValidityStep, ...]:
+    checks = [
+        _validity(
+            "Zielreserve",
+            "0°<Φ_R,soll<180°",
+            f"0°<{target:.12g}°<180°",
+            "P-Auslegung über gewünschte Phasenreserve",
+            r"0^\circ<\Phi_{R,\mathrm{soll}}<180^\circ",
+            rf"0^\circ<{target:.12g}^\circ<180^\circ",
+        )
+    ]
+    for candidate in candidates:
+        magnitude_check = candidate.positive_k_p * candidate.original_magnitude
+        checks.extend(
+            (
+                _validity(
+                    "Positiver P-Faktor",
+                    "k_P>0",
+                    f"k_P={candidate.positive_k_p:.12g}>0",
+                    "P-Auslegung über gewünschte Phasenreserve",
+                    r"k_P>0",
+                    rf"k_P={candidate.positive_k_p:.12g}>0",
+                ),
+                _validity(
+                    "Betrag am Zielpunkt",
+                    "|k_PG_0(jω_*)|=1",
+                    f"|k_PG_0(jω_*)|={magnitude_check:.12g}",
+                    "Frequenznachprüfung",
+                    r"|k_PG_0(j\omega_\ast)|=1",
+                    rf"|k_PG_0(j\omega_\ast)|={magnitude_check:.12g}",
+                ),
+                _validity(
+                    "Globale Phasenreserve",
+                    "Φ_R,ist≥Φ_R,soll",
+                    f"Φ_R,ist={candidate.achieved_phase_margin_degrees:.8g}°≥{target:.8g}°",
+                    "Frequenz- und Reservennachprüfung",
+                    r"\Phi_{R,\mathrm{ist}}\ge\Phi_{R,\mathrm{soll}}",
+                    rf"\Phi_{{R,\mathrm{{ist}}}}={candidate.achieved_phase_margin_degrees:.8g}^\circ"
+                    rf"\ge {target:.8g}^\circ",
+                ),
+            )
+        )
+    return tuple(checks)
+
+
+def _phase_margin_steps(
+    target: float, target_phase: float, candidates: tuple[ControllerDesignCandidate, ...]
+) -> list[str]:
+    candidate_text = "; ".join(
+        f"Kandidat {item.candidate_index}: ω_*={item.target_frequency:.12g} rad/s"
+        for item in candidates
+    )
+    magnitude_text = "; ".join(f"|G_0(jω_*)|={item.original_magnitude:.12g}" for item in candidates)
+    substitution_text = "; ".join(
+        f"k_P=1/{item.original_magnitude:.12g}={item.positive_k_p:.12g}" for item in candidates
+    )
+    reserve_text = "; ".join(
+        f"Φ_R,ist={item.achieved_phase_margin_degrees:.8g}°" for item in candidates
+    )
+    return [
+        "Gegeben: offene Strecke G_0(s) und Frequenzsuchbereich.",
+        "Gesucht: positiver P-Regler G_R(s)=k_P.",
+        f"Zielreserve: 0°<{target:.12g}°<180°.",
+        f"Zielphase: φ_ziel=-180°+{target:.12g}°={target_phase:.12g}°.",
+        "Zielphasenfrequenz beziehungsweise Kandidaten: " + candidate_text + ".",
+        "Betrag am Zielpunkt: " + magnitude_text + ".",
+        "Allgemeine Formel: k_P=1/|G_0(jω_*)|.",
+        "Einsetzen: " + substitution_text + ".",
+        "Neuer offener Kreis: G_0,neu(s)=k_PG_0(s).",
+        "Durchtrittskontrolle: |k_PG_0(jω_*)|=1.",
+        "Globale Reserven: " + reserve_text + "; alle relevanten Durchtritte wurden geprüft.",
+        "Nyquist-Nachprüfung: Der vorhandene Nyquist-Kern wurde erneut ausgeführt.",
+        (
+            f"Endergebnis: G_R(s)={candidates[0].positive_k_p:.12g}."
+            if len(candidates) == 1
+            else "Kandidatenauswahl erforderlich."
+        ),
+    ]
+
+
+def _phase_margin_latex(
+    draft: ControllerDesignInputDraft,
+    target: float,
+    target_phase: float,
+    candidates: tuple[ControllerDesignCandidate, ...],
+) -> str:
+    lines = [
+        r"\textbf{Gegeben}",
+        rf"\[G_0(s)=\frac{{{draft.numerator_text}}}{{{draft.denominator_text}}},\qquad "
+        rf"\Phi_{{R,\mathrm{{soll}}}}={target:.12g}^\circ\]",
+        r"\textbf{Gesucht}",
+        r"\[G_R(s)=k_P,\qquad k_P>0\]",
+        r"\textbf{Voraussetzungen und Gültigkeitsbereich}",
+        r"\[0^\circ<\Phi_{R,\mathrm{soll}}<180^\circ\]",
+        rf"\[0^\circ<{target:.12g}^\circ<180^\circ\]",
+        r"\textbf{Zielphasensuche}",
+        rf"\[\varphi_{{\mathrm{{ziel}}}}=-180^\circ+{target:.12g}^\circ={target_phase:.12g}^\circ\]",
+        r"\textbf{Allgemeine Formeln}",
+        r"\[k_P=\frac1{|G_0(j\omega_\ast)|}\]",
+    ]
+    for candidate in candidates:
+        omega = (
+            r"\omega_\ast" if len(candidates) == 1 else rf"\omega_{{{candidate.candidate_index}}}"
+        )
+        lines.extend(
+            (
+                rf"\[{omega}={candidate.target_frequency:.12g}\,\mathrm{{s^{{-1}}}}\]",
+                rf"\textbf{{Einsetzen - Kandidat {candidate.candidate_index}}}",
+                rf"\[|G_0(j\omega_\ast)|={candidate.original_magnitude:.12g}\]",
+                rf"\[k_P=\frac1{{{candidate.original_magnitude:.12g}}}"
+                rf"={candidate.positive_k_p:.12g}\]",
+                r"\textbf{Frequenz- und Reservennachprüfung}",
+                r"\[G_{0,\mathrm{neu}}(s)=k_PG_0(s)\]",
+                rf"\[|k_PG_0(j\omega_\ast)|="
+                rf"{candidate.positive_k_p * candidate.original_magnitude:.12g}=1\]",
+                rf"\[\Phi_{{R,\mathrm{{ist}}}}={candidate.achieved_phase_margin_degrees:.8g}^\circ"
+                rf"\ge\Phi_{{R,\mathrm{{soll}}}}={target:.8g}^\circ\]",
+                r"\par\noindent Die Durchtritte und Reserven wurden vollständig neu "
+                r"berechnet.\par",
+                r"\textbf{Nyquist-Nachprüfung}",
+                r"\par\noindent Der vorhandene Nyquist-Kern wurde für den neuen offenen "
+                r"Kreis erneut ausgeführt.\par",
+            )
+        )
+    successful = tuple(
+        item for item in candidates if item.status is ControllerDesignCandidateStatus.TARGET_MET
+    )
+    lines.append(r"\textbf{Ergebnis}")
+    if len(candidates) == 1 and successful:
+        lines.append(rf"\[\boxed{{G_R(s)={successful[0].positive_k_p:.12g}}}\]")
+    elif successful:
+        lines.append(r"\par\noindent Auswahl eines gültigen Kandidaten erforderlich.\par")
+    else:
+        lines.append(r"\par\noindent Kein Kandidat erfüllt die globale Zielreserve.\par")
+    return "\n".join(lines)
 
 
 __all__ = [

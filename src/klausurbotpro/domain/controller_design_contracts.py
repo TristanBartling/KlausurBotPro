@@ -30,15 +30,57 @@ class ControllerDesignStatus(StrEnum):
 
 class ControllerDesignCandidateStatus(StrEnum):
     TARGET_MET = "target_met"
-    TARGET_CROSSING_MET_GLOBAL_MARGIN_NOT_MET = (
-        "target_crossing_met_global_margin_not_met"
-    )
+    TARGET_CROSSING_MET_GLOBAL_MARGIN_NOT_MET = "target_crossing_met_global_margin_not_met"
     TARGET_NOT_MET = "target_not_met"
 
 
 class ControllerValueProvenance(StrEnum):
     EXACT_RATIONAL = "exact_rational"
     NUMERIC_FREQUENCY_DESIGN = "numeric_frequency_design"
+
+
+@dataclass(frozen=True, slots=True)
+class ControllerFormulaStep:
+    """One exam-ready formula step, independent of any UI renderer."""
+
+    quantity: str
+    general_plain: str
+    substituted_plain: str
+    exact_plain: str
+    approximation_plain: str
+    unit: str
+    source: str
+    general_latex: str
+    substituted_latex: str
+    exact_latex: str
+    approximation_latex: str
+
+
+@dataclass(frozen=True, slots=True)
+class ControllerValidityStep:
+    """A concrete applicability check with values and a decision."""
+
+    label: str
+    condition_plain: str
+    substitution_plain: str
+    passed: bool
+    conclusion: str
+    source: str
+    condition_latex: str
+    substitution_latex: str
+
+
+@dataclass(frozen=True, slots=True)
+class ControllerResultStep:
+    """An exact result followed by its optional numerical projection."""
+
+    symbol: str
+    exact_plain: str
+    approximation_plain: str
+    unit: str
+    quantity_kind: str
+    exact_latex: str
+    approximation_latex: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,9 +158,12 @@ __all__ = [
     "ControllerDesignDiagnostic",
     "ControllerDesignMethod",
     "ControllerDesignStatus",
+    "ControllerFormulaStep",
     "ControllerParameters",
+    "ControllerResultStep",
     "ControllerScalar",
     "ControllerType",
+    "ControllerValidityStep",
     "ControllerValueProvenance",
     "exact_scalar",
 ]

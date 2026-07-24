@@ -85,7 +85,7 @@ class ControllerDesignWorkspace(QWidget):
             ("omega_max", "ω_max [rad/s]:", self.omega_max_edit),
             ("points", "Punkte pro Dekade:", self.points_per_decade_edit),
             ("process_gain", "K_S:", self.process_gain_edit),
-            ("dead_time", "L [s]:", self.dead_time_edit),
+            ("dead_time", "K_T [s]:", self.dead_time_edit),
             ("lag_time", "T [s]:", self.lag_time_edit),
             ("critical_gain", "K_crit:", self.critical_gain_edit),
             ("critical_period", "T_crit [s]:", self.critical_period_edit),
@@ -112,7 +112,7 @@ class ControllerDesignWorkspace(QWidget):
         for key, label in (
             ("overview", "Übersicht"),
             ("inputs", "Verfahren und Eingaben"),
-            ("formula", "Tabellenformel / Zielphasensuche"),
+            ("formula", "Formel und Einsetzen"),
             ("parameters", "Reglerparameter"),
             ("frequency", "Frequenznachprüfung"),
             ("controls", "Kontrollen"),
@@ -211,20 +211,53 @@ class ControllerDesignWorkspace(QWidget):
             return
         result = value.result
         parameters = result.controller_parameters
+        selection = (
+            "Auswahl erforderlich"
+            if result.status.value == "selection_required"
+            else (
+                f"Kandidat {result.candidates[0].candidate_index}"
+                if result.method is ControllerDesignMethod.P_PHASE_MARGIN and result.candidates
+                else "nicht erforderlich"
+            )
+        )
         self.outputs["overview"].setPlainText(
             f"Verfahren: {controller_design_method_text(result.method)}\n"
-            f"Status: {'Lösung erstellt' if result.has_copyable_solution else 'Keine Lösung'}"
+            f"Reglertyp: {result.controller_type.value.upper()}\n"
+            f"Gültigkeitsstatus: {'erfüllt' if result.has_copyable_solution else 'nicht erfüllt'}\n"
+            f"Primäres Ergebnis: {result.primary_result_plain or '—'}\n"
+            f"Kandidatenauswahl: {selection}"
         )
         self.outputs["inputs"].setPlainText(
             "\n".join(f"{key}: {item}" for key, item in result.normalized_parameters)
         )
-        self.outputs["formula"].setPlainText(result.formula_or_target)
+        self.outputs["formula"].setPlainText(
+            "\n\n".join(
+                f"{item.quantity}\n"
+                f"Allgemeine Formel: {item.general_plain}\n"
+                f"Einsetzen: {item.substituted_plain}\n"
+                f"Exaktes Ergebnis: {item.exact_plain}"
+                + (
+                    f"\nNumerische Näherung: {item.approximation_plain}"
+                    if item.approximation_plain
+                    else ""
+                )
+                + f"\nGrößenart/Einheit: {item.unit}\nQuelle: {item.source}"
+                for item in result.formula_steps
+            )
+            or result.formula_or_target
+        )
         self.outputs["parameters"].setPlainText(
             ""
             if parameters is None
             else (
-                f"{parameters.canonical_transfer_function}\n"
-                f"{parameters.parallel_latex}\n{parameters.ideal_latex}"
+                "\n".join(
+                    f"{item.symbol}={item.exact_plain}"
+                    + (f" ≈ {item.approximation_plain}" if item.approximation_plain else "")
+                    + (f" {item.unit}" if item.unit in ("s", "s^-1") else "")
+                    for item in result.result_steps
+                )
+                + f"\n\nPrimäres Ergebnis (parallele Form):\n{result.primary_result_plain}"
+                + f"\n\nÄquivalente Idealform:\n{result.equivalent_result_plain}"
             )
         )
         self.outputs["frequency"].setPlainText(
@@ -251,7 +284,12 @@ class ControllerDesignWorkspace(QWidget):
         )
         self.copy_button.setEnabled(result.has_copyable_solution)
         if result.has_copyable_solution:
-            self.result_tabs.setCurrentWidget(self.outputs["latex"])
+            preferred = (
+                "frequency"
+                if result.method is ControllerDesignMethod.P_PHASE_MARGIN
+                else "parameters"
+            )
+            self.result_tabs.setCurrentWidget(self.outputs[preferred])
         else:
             self.result_tabs.setCurrentWidget(self.outputs["diagnostics"])
 

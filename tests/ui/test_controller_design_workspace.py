@@ -24,7 +24,7 @@ def _click_and_wait(window: MainWindow) -> None:
     assert completed.count() == 1
 
 
-def test_g1_real_click_opens_latex_and_enables_copy() -> None:
+def test_g1_real_click_opens_frequency_result_and_enables_copy() -> None:
     _app()
     window = MainWindow()
     workspace = window.controller_design_workspace
@@ -34,7 +34,7 @@ def test_g1_real_click_opens_latex_and_enables_copy() -> None:
     frequency = workspace.outputs["frequency"].toPlainText()
     assert "0.008033086" in frequency
     assert "Φ_R=20" in frequency
-    assert workspace.result_tabs.currentWidget() is workspace.latex_output
+    assert workspace.result_tabs.currentWidget() is workspace.outputs["frequency"]
     assert workspace.latex_output.toPlainText().count(r"\section*{") == 1
     assert workspace.copy_button.isEnabled()
     assert window.shutdown()
@@ -55,8 +55,29 @@ def test_g3_real_click_shows_exact_parallel_and_ideal_forms() -> None:
     assert "G_R(s)" in parameters
     assert "49}{9" in latex
     assert r"\section*{" not in latex
-    assert workspace.result_tabs.currentWidget() is workspace.latex_output
+    assert workspace.result_tabs.currentWidget() is workspace.outputs["parameters"]
     assert workspace.copy_button.isEnabled()
+    assert window.shutdown()
+    window.close()
+
+
+def test_course_notation_formula_projection_and_overview_are_visible() -> None:
+    _app()
+    window = MainWindow()
+    workspace = window.controller_design_workspace
+    workspace.method_combo.setCurrentIndex(1)
+    _app().processEvents()
+    assert workspace.rows["dead_time"][0].text() == "K_T [s]:"
+    assert workspace.result_tabs.tabText(2) == "Formel und Einsetzen"
+    _click_and_wait(window)
+    formula = workspace.outputs["formula"].toPlainText()
+    overview = workspace.outputs["overview"].toPlainText()
+    steps = workspace.outputs["steps"].toPlainText()
+    assert formula.index("Allgemeine Formel:") < formula.index("Einsetzen:")
+    assert "K_S" in formula and "k_P" in formula
+    assert "Primäres Ergebnis: G_R(s)=" in overview
+    assert "Gültigkeitsstatus: erfüllt" in overview
+    assert "r=L/T" not in formula + steps
     assert window.shutdown()
     window.close()
 

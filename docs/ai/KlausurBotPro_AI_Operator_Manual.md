@@ -40,7 +40,7 @@ Dieses Handbuch beschreibt App-Bedienung und implementiertes Verhalten. Es ist k
 | DGL → Regelungsnormalform / Zustandsstabilität | Zustandsraum | `UI_VERIFIED` | DGL-Koeffizienten, Ordnung 1 bis 4, Analyseziel | Normalisierung, Matrizen, Polynom, Eigenwerte; zielabhängig Stabilitäts- oder Vollanalyse | Nur nicht abgeleiteten Eingang verwenden | Unsicherer führender Koeffizient wird abgelehnt |
 | Zustandsraum → Vollanalyse / Zustandsstabilität | Zustandsraum | `UI_VERIFIED` | `A`, `b`, `c^T`, `d`, Analyseziel | Zielabhängig Eigenwert-/Stabilitätslösung oder zusätzlich Übertragungsfunktion und verborgene Modi | Matrixdimensionen korrekt eingeben | Zustandsdimension größer als 4; keine Jordanformanalyse |
 | P-Auslegung für Phasenreserve | Reglerauslegung | `PARTIAL` | Strecke, Zielreserve, Frequenzbereich | Zielphasensuche, positiver P-Faktor, neue Reserven und Nyquist | Bei mehreren geeigneten Kandidaten auswählen; Ergebnis fachlich prüfen | Numerische Suche; Zielphase muss im Bereich erreicht werden |
-| Ziegler–Nichols / Cohen–Coon | Reglerauslegung | `PARTIAL` | Tabellenkennwerte | Exakte Tabellenrechnung und Reglerformen | Quellenbereich und Einheiten vor Eingabe prüfen | Kursbereiche `L < 0,5 T` bzw. `L < 2 T`; reine Zahlen in Sekunden |
+| Ziegler–Nichols / Cohen–Coon | Reglerauslegung | `PARTIAL` | Tabellenkennwerte | Allgemeine Formel, konkrete Gültigkeitsprüfung, exakte Tabellenrechnung und Reglerformen | Quellenbereich und Einheiten vor Eingabe prüfen | Kursbereiche `K_T < 0,5 T` bzw. `0 < K_T/T < 2`; reine Zahlen in Sekunden |
 | Linearisierung, Wurzelortskurve, Lead/Lag, Padé, OCR, freie Blockbilder | Keine aktuelle Ansicht | `UNSUPPORTED` | — | — | Außerhalb der App bearbeiten | Keine verdrahtete UI nachgewiesen |
 
 ## 4. Start und Navigation
@@ -249,15 +249,15 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 | `Reglertyp:` | Auswahl | `P`, `PI`, `PID` | Wählt Tabellenzeile | Tabellenverfahren | P-Phasenreserve erzwingt P |
 | `Zähler:`, `Nenner:`, `Parameterbelegungen:` | Textfelder | Strecke in getrennter rationaler Form | Frequenzbasierte P-Auslegung | Nur P-Phasenreserve | Ungelöste Parameter unzulässig |
 | `Zielphasenreserve [deg]:`, `ω_min`, `ω_max`, `Punkte pro Dekade` | Textfelder | `0 < Φ_R < 180`, positiver Bereich | Numerische Suche und Nachrechnung | Nur P-Phasenreserve | Zielphase nicht erreicht/mehrere Kandidaten |
-| `K_S:`, `L [s]:`, `T [s]:` | Textfelder | Positive reine Zahlen | Offene ZN/Cohen–Coon | Passendes Verfahren | Keine Einheiten im Feld; Quellenbereich verletzt |
+| `K_S:`, `K_T [s]:`, `T [s]:` | Textfelder | Positive reine Zahlen | Offene ZN/Cohen–Coon | Passendes Verfahren | Keine Einheiten im Feld; Quellenbereich verletzt |
 | `K_crit:`, `T_crit [s]:` | Textfelder | Positive reine Zahlen | Geschlossene ZN-Auslegung | Geschlossene ZN | Ungültige/nichtpositive Werte |
 | `Vorschau:` | Anzeige | — | Zeigt Zielphase oder Verfahren | Immer | — |
 | `Reglerauslegung berechnen`, `Zurücksetzen`, `LaTeX kopieren` | Schaltflächen | — | Start/Reset/Kopieren | Nicht laufend/LaTeX vorhanden | Bei Fehler kein altes LaTeX kopierbar |
-| Ergebnis-Tabs | Tabs | Übersicht, Verfahren/Eingaben, Tabellenformel/Zielphasensuche, Reglerparameter, Frequenznachprüfung, Kontrollen, Worked Steps, LaTeX, Diagnosen | Wählt Ausgabe | Ergebnisabhängig | — |
+| Ergebnis-Tabs | Tabs | Übersicht, Verfahren/Eingaben, Formel und Einsetzen, Reglerparameter, Frequenznachprüfung, Kontrollen, Worked Steps, LaTeX, Diagnosen | Wählt Ausgabe | Ergebnisabhängig | — |
 
-**Ausgaben:** Verfahrensdaten, Formeln, parallele und ideale Reglerform, exakte rationale Tabellenwerte, numerische Kandidaten/Frequenznachprüfung, Kontrollen, Worked Steps und LaTeX.
+**Ausgaben:** Verfahrensdaten, konkrete Quellenbereichsprüfung, allgemeine Formel vor der Einsetzung, exakte Werte vor optionalen Näherungen, parallele Reglerform als primäres Ergebnis, äquivalente Idealform, numerische Kandidaten/Frequenznachprüfung, Kontrollen, Worked Steps und LaTeX. `K_S` bezeichnet die Streckenverstärkung, `k_P` den Proportionalbeiwert des Reglers.
 
-**Grenzen:** P-Phasenreserve ist numerisch und kann eine manuelle Kandidatenauswahl verlangen. Ziegler–Nichols offen gilt hier nur für `L < 0,5 T`, Cohen–Coon nur für `L < 2 T`. Die App bildet nicht automatisch eine Strecke aus einem Blockschaltbild.
+**Grenzen:** P-Phasenreserve ist numerisch und kann eine manuelle Kandidatenauswahl verlangen. Ziegler–Nichols offen gilt hier nur für `K_T/T < 0,5`, Cohen–Coon nur für `0 < K_T/T < 2`. Die App bildet nicht automatisch eine Strecke aus einem Blockschaltbild. Totzeit-Frequenzrechnung und Lead-Auslegung bleiben nicht unterstützt.
 
 ## 7. Workflow-Karten
 
@@ -569,20 +569,20 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 ### WF-17: Ziegler–Nichols – offener Kreis
 
 - **Status:** `PARTIAL`
-- **Geeigneter Aufgabentyp:** Tabellenentwurf aus `K_S`, `L`, `T`.
+- **Geeigneter Aufgabentyp:** Tabellenentwurf aus `K_S`, `K_T`, `T`.
 - **Modul/Ansicht:** `Reglerauslegung`, gleichnamiges Verfahren.
-- **Voraussetzungen:** Positive Werte und `L < 0,5 T`.
-- **Eingaben:** Reglertyp P/PI/PID, `K_S`, `L [s]`, `T [s]`.
+- **Voraussetzungen:** Positive Werte und strikt `K_T/T < 0,5`.
+- **Eingaben:** Reglertyp P/PI/PID, `K_S`, `K_T [s]`, `T [s]`.
 - **Akzeptierte Syntax:** Reine Zahlen; keine Einheiten im Feld.
-- **Gültiges Beispiel:** `K_S=1.8`, `L=12`, `T=72`, `PID`.
+- **Gültiges Beispiel:** `K_S=1.8`, `K_T=12`, `T=72`, `PID`.
 - **Bedienfolge:** 1. Verfahren/Reglertyp wählen. 2. Kennwerte eingeben. 3. Berechnen.
 - **Interne Interpretation:** Quellenstrenge Kurskonvention, parallele PID-Form.
-- **Automatische Schritte:** Exakte Tabellenformel, Parameter und äquivalente Reglerformen.
-- **Sichtbare Ergebnisse:** `k_P,k_I,k_D,T_I,T_D`, Kontrollen, Worked Steps und LaTeX.
+- **Automatische Schritte:** Konkrete Gültigkeitsprüfung, allgemeine Formel, Einsetzung, exakte Tabellenrechnung und äquivalente Reglerformen.
+- **Sichtbare Ergebnisse:** `k_P,k_I,k_D,T_I,T_D`, exakte Werte vor Näherungen, parallele Form als primäres Ergebnis, Idealform als äquivalente Darstellung, Kontrollen, Worked Steps und LaTeX.
 - **Manuelle Vorarbeit:** Kennwerte aus Sprungantwort/Wendetangente bestimmen.
 - **Manuelle Nacharbeit/Kontrolle:** Reale Regelgüte und Quellenkonvention prüfen.
 - **Typische Fehlbedienung:** `12 s` eingeben oder Grenzbereich verletzen.
-- **Bekannte Grenze:** App ermittelt `K_S,L,T` nicht aus Messdaten/Plot.
+- **Bekannte Grenze:** App ermittelt `K_S,K_T,T` nicht aus Messdaten/Plot und rechnet keinen Totzeit-Frequenzgang.
 - **Nachweis:** `ui/controller_design_workspace.py`, `application/controller_design_workflow.py`; `tests/application/test_controller_design_workflow.py`, `tests/domain/test_controller_design_analyzer.py`.
 
 ### WF-18: Ziegler–Nichols – geschlossener Kreis
@@ -607,19 +607,19 @@ Während asynchroner Berechnungen werden die betreffenden Eingaben gesperrt. Wir
 ### WF-19: Cohen–Coon
 
 - **Status:** `PARTIAL`
-- **Geeigneter Aufgabentyp:** Tabellenentwurf aus `K_S`, `L`, `T`.
+- **Geeigneter Aufgabentyp:** Tabellenentwurf aus `K_S`, `K_T`, `T`.
 - **Modul/Ansicht:** `Reglerauslegung`, `Cohen–Coon`.
-- **Voraussetzungen:** Positive Werte und `L < 2 T`.
-- **Eingaben:** Reglertyp P/PI/PID, `K_S`, `L [s]`, `T [s]`.
+- **Voraussetzungen:** Positive Werte und strikt `0 < r=K_T/T < 2`.
+- **Eingaben:** Reglertyp P/PI/PID, `K_S`, `K_T [s]`, `T [s]`.
 - **Akzeptierte Syntax:** Wie WF-17.
-- **Gültiges Beispiel:** `K_S=1.8`, `L=12`, `T=72`, `PID`.
+- **Gültiges Beispiel:** `K_S=1.8`, `K_T=12`, `T=72`, `PID`.
 - **Bedienfolge:** 1. Verfahren/Reglertyp wählen. 2. Werte eingeben. 3. Berechnen.
-- **Interne Interpretation:** Berechnet zuerst `r=L/T`, dann exakte Tabellenwerte.
+- **Interne Interpretation:** Berechnet zuerst `r=K_T/T`, dann exakte Tabellenwerte.
 - **Automatische Schritte:** Reglerparameter, parallele/ideale Form und Kontrollen.
 - **Sichtbare Ergebnisse:** Im Testfall u. a. exakte Werte `49/9` und `2107/10692`.
 - **Manuelle Vorarbeit:** Prozesskennwerte bestimmen.
 - **Manuelle Nacharbeit/Kontrolle:** Quellenkonvention und Regelgüte prüfen.
-- **Typische Fehlbedienung:** `L/T` außerhalb des Quellenbereichs.
+- **Typische Fehlbedienung:** `K_T/T` außerhalb des Quellenbereichs.
 - **Bekannte Grenze:** Keine Identifikation der Strecke aus Daten.
 - **Nachweis:** `ui/controller_design_workspace.py`, `application/controller_design_workflow.py`; `tests/ui/test_controller_design_workspace.py`, `tests/application/test_controller_design_workflow.py`.
 
@@ -649,7 +649,7 @@ Entscheidungsbaum:
 | TF aus DGL wird abgelehnt | Nullzustand nicht bestätigt | Checkbox prüfen | Sichtbar bestätigen, sofern fachlich korrekt | Wenn Bestätigung gesetzt und kein Nichtnullzustand vorliegt |
 | Zustands-TF stabil, Zustandsmodell instabil | Verborgener gekürzter Modus | Roh-/reduzierte TF und Kürzungsbericht prüfen | E/A- und Zustandsstabilität getrennt berichten | Wenn Modus trotz algebraisch nachweisbarer Beobacht-/Steuerbarkeit falsch klassifiziert wird |
 | P-Phasenreserve liefert keine Lösung | Zielphase im Suchbereich nicht erreicht | Bereich/entfaltete Phase unabhängig prüfen | Bereich korrigieren oder Verfahren verwerfen | Wenn nachweisliche Zielwurzel mit gültiger Eingabe nicht gefunden wird |
-| Tabellenverfahren liefert keine Ausgabe | Einheitentext oder Quellenbereich | Werte und `L/T` prüfen | Nur Zahlen; Bereich einhalten | Wenn gültige positive Werte im Bereich reproduzierbar scheitern |
+| Tabellenverfahren liefert keine Ausgabe | Einheitentext oder Quellenbereich | Werte und `K_T/T` prüfen | Nur Zahlen; Bereich einhalten | Wenn gültige positive Werte im Bereich reproduzierbar scheitern |
 | Altes Transferfunktionsresultat bleibt sichtbar | Neuer Request scheiterte vor Start | Statuszeile auf `vorherigen Berechnung` prüfen | Eingabe korrigieren und neu rechnen | Wenn altes Ergebnis nicht klar als alt markiert ist |
 
 Ein möglicher Bug darf erst angenommen werden, wenn der richtige Workflow gewählt wurde, die Eingabe nachweislich gültig ist, alle Voraussetzungen erfüllt sind, ein unabhängiges Soll-Ergebnis vorliegt und das Verhalten reproduzierbar ist.
@@ -678,7 +678,7 @@ Ein möglicher Bug darf erst angenommen werden, wenn der richtige Workflow gewä
 | `A muss quadratisch sein; erhalten: …` / Dimensionsmeldungen für `b`, `c^T`, `d` | Inkonsistente Matrixformen | Zeilen/Spalten vertauscht | Matrixstruktur korrigieren | Keine fachlichen Resultate |
 | `Die Zielphase wird im untersuchten Frequenzbereich nicht erreicht.` | P-Auslegung ohne Zielwurzel | Bereich zu klein/falsche Strecke | Bereich/Strecke prüfen | Kein LaTeX; keine kopierbare Lösung |
 | `Zeitwerte müssen als reine Zahlen in Sekunden eingegeben werden.` | Einheit im Skalarfeld | `12 s` | `12` | Keine LaTeX-Ausgabe; Diagnose sichtbar |
-| `Ziegler–Nichols … nur für L < 0,5 T` / `Cohen–Coon … nur für L < 2 T` | Quellenbereich verletzt | Verhältnis zu groß | Anderes Verfahren oder korrekte Werte | Keine LaTeX-Ausgabe; Diagnose sichtbar |
+| `K_T/T < 0,5 ist nicht erfüllt` / `0 < r=K_T/T < 2 ist nicht erfüllt` | Quellenbereich verletzt | Verhältnis erreicht oder überschreitet die strikte Grenze | Anderes Verfahren oder korrekte Werte | Keine LaTeX-Ausgabe; Diagnose sichtbar |
 
 Das Verhalten ist nicht für alle Module einheitlich: Bei `Transferfunktion` löscht ein gültig gestarteter neuer Lauf das alte Resultat. Scheitert dort nur die Request-Erstellung, bleibt das vorherige Resultat sichtbar und wird ausdrücklich als Ergebnis der vorherigen Berechnung markiert; ein unerwarteter Ausführungsfehler entfernt die alte Mathematik. `Frequenzbereich` ersetzt bei einer ungültigen neuen Eingabe die bisherige Ansicht durch einen neuen Fehlerzustand; schlägt nur die optionale Singularitätsverfeinerung fehl, bleibt dagegen das Basisergebnis desselben aktuellen Laufs mit einem Hinweis sichtbar. `Stabilität`, `Zeitbereich`, `Zustandsraum` und `Reglerauslegung` stellen bei den geprüften neuen Berechnungs- und Fehlerpfaden einen neuen Zustand dar und übernehmen kein ausdrücklich als veraltet markiertes Vorresultat. Darüber hinaus besteht keine modulübergreifende Garantie; bei einer nicht dokumentierten Fehlerfolge muss ein KI-Assistent den sichtbaren Status und gegebenenfalls einen aktuellen Screenshot prüfen.
 
@@ -700,7 +700,7 @@ Das Verhalten ist nicht für alle Module einheitlich: Bei `Transferfunktion` lö
 - Im Zeitbereich ist die Kürzungsprovenienz strikt zu trennen: Eine allgemeine inverse Bildfunktion `F(s)` wird ohne Systemaussage nur algebraisch reduziert. In den Antwortmodi wird `G(s)` vor der Produktbildung separat reduziert; nur eine Kürzung innerhalb dieses `G(s)` kann als möglicherweise verdeckte Systemdynamik gelten. Kürzungen, die erst in `Y(s)=G(s)U(s)` entstehen, sind keine verborgenen Systemmoden und ihre entsprechenden Warncodes werden im sichtbaren Antwortworkflow entfernt.
 - DGL: Ausgangsordnung 1–4, Eingangsordnung 0–4; Koeffizienten zeitunabhängig. Fehlende Anfangswerte werden bei allen vier Analysezielen niemals ohne gesetzte Nullpolitik angenommen. Die Zielwahl hat bei `Übertragungsfunktion aus DGL` keine Wirkung.
 - Zustandsraum: SISO, Dimension 1–4. DGL→Regelungsnormalform unterstützt nur den nicht abgeleiteten Eingang.
-- Reglerauslegung ermittelt Prozesskennwerte nicht aus Diagrammen. ZN/Cohen–Coon bleiben Tabellenverfahren in der implementierten Kurskonvention.
+- Reglerauslegung ermittelt Prozesskennwerte nicht aus Diagrammen. ZN/Cohen–Coon bleiben Tabellenverfahren in der implementierten Kurskonvention. Totzeit-Frequenzrechnung und Lead-Auslegung sind weiterhin nicht unterstützt.
 - Keine Datei-Exportfunktion nachgewiesen; nur Zwischenablage/LaTeX-Quelltext.
 
 ## 11. Regeln für einen GPT-Chat
