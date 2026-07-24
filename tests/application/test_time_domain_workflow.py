@@ -306,6 +306,7 @@ def test_typed_exponential_input_builds_u_and_same_response() -> None:
     assert solution.input_laplace is not None
     assert sp.simplify(solution.input_laplace._as_sympy() - 9 / (s - 2)) == 0
     assert solution.input_signal is not None
+    assert solution.input_signal.time_function is not None
     assert sp.simplify(
         solution.input_signal.time_function.expression._as_sympy()
         - 9 * sp.exp(2 * t)

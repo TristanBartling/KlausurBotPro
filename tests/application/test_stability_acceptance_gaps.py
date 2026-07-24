@@ -6,6 +6,7 @@ from klausurbotpro.application.stability_workflow import (
     StabilityInputDraft,
     StabilityInputMode,
     StabilityMethod,
+    StabilityWorkflowResult,
     run_stability_workflow,
 )
 from klausurbotpro.domain.hurwitz_contracts import HurwitzAnalysisResult
@@ -15,7 +16,7 @@ from klausurbotpro.domain.routh_contracts import RouthAnalysisResult
 _TRANSFER = "(s+K)^2 / (((s+3)*(s+2*a)*(s+5)+8*K)*(s+K))"
 
 
-def _transfer(target: AnalysisTarget):
+def _transfer(target: AnalysisTarget) -> StabilityWorkflowResult:
     result = run_stability_workflow(
         StabilityInputDraft(
             decision_parameters_text="a,K",
@@ -31,6 +32,8 @@ def _transfer(target: AnalysisTarget):
 def test_internal_factor_provenance_closes_exact_region_with_k_positive() -> None:
     internal = _transfer(AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC)
     external = _transfer(AnalysisTarget.EXTERNAL_BIBO)
+    assert isinstance(internal.analysis, HurwitzAnalysisResult)
+    assert isinstance(external.analysis, HurwitzAnalysisResult)
     internal_case = internal.analysis.case_results[0]
     external_case = external.analysis.case_results[0]
     user_text = "\n".join(
@@ -164,6 +167,7 @@ def test_hurwitz_reference_regions_remain_exact() -> None:
     )
     ref_02 = _transfer(AnalysisTarget.EXTERNAL_BIBO)
     assert isinstance(ref_01.analysis, HurwitzAnalysisResult)
+    assert isinstance(ref_02.analysis, HurwitzAnalysisResult)
 
     first = ref_01.analysis.case_results[0].parameter_region
     second = ref_02.analysis.case_results[0].parameter_region
@@ -175,6 +179,7 @@ def test_hurwitz_reference_regions_remain_exact() -> None:
 
 def test_internal_transfer_region_remains_complete_in_latex_box() -> None:
     internal = _transfer(AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC)
+    assert isinstance(internal.analysis, HurwitzAnalysisResult)
     latex = internal.analysis.latex_source
     final_box = latex[latex.rindex(r"\boxed") :]
 

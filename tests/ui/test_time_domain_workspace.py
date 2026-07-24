@@ -6,7 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFormLayout, QLabel, QWidget
 
 from klausurbotpro.application import (
     InputSignalType,
@@ -23,6 +23,20 @@ def _app() -> QApplication:
         application = QApplication([])
     assert isinstance(application, QApplication)
     return application
+
+
+def _form_layout(field: QWidget) -> QFormLayout:
+    parent = field.parentWidget()
+    assert parent is not None
+    layout = parent.layout()
+    assert isinstance(layout, QFormLayout)
+    return layout
+
+
+def _label_text(layout: QFormLayout, field: QWidget) -> str:
+    label = layout.labelForField(field)
+    assert isinstance(label, QLabel)
+    return label.text()
 
 
 class _RecordingTimeDomainPresenter(TimeDomainPresenter):
@@ -143,21 +157,21 @@ def test_ode_signal_fields_are_visible_only_when_relevant() -> None:
 def test_ode_coefficient_and_initial_labels_are_readable() -> None:
     _app()
     workspace = TimeDomainWorkspace(TimeDomainPresenter())
-    output_layout = workspace.output_coefficient_edits[0].parentWidget().layout()
-    initial_layout = workspace.output_initial_edits[0].parentWidget().layout()
-    assert output_layout.labelForField(workspace.output_coefficient_edits[0]).text() == (
+    output_layout = _form_layout(workspace.output_coefficient_edits[0])
+    initial_layout = _form_layout(workspace.output_initial_edits[0])
+    assert _label_text(output_layout, workspace.output_coefficient_edits[0]) == (
         "a_0 · y(t)"
     )
-    assert output_layout.labelForField(workspace.output_coefficient_edits[2]).text() == (
+    assert _label_text(output_layout, workspace.output_coefficient_edits[2]) == (
         "a_2 · y''(t)"
     )
-    assert output_layout.labelForField(workspace.output_coefficient_edits[4]).text() == (
+    assert _label_text(output_layout, workspace.output_coefficient_edits[4]) == (
         "a_4 · y^(4)(t)"
     )
-    assert initial_layout.labelForField(workspace.output_initial_edits[0]).text() == (
+    assert _label_text(initial_layout, workspace.output_initial_edits[0]) == (
         "y(0+):"
     )
-    assert initial_layout.labelForField(workspace.output_initial_edits[1]).text() == (
+    assert _label_text(initial_layout, workspace.output_initial_edits[1]) == (
         "y'(0+):"
     )
     workspace.close()
@@ -250,32 +264,39 @@ def test_custom_ode_names_update_labels_and_preview_immediately() -> None:
     workspace.input_name_edit.setText("r")
     application.processEvents()
 
-    assert workspace._output_coefficients_form.labelForField(
-        workspace.output_coefficient_edits[0]
-    ).text() == "a_0 · x(t)"
-    assert workspace._output_coefficients_form.labelForField(
-        workspace.output_coefficient_edits[1]
-    ).text() == "a_1 · x'(t)"
-    assert workspace._output_initials_form.labelForField(
-        workspace.output_initial_edits[0]
-    ).text() == "x(0+):"
-    assert workspace._input_coefficients_form.labelForField(
-        workspace.input_coefficient_edits[0]
-    ).text() == "b_0 · r(t)"
-    assert workspace._input_initials_form.labelForField(
-        workspace.input_initial_edits[0]
-    ).text() == "r(0+):"
+    assert _label_text(
+        workspace._output_coefficients_form,
+        workspace.output_coefficient_edits[0],
+    ) == "a_0 · x(t)"
+    assert _label_text(
+        workspace._output_coefficients_form,
+        workspace.output_coefficient_edits[1],
+    ) == "a_1 · x'(t)"
+    assert _label_text(
+        workspace._output_initials_form,
+        workspace.output_initial_edits[0],
+    ) == "x(0+):"
+    assert _label_text(
+        workspace._input_coefficients_form,
+        workspace.input_coefficient_edits[0],
+    ) == "b_0 · r(t)"
+    assert _label_text(
+        workspace._input_initials_form,
+        workspace.input_initial_edits[0],
+    ) == "r(0+):"
     assert workspace.ode_preview.text() == "x'(t) + x(t) = r(t)"
 
     workspace.output_name_edit.clear()
     workspace.input_name_edit.clear()
     application.processEvents()
-    assert workspace._output_coefficients_form.labelForField(
-        workspace.output_coefficient_edits[0]
-    ).text() == "a_0 · y(t)"
-    assert workspace._input_coefficients_form.labelForField(
-        workspace.input_coefficient_edits[0]
-    ).text() == "b_0 · u(t)"
+    assert _label_text(
+        workspace._output_coefficients_form,
+        workspace.output_coefficient_edits[0],
+    ) == "a_0 · y(t)"
+    assert _label_text(
+        workspace._input_coefficients_form,
+        workspace.input_coefficient_edits[0],
+    ) == "b_0 · u(t)"
     assert workspace.ode_preview.text() == "y'(t) + y(t) = u(t)"
     workspace.close()
 

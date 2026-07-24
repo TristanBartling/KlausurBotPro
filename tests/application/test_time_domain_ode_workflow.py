@@ -3,7 +3,11 @@
 import pytest
 import sympy as sp
 
-from klausurbotpro.application import TimeDomainInputDraft, run_time_domain_workflow
+from klausurbotpro.application import (
+    TimeDomainInputDraft,
+    TimeDomainWorkflowResult,
+    run_time_domain_workflow,
+)
 from klausurbotpro.application.time_domain_workflow import format_ode_preview
 from klausurbotpro.domain.time_domain_contracts import (
     ComputationStatus,
@@ -13,41 +17,62 @@ from klausurbotpro.domain.time_domain_contracts import (
 )
 
 
-def _rf03(**changes: object) -> TimeDomainInputDraft:
-    values: dict[str, object] = dict(
+def _rf03(
+    *,
+    output_order: int = 2,
+    output_coefficient_texts: tuple[str, ...] = ("1", "2", "1"),
+    output_initial_texts: tuple[str, ...] = ("0", "1"),
+    ode_input_signal_type: InputSignalType = InputSignalType.EXPONENTIAL,
+    ode_analysis_goal: OdeAnalysisGoal = OdeAnalysisGoal.TIME_RESPONSE,
+    missing_initials_are_zero: bool = False,
+    ode_signal_amplitude_text: str = "9",
+    ode_signal_rate_text: str = "2",
+    polynomial_coefficient_texts: tuple[str, ...] = (),
+    input_expression_text: str = "",
+) -> TimeDomainInputDraft:
+    return TimeDomainInputDraft(
         task_type=TimeDomainTaskType.SOLVE_ODE,
-        output_order=2,
+        output_order=output_order,
         input_order=0,
-        output_coefficient_texts=("1", "2", "1"),
+        output_coefficient_texts=output_coefficient_texts,
         input_coefficient_texts=("1",),
-        output_initial_texts=("0", "1"),
-        ode_input_signal_type=InputSignalType.EXPONENTIAL,
-        ode_signal_amplitude_text="9",
-        ode_signal_rate_text="2",
+        output_initial_texts=output_initial_texts,
+        ode_input_signal_type=ode_input_signal_type,
+        ode_signal_amplitude_text=ode_signal_amplitude_text,
+        ode_signal_rate_text=ode_signal_rate_text,
+        polynomial_coefficient_texts=polynomial_coefficient_texts,
+        input_expression_text=input_expression_text,
+        missing_initials_are_zero=missing_initials_are_zero,
+        ode_analysis_goal=ode_analysis_goal,
     )
-    values.update(changes)
-    return TimeDomainInputDraft(**values)
 
 
-def _reference_ode(**changes: object) -> TimeDomainInputDraft:
-    values: dict[str, object] = dict(
+def _reference_ode(
+    *,
+    ode_analysis_goal: OdeAnalysisGoal = OdeAnalysisGoal.TIME_RESPONSE,
+    input_expression_text: str = "1/(s-8)^2",
+    output_coefficient_texts: tuple[str, ...] = ("0", "4", "2"),
+) -> TimeDomainInputDraft:
+    return TimeDomainInputDraft(
         task_type=TimeDomainTaskType.SOLVE_ODE,
         output_order=2,
         input_order=0,
-        output_coefficient_texts=("0", "4", "2"),
+        output_coefficient_texts=output_coefficient_texts,
         input_coefficient_texts=("1",),
         output_initial_texts=("y0", "v0"),
         ode_input_signal_type=InputSignalType.IMAGE_EXPRESSION,
-        input_expression_text="1/(s-8)^2",
+        input_expression_text=input_expression_text,
+        ode_analysis_goal=ode_analysis_goal,
     )
-    values.update(changes)
-    return TimeDomainInputDraft(**values)
 
 
 def test_rf03_free_forced_pbz_and_all_ode_checks_pass() -> None:
     result = run_time_domain_workflow(_rf03())
     assert result.solution is not None and result.solution.ode_solution is not None
     data = result.solution.ode_solution
+    assert data.total_laplace is not None
+    assert data.total_time is not None
+    assert data.verification is not None
     s, t = sp.symbols("s t")
     assert sp.simplify(data.total_laplace._as_sympy() - (s + 7) / ((s + 1) ** 2 * (s - 2))) == 0
     assert (
@@ -259,32 +284,43 @@ def test_partial_fraction_goal_does_not_promote_y_when_pbz_is_unsupported() -> N
 
 
 @pytest.mark.parametrize(
-    ("signal_type", "changes"),
+    (
+        "signal_type",
+        "amplitude_text",
+        "rate_text",
+        "polynomial_coefficients",
+        "input_expression",
+    ),
     (
         (
             InputSignalType.ZERO,
-            {"ode_signal_amplitude_text": "ungültig(", "ode_signal_rate_text": "ungültig("},
+            "ungültig(",
+            "ungültig(",
+            (),
+            "",
         ),
         (
             InputSignalType.POLYNOMIAL,
-            {
-                "ode_signal_amplitude_text": "ungültig(",
-                "ode_signal_rate_text": "ungültig(",
-                "polynomial_coefficient_texts": ("1",),
-            },
+            "ungültig(",
+            "ungültig(",
+            ("1",),
+            "",
         ),
         (
             InputSignalType.IMAGE_EXPRESSION,
-            {
-                "ode_signal_amplitude_text": "ungültig(",
-                "ode_signal_rate_text": "ungültig(",
-                "input_expression_text": "1/(s+1)",
-            },
+            "ungültig(",
+            "ungültig(",
+            (),
+            "1/(s+1)",
         ),
     ),
 )
 def test_irrelevant_hidden_signal_fields_are_not_parsed(
-    signal_type: InputSignalType, changes: dict[str, object]
+    signal_type: InputSignalType,
+    amplitude_text: str,
+    rate_text: str,
+    polynomial_coefficients: tuple[str, ...],
+    input_expression: str,
 ) -> None:
     result = run_time_domain_workflow(
         _rf03(
@@ -293,7 +329,10 @@ def test_irrelevant_hidden_signal_fields_are_not_parsed(
             output_initial_texts=("0",),
             ode_input_signal_type=signal_type,
             ode_analysis_goal=OdeAnalysisGoal.OUTPUT_LAPLACE,
-            **changes,
+            ode_signal_amplitude_text=amplitude_text,
+            ode_signal_rate_text=rate_text,
+            polynomial_coefficient_texts=polynomial_coefficients,
+            input_expression_text=input_expression,
         )
     )
     assert result.solution is not None
@@ -457,6 +496,7 @@ def test_rf14_parameter_pt2_step_has_exact_zero_residual() -> None:
         )
     )
     assert result.solution is not None and result.solution.ode_solution is not None
+    assert result.solution.ode_solution.verification is not None
     assert result.solution.ode_solution.verification.trusted
     assert result.solution.ode_solution.verification.ode_residual._as_sympy() == 0
 
@@ -483,6 +523,7 @@ def test_polynomial_sinus_and_cosinus_inputs_are_exactly_verified() -> None:
             )
         )
         assert result.solution is not None and result.solution.ode_solution is not None
+        assert result.solution.ode_solution.verification is not None
         assert result.solution.ode_solution.verification.ode_residual._as_sympy() == 0
 
 
@@ -540,7 +581,7 @@ def test_explicit_zero_policy_uses_only_german_origin_label() -> None:
     _assert_no_internal_origin_names(result)
 
 
-def _assert_no_internal_origin_names(result: object) -> None:
+def _assert_no_internal_origin_names(result: TimeDomainWorkflowResult) -> None:
     presentation = result.presentation
     normal_output = "\n".join(
         (

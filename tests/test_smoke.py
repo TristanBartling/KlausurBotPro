@@ -1,5 +1,8 @@
 """Smoke tests for the desktop package."""
 
+import tomllib
+from pathlib import Path
+
 from PySide6.QtWidgets import QApplication
 
 import klausurbotpro
@@ -7,7 +10,12 @@ from klausurbotpro.app import APP_NAME, MainWindow, create_main_window
 
 
 def test_package_metadata() -> None:
-    assert klausurbotpro.__version__ == "0.1.0"
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    project_version = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
+
+    assert klausurbotpro.__version__ == project_version
     assert APP_NAME == "KlausurBotPro"
 
 

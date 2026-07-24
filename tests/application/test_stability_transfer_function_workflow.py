@@ -8,6 +8,7 @@ from klausurbotpro.application.stability_workflow import (
     StabilityMethod,
     run_stability_workflow,
 )
+from klausurbotpro.domain.hurwitz_contracts import HurwitzAnalysisResult
 from klausurbotpro.domain.parameter_core_contracts import (
     AnalysisTarget,
     CancellationStatus,
@@ -45,7 +46,7 @@ def test_official_golden_case_uses_reduced_denominator_and_exact_region() -> Non
     assert result.transfer_preparation.parsed_input is not None
     assert result.transfer_preparation.reduction_result is not None
     assert result.transfer_preparation.reduction_result.report is not None
-    assert result.analysis is not None
+    assert isinstance(result.analysis, HurwitzAnalysisResult)
     canonical = result.analysis.canonical_polynomial
     assert canonical.input.role is PolynomialRole.REDUCED_TRANSFER_DENOMINATOR
     assert canonical.input.analysis_target is AnalysisTarget.EXTERNAL_BIBO

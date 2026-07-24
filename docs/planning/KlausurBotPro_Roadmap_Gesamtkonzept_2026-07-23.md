@@ -257,8 +257,19 @@ Für den Pol-Nullstellen-Plot ist die Integration in KlausurBotPro sinnvoll, wei
 
 # Phase 1 – Aktuelle App stabilisieren und ersten Prüfungsstand festhalten
 
-**Status:** läuft bereits  
+**Status bei Erstellung am 23.07.2026:** läuft bereits
+
 **Zielrelease:** `v0.1.1-exam`
+
+## Abschlussstatus vom 24.07.2026
+
+Phase 1 ist fachlich und manuell abgenommen. Die vorgesehenen
+Stabilisierungsarbeiten an Zeitbereich, Zustandsraum, Frequenzbereich,
+Hurwitz/Routh, Transferfunktion und Reglerauslegung sind im
+Release-Kandidaten `v0.1.1-exam` enthalten. KBP-P1-004 wurde nicht
+reproduziert; KBP-P1-010 wurde als kein fachlicher Fehler eingeordnet, wobei
+eine spätere UX-Verbesserung möglich bleibt. Die nachfolgenden Phasen und
+größeren neuen Funktionen sind nicht Bestandteil dieses Releases.
 
 ## 1A. Kritische und irreführende Fehler
 

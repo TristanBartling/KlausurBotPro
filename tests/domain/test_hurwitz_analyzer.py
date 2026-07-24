@@ -17,7 +17,7 @@ from klausurbotpro.domain.parameter_core_contracts import SolveStatus
 def _analysis(draft: StabilityInputDraft) -> HurwitzAnalysisResult:
     result = run_stability_workflow(draft)
     assert not result.errors
-    assert result.analysis is not None
+    assert isinstance(result.analysis, HurwitzAnalysisResult)
     return result.analysis
 
 

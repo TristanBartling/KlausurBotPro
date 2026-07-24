@@ -6,6 +6,7 @@ from klausurbotpro.application.stability_workflow import (
     StabilityInputDraft,
     StabilityInputMode,
     StabilityMethod,
+    StabilityWorkflowResult,
     format_stability_region,
     run_stability_workflow,
 )
@@ -21,7 +22,7 @@ def _transfer(
     target: AnalysisTarget = AnalysisTarget.EXTERNAL_BIBO,
     method: StabilityMethod = StabilityMethod.HURWITZ,
     text: str = _GOLDEN,
-):
+) -> StabilityWorkflowResult:
     result = run_stability_workflow(
         StabilityInputDraft(
             decision_parameters_text="a,K",
@@ -112,6 +113,8 @@ def test_parameter_free_case_has_no_artificial_control_point() -> None:
 def test_uncancelled_transfer_has_no_warning_and_routh_uses_real_fractions() -> None:
     no_cancel = _transfer(text="(s+1)/(s^3+(8+2*a)*s^2+(15+16*a)*s+30*a+8*K)")
     routh = _transfer(method=StabilityMethod.ROUTH)
+    assert no_cancel.analysis is not None
+    assert routh.analysis is not None
 
     assert r"\textbf{Warnung.}" not in no_cancel.latex_preamble
     assert r"\frac{" in routh.latex_preamble

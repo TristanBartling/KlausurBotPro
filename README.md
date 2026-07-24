@@ -1,22 +1,34 @@
 # KlausurBotPro
 
-KlausurBotPro wird eine professionelle Python-Desktopanwendung zum Lernen und
-Bearbeiten von Aufgaben aus Regelungstechnik 1. Dieses Repository enthält
-derzeit ausschließlich das Projektfundament. Fachmodule, Workflows,
-Quellenverwaltung und Online-Integrationen sind noch nicht implementiert.
+KlausurBotPro ist eine lokale Python-Desktopanwendung für Regelungstechnik 1.
+Sie erzeugt klausurtaugliche Rechenwege mit strukturierten Kontrollen sowie
+Plaintext- und LaTeX-Ausgaben. Die Anwendung enthält keine KI- oder
+Kommunikationsfunktion.
 
-Das Produktkonzept steht in [docs/PROJECT_CONCEPT.md](docs/PROJECT_CONCEPT.md),
-die vorläufige Architektur in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## Implementierte Hauptbereiche
 
-## Voraussetzungen
+- **Transferfunktionen:** sichere rationale Eingabe, rohe und reduzierte Form,
+  Pole und Nullstellen, Stabilität und qualitative Polinterpretation.
+- **Frequenzbereich:** Frequenzgang, Bode, Standardglieder-MVP, Durchtritte und
+  Reserven sowie Nyquist.
+- **Stabilität:** Hurwitz, Routh und Parameterbedingungen im unterstützten
+  Umfang.
+- **Zeitbereich:** Laplace, lineare DGL, Partialbruchzerlegung, inverse Laplace
+  und Zeitantworten im unterstützten Umfang.
+- **Zustandsraum:** charakteristisches Polynom, Eigenwerte,
+  Zustandsstabilität und SISO-Übertragungsfunktion.
+- **Reglerauslegung:** P-Auslegung über Phasenreserve, Ziegler–Nichols offen
+  und geschlossen, Cohen–Coon sowie P-, PI- und PID-Regler im unterstützten
+  Umfang.
 
-- Python 3.12 oder neuer
-- Windows PowerShell
+## Systemanforderungen
 
-Die Phase-0.5-Anwendung verwendet PySide6 für ein minimales Hauptfenster.
-SymPy, NumPy, SciPy, Matplotlib und python-control sind als geprüfte
-Produktionsabhängigkeiten aufgenommen, ohne bereits Fachmodule zu
-implementieren. Ergebnisse des Technologiechecks stehen in
+- Python 3.12 oder neuer gemäß `pyproject.toml`.
+- Geprüfte Releaseumgebung: 64-Bit-Windows 11 mit CPython 3.14.0.
+- Für macOS und Linux liegt keine bestätigte Releaseprüfung vor.
+- Dieser Release enthält keinen Standalone-Installer.
+
+Details zum geprüften Stack stehen in
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ## Installation unter Windows PowerShell
@@ -35,9 +47,14 @@ python -m pip install -e ".[dev]"
 python -m klausurbotpro
 ```
 
-Es öffnet sich ein Fenster mit dem Titel `KlausurBotPro` und dem Hinweis
-`Projektfundament – noch keine Fachmodule`. Das Schließen des Fensters beendet
-die Anwendung sauber.
+Nach der Installation ist alternativ das Konsolenskript verfügbar:
+
+```powershell
+klausurbotpro
+```
+
+Bedienung, Eingabeformate und Workflowgrenzen beschreibt das
+[AI Operator Manual](docs/ai/KlausurBotPro_AI_Operator_Manual.md).
 
 ## Qualitätssicherung
 
@@ -49,13 +66,10 @@ python -m pip check
 python -c "import klausurbotpro; print(klausurbotpro.__version__)"
 ```
 
-## Projektgrenzen
+## Wichtige Grenzen
 
-- Keine Regelungstechnik-Berechnung ist in Phase 0 enthalten.
-- Lokale Original-PDFs gehören nach `resources/pdf/` und werden nicht
-  eingecheckt.
-- Geheimnisse gehören ausschließlich in eine lokale `.env`, niemals in Git.
-- KI-gestützte Lern- und Entwicklungsfunktionen müssen von einem späteren
-  Klausur-Build technisch getrennt bleiben.
-
-Die geplanten Phasen und ihre Grenzen beschreibt [docs/ROADMAP.md](docs/ROADMAP.md).
+KlausurBotPro ist kein allgemeines CAS, kein beliebiger MIMO-Solver und keine
+allgemeine symbolische Parameteralgebra. Lead-/Lag-Auslegung,
+Totzeit-Frequenzrechnung und ein Standalone-Windows-Installer gehören nicht zu
+diesem Release. Ergebnisse müssen weiterhin gegen Aufgabenstellung, Modellart,
+Voraussetzungen und Einheiten geprüft werden.

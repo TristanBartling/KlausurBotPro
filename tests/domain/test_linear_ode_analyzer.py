@@ -2,6 +2,7 @@
 
 import sympy as sp
 
+from klausurbotpro.domain.expression import ExactExpression
 from klausurbotpro.domain.linear_ode_analyzer import (
     build_initial_conditions,
     build_linear_ode,
@@ -12,7 +13,7 @@ from klausurbotpro.domain.linear_ode_analyzer import (
 from klausurbotpro.domain.time_domain_analyzer import exact
 
 
-def _coefficient(value: sp.Expr | int) -> object:
+def _coefficient(value: sp.Expr | int) -> ExactExpression:
     return exact(sp.sympify(value))
 
 

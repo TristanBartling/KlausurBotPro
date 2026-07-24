@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "klausurbotpro"
-version = "0.1.0"
-description = "Projektfundament für eine Regelungstechnik-Desktopanwendung"
+version = "0.1.1"
+description = "Lokale Desktopanwendung für klausurtaugliche Regelungstechnik-1-Workflows"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
@@ -31,6 +31,9 @@ klausurbotpro = "klausurbotpro.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/klausurbotpro"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

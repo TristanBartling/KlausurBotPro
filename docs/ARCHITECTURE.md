@@ -1,10 +1,11 @@
-# Architekturhypothese
+# Architektur
 
-Dieses Dokument beschreibt eine erste, bewusst vorläufige Hypothese. Die
-Schichten werden erst angelegt, wenn ein vertikaler Anwendungsfall sie benötigt.
-Die Verzeichnisstruktur soll keine noch nicht belegten Abstraktionen vortäuschen.
+Dieses Dokument begann als bewusst vorläufige Architekturhypothese. Die
+beschriebenen Schichten wurden schrittweise nur dort angelegt, wo vertikale
+Anwendungsfälle sie benötigen; spätere Abschnitte dokumentieren den
+implementierten Stand.
 
-## Geplante Schichten
+## Schichtenmodell
 
 1. **Domain-Modelle:** unveränderliche oder kontrolliert veränderbare,
    fachliche Datentypen für Polynome, Matrizen, Systeme und Ergebnisse.
@@ -45,11 +46,11 @@ aus lokaler Laufzeitkonfiguration.
 
 ## Strukturierte Ergebnisobjekte
 
-Ergebnisse sollen Werte, Voraussetzungen, Zwischenschritte, verwendete
+Ergebnisobjekte speichern Werte, Voraussetzungen, Zwischenschritte, verwendete
 Methoden, Rundungsinformationen, Warnungen, Quellenreferenzen und
-Prüfergebnisse getrennt speichern. Text und Formeln werden daraus gerendert,
-nicht als alleinige Wahrheit gespeichert. Das konkrete Modell wird in Phase 1
-an einem realen vertikalen Anwendungsfall entworfen.
+Prüfergebnisse getrennt. Text und Formeln werden daraus gerendert,
+nicht als alleinige Wahrheit gespeichert. Die konkreten Modelle wurden entlang
+realer vertikaler Anwendungsfälle entwickelt.
 
 ## Implementierter Ausdrucksparser (Phase 1A.1)
 
