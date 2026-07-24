@@ -57,6 +57,9 @@ def test_source_domain_failure_exposes_plain_german_message() -> None:
     )
     presenter = ControllerDesignPresenter()
     presenter.accept_result(result)
+    assert result.diagnostics[0].code == "OUTSIDE_SOURCE_DOMAIN"
     assert presenter.state.run_status is ControllerDesignUiRunStatus.FAILED
-    assert presenter.state.message.startswith("Ziegler–Nichols für den offenen Kreis")
+    assert presenter.state.message.startswith("K_T:")
+    assert "K_T/T < 0,5" in presenter.state.message
     assert "OUTSIDE_SOURCE_DOMAIN" not in presenter.state.message
+    assert presenter.state.visible_diagnostics == (result.diagnostics[0].message,)

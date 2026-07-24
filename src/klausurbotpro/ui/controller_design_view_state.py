@@ -20,6 +20,7 @@ class ControllerDesignViewState:
     run_status: ControllerDesignUiRunStatus = ControllerDesignUiRunStatus.IDLE
     result: ControllerDesignResult | None = None
     message: str = ""
+    visible_diagnostics: tuple[str, ...] = ()
 
 
 __all__ = ["ControllerDesignUiRunStatus", "ControllerDesignViewState"]

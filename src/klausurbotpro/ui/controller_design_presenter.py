@@ -37,7 +37,8 @@ class ControllerDesignPresenter(QObject):
             else ControllerDesignUiRunStatus.FAILED
         )
         message = "" if not value.diagnostics else value.diagnostics[0].message
-        self.state = ControllerDesignViewState(status, value, message)
+        visible_diagnostics = tuple(item.message for item in value.diagnostics)
+        self.state = ControllerDesignViewState(status, value, message, visible_diagnostics)
         self.state_changed.emit(self.state)
 
     @Slot(object)
@@ -56,7 +57,12 @@ class ControllerDesignPresenter(QObject):
         self.state_changed.emit(self.state)
 
     def set_general_message(self, message: str) -> None:
-        self.state = ControllerDesignViewState(self.state.run_status, self.state.result, message)
+        self.state = ControllerDesignViewState(
+            self.state.run_status,
+            self.state.result,
+            message,
+            self.state.visible_diagnostics,
+        )
         self.state_changed.emit(self.state)
 
 
