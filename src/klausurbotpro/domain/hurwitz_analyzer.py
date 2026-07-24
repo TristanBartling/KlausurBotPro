@@ -590,10 +590,12 @@ def _affine_condition_latex(
 
 
 def _latex_parameter(name: str) -> str:
-    if "_" not in name:
-        return name
-    base, suffix = name.split("_", 1)
-    return rf"{base}_{{{suffix}}}"
+    if "_" in name:
+        base, suffix = name.split("_", 1)
+        return rf"{base}_{{{suffix}}}"
+    if len(name) == 2 and name.isupper():
+        return rf"{name[0]}_{{{name[1]}}}"
+    return name
 
 
 def _latex_factored_scalar(value: sp.Expr) -> str:
@@ -1202,31 +1204,37 @@ def _latex(
             display_math(r"\begin{aligned}" + r"\\".join(coefficient_lines) + r"\end{aligned}")
         )
         blocks.append(
-            paragraph("Notwendige Bedingungen", r"Für alle Koeffizienten gilt \(a_i>0\).")
+            _latex_math_paragraph(
+                "Notwendige Bedingungen",
+                r"Für alle Koeffizienten gilt \(a_i>0\).",
+            )
         )
         blocks.extend(_latex_condition_step(item) for item in result.necessary_condition_steps)
         blocks.append(
-            paragraph(
+            _latex_reduced_conditions(
                 "Reduzierte notwendige Bedingungen",
-                _reduced_condition_text(result.necessary_condition_steps),
+                result.necessary_condition_steps,
             )
         )
         blocks.append(
-            paragraph(
+            _latex_math_paragraph(
                 "Hurwitz-Matrix",
                 "Hurwitz-Matrix nach der Konvention des Vorlesungsskripts: "
-                "erste Zeile a_1, a_3, a_5, ...",
+                r"erste Zeile \(a_1,a_3,a_5,\ldots\)",
             )
         )
         blocks.append(display_math(r"H=" + matrix_latex))
         blocks.append(
-            paragraph("Hinreichende Bedingungen", r"Für alle Determinanten gilt \(\Delta_i>0\).")
+            _latex_math_paragraph(
+                "Hinreichende Bedingungen",
+                r"Für alle Determinanten gilt \(\Delta_i>0\).",
+            )
         )
         blocks.extend(_latex_condition_step(item) for item in result.sufficient_condition_steps)
         blocks.append(
-            paragraph(
+            _latex_reduced_conditions(
                 "Reduzierte hinreichende Bedingungen",
-                _reduced_condition_text(result.sufficient_condition_steps),
+                result.sufficient_condition_steps,
             )
         )
         blocks.append(
@@ -1242,8 +1250,7 @@ def _latex(
         blocks.append(latex_numerical_check(result.numerical_check))
     if notice:
         blocks.append(paragraph("Warnung", notice))
-    blocks.append(paragraph("Ergebnis", "Das exakte Stabilitätsgebiet lautet:"))
-    blocks.append(_latex_final_box(canonical, results))
+    blocks.append(_latex_result_section(canonical, results))
     return "\n\n".join(blocks)
 
 
@@ -1289,15 +1296,33 @@ def _latex_label(label: str) -> str:
     return _escape_latex_text(label)
 
 
-def _reduced_condition_text(steps: tuple[HurwitzConditionStep, ...]) -> str:
+def _latex_math_paragraph(title: str, trusted_latex_text: str) -> str:
+    return (
+        r"\par\noindent"
+        + "\n"
+        + rf"\textbf{{{_escape_latex_text(title)}.}}"
+        + "\n"
+        + trusted_latex_text
+    )
+
+
+def _latex_reduced_conditions(
+    title: str,
+    steps: tuple[HurwitzConditionStep, ...],
+) -> str:
     active = tuple(
-        item.solved_text or f"{item.expression.canonical_text}>0"
+        item.solved_latex or rf"{item.expression.latex}>0"
         for item in steps
         if item.status
         in (HurwitzConditionStatus.ACTIVE, HurwitzConditionStatus.UNRESOLVED_SAFE)
     )
     redundant = tuple(
-        f"{item.label} gegenüber {item.reference_label}"
+        (
+            rf"{_latex_label(item.label)}"
+            r"\text{ ist gegenüber }"
+            rf"{_latex_reference(item.reference_label)}"
+            r"\text{ redundant.}"
+        )
         for item in steps
         if item.status
         in (
@@ -1306,16 +1331,27 @@ def _reduced_condition_text(steps: tuple[HurwitzConditionStep, ...]) -> str:
         )
     )
     factorized = tuple(
-        item.label
+        rf"{_latex_label(item.label)}\text{{ ist durch exakte Faktorzerlegung abgedeckt.}}"
         for item in steps
         if item.status is HurwitzConditionStatus.RESOLVED_BY_FACTORIZATION
     )
-    text = "Aktiv: " + (", ".join(active) or "keine zusätzliche Bedingung")
-    if redundant:
-        text += ". Redundant: " + ", ".join(redundant)
-    if factorized:
-        text += ". Durch exakte Faktorzerlegung abgedeckt: " + ", ".join(factorized)
-    return text
+    if active:
+        lines = [r"\text{Aktiv: }" + active[0]]
+        lines.extend(r"\text{zusätzlich: }" + item for item in active[1:])
+    else:
+        lines = [r"\text{Aktiv: }\text{keine zusätzliche Bedingung}"]
+    lines.extend(redundant)
+    lines.extend(factorized)
+    return _latex_math_paragraph(
+        title,
+        display_math(r"\begin{aligned}" + r"\\".join(lines) + r"\end{aligned}"),
+    )
+
+
+def _latex_reference(reference: str) -> str:
+    if reference.startswith(("Delta_", "a_")):
+        return _latex_label(reference)
+    return rf"\text{{{_escape_latex_text(reference)}}}"
 
 
 def _hurwitz_region_plain(
@@ -1387,6 +1423,18 @@ def _latex_final_box(
     )
     text = _stable_latex_text(canonical) if stable else _not_stable_latex_text(canonical)
     return display_math(r"\boxed{\text{" + _escape_latex_text(text) + "}}")
+
+
+def _latex_result_section(
+    canonical: CanonicalCharacteristicPolynomial,
+    results: tuple[HurwitzDegreeCaseResult, ...],
+) -> str:
+    intro = paragraph("Ergebnis", "Das exakte Stabilitätsgebiet lautet:")
+    result_box = _latex_final_box(canonical, results)
+    section = intro + "\n\n" + result_box
+    if r"\begin{aligned}" not in result_box and len(result_box) <= 180:
+        return r"\begin{samepage}" + "\n" + section + "\n" + r"\end{samepage}"
+    return section
 
 
 def _role_text(canonical: CanonicalCharacteristicPolynomial) -> str:

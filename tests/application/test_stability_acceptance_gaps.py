@@ -48,6 +48,11 @@ def test_internal_factor_provenance_closes_exact_region_with_k_positive() -> Non
     assert "Interne asymptotische Stabilität" in user_text
     assert internal_case.parameter_region.exact_text != external_case.parameter_region.exact_text
     assert "K > 0" not in external.analysis.statement
+    assert "Nenner.." not in internal.latex_preamble
+    assert (
+        "Hurwitz-Kriterium für interne asymptotische Stabilität; "
+        "analysiert wird der rohe Nenner."
+    ) in internal.latex_preamble
 
 
 def test_quartic_primary_box_contains_only_remaining_stability_condition() -> None:
@@ -62,13 +67,18 @@ def test_quartic_primary_box_contains_only_remaining_stability_condition() -> No
     latex = result.analysis.latex_source
     final_box = latex[latex.rindex(r"\boxed") :]
 
-    assert r"\boxed{TI > \frac{9}{2}\,T_{1}}" in final_box
+    assert r"\boxed{T_{I} > \frac{9}{2}\,T_{1}}" in final_box
     assert "T_{1} < \\infty" not in final_box
     assert ",," not in final_box
-    assert r"\Delta_{2}" in latex and r"TI > 4\,T_{1}" in latex
-    assert r"\Delta_{3}" in latex and r"TI > \frac{9}{2}\,T_{1}" in latex
+    assert r"\Delta_{2}" in latex and r"T_{I} > 4\,T_{1}" in latex
+    assert r"\Delta_{3}" in latex and r"T_{I} > \frac{9}{2}\,T_{1}" in latex
     assert r"\Delta_{4}" in latex
     assert latex.count(r"\boxed") == 1
+    assert "TI > 9*T1/2" not in latex
+    assert (
+        r"\text{Aktiv: }T_{I} > \frac{9}{2}\,T_{1}"
+        r"\\\Delta_{2}\text{ ist gegenüber }\Delta_{3}\text{ redundant.}"
+    ) in latex
 
 
 def test_parameter_free_hurwitz_hides_cas_truth_word() -> None:
@@ -79,6 +89,50 @@ def test_parameter_free_hurwitz_hides_cas_truth_word() -> None:
     assert "wahr" not in visible
     assert "Keine zusätzlichen Parameterbedingungen." in visible
     assert "intern asymptotisch stabil" in visible
+    result_start = result.analysis.latex_source.index(r"\begin{samepage}")
+    intro_start = result.analysis.latex_source.index(r"\textbf{Ergebnis.}")
+    box_start = result.analysis.latex_source.index(r"\boxed{\text{intern asymptotisch stabil}}")
+    result_end = result.analysis.latex_source.index(r"\end{samepage}")
+    assert result_start < intro_start < box_start < result_end
+
+
+def test_hurwitz_prose_and_reduced_summaries_use_real_latex_math() -> None:
+    result = run_stability_workflow(
+        StabilityInputDraft(
+            "s^3+(9+a)*s^2+(20+9*a)*s+(20*a+9*K)",
+            decision_parameters_text="a,K",
+        )
+    )
+    assert isinstance(result.analysis, HurwitzAnalysisResult)
+    latex = result.analysis.latex_source
+
+    assert r"Für alle Koeffizienten gilt \(a_i>0\)." in latex
+    assert r"Für alle Determinanten gilt \(\Delta_i>0\)." in latex
+    assert r"\textbackslash{}(" not in latex
+    assert (
+        r"a_{2}\text{ ist gegenüber }a_{1}\text{ redundant.}"
+    ) in latex
+    assert (
+        r"\Delta_{3}\text{ ist gegenüber }\Delta_{2}\text{ redundant.}"
+    ) in latex
+    assert "Delta_2 gegenüber Delta_3" not in latex
+    assert "a_2 gegenüber a_1" not in latex
+    assert r"\begin{samepage}" not in latex
+
+
+def test_single_parameter_hurwitz_summary_uses_subscripted_parameter() -> None:
+    result = run_stability_workflow(
+        StabilityInputDraft(
+            "s^3+4*s^2+5*s+K_P",
+            decision_parameters_text="K_P",
+        )
+    )
+    assert isinstance(result.analysis, HurwitzAnalysisResult)
+    latex = result.analysis.latex_source
+
+    assert r"\text{Aktiv: }K_{P} > 0" in latex
+    assert r"\text{Aktiv: }K_{P} < 20" in latex
+    assert "K_P < 20" not in latex
 
 
 def test_routh_main_latex_is_compact_table_without_internal_cell_indices() -> None:
@@ -117,3 +171,14 @@ def test_hurwitz_reference_regions_remain_exact() -> None:
     assert first.upper_bound == "(a + 4)*(a + 5)"
     assert second.lower_bound == "-15*a/4"
     assert second.upper_bound == "(2*a + 3)*(2*a + 5)"
+
+
+def test_internal_transfer_region_remains_complete_in_latex_box() -> None:
+    internal = _transfer(AnalysisTarget.INTERNAL_CLOSED_LOOP_ASYMPTOTIC)
+    latex = internal.analysis.latex_source
+    final_box = latex[latex.rindex(r"\boxed") :]
+
+    assert r"a &> - \frac{15}{16}" in final_box
+    assert r"K &> - \frac{15 a}{4}" in final_box
+    assert r"0 &< K < \left(2 a + 3\right) \left(2 a + 5\right)" in final_box
+    assert latex.count(r"\boxed") == 1

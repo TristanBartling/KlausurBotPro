@@ -415,10 +415,11 @@ def _transfer_latex(
     factored_reduced_den = ExactExpression._from_sympy(sp.factor(reduced_den._as_sympy()))
     factor_latex = r",\;".join(item.latex for item in factors) or r"\mathrm{keine}"
     target = (
-        "E/A-asymptotische Stabilität; analysiert wird der reduzierte Nenner."
+        "E/A-asymptotische Stabilität; analysiert wird der reduzierte Nenner"
         if external
-        else "Interne asymptotische Stabilität; analysiert wird der rohe Nenner."
+        else "Interne asymptotische Stabilität; analysiert wird der rohe Nenner"
     )
+    method_target = target if external else target[0].lower() + target[1:]
     blocks: tuple[str, ...]
     if isinstance(analysis, HurwitzAnalysisResult):
         assumptions = ", ".join(
@@ -433,7 +434,7 @@ def _transfer_latex(
                 r"G_W(s)=\frac{Z_{\mathrm{roh}}(s)}{N_{\mathrm{roh}}(s)}"
             ),
             paragraph("Gesucht", target),
-            paragraph("Methode", f"Hurwitz-Kriterium für {target}."),
+            paragraph("Methode", f"Hurwitz-Kriterium für {method_target}."),
             paragraph(
                 "Voraussetzungen",
                 "Der Leitkoeffizient wird sicher positiv orientiert; "
