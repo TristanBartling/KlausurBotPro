@@ -3,16 +3,43 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from klausurbotpro.domain.expression import ExactExpression
 from klausurbotpro.domain.parameter_core_contracts import (
     AtomicParameterCondition,
     CanonicalCharacteristicPolynomial,
+    ConditionOrigin,
     ParameterRegion,
     PolynomialDegreeCase,
     SolveStatus,
 )
 from klausurbotpro.domain.stability_contracts import NumericalCheckStatus, NumericalPoleCheck
+
+
+class HurwitzConditionStatus(StrEnum):
+    ACTIVE = "active"
+    ALREADY_SATISFIED = "already_satisfied"
+    REDUNDANT_EQUIVALENT = "redundant_equivalent"
+    REDUNDANT_WEAKER = "redundant_weaker"
+    RESOLVED_BY_FACTORIZATION = "resolved_by_factorization"
+    CONTRADICTORY = "contradictory"
+    UNRESOLVED_SAFE = "unresolved_safe"
+
+
+@dataclass(frozen=True, slots=True)
+class HurwitzConditionStep:
+    label: str
+    origin: ConditionOrigin
+    expression: ExactExpression
+    expanded_expression: ExactExpression
+    factored_expression: ExactExpression
+    solved_expression: ExactExpression
+    solved_text: str
+    solved_latex: str
+    status: HurwitzConditionStatus
+    reference_label: str = ""
+    reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +56,9 @@ class HurwitzDegreeCaseResult:
     determinants: tuple[HurwitzDeterminant, ...]
     full_conditions: tuple[AtomicParameterCondition, ...]
     solver_conditions: tuple[AtomicParameterCondition, ...]
+    necessary_condition_steps: tuple[HurwitzConditionStep, ...]
+    sufficient_condition_steps: tuple[HurwitzConditionStep, ...]
+    minimal_condition_steps: tuple[HurwitzConditionStep, ...]
     parameter_region: ParameterRegion
     numerical_check: NumericalPoleCheck | None
     statement: str
@@ -51,6 +81,8 @@ class HurwitzAnalysisResult:
 
 __all__ = [
     "HurwitzAnalysisResult",
+    "HurwitzConditionStatus",
+    "HurwitzConditionStep",
     "HurwitzDegreeCaseResult",
     "HurwitzDeterminant",
     "NumericalCheckStatus",

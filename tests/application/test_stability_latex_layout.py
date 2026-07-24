@@ -93,7 +93,8 @@ def test_long_quartic_direct_polynomial_and_internal_conditions_are_multiline() 
     assert "8 K^{2}" in latex
     assert r"\begin{aligned}" in internal.latex_preamble
     assert internal.analysis is not None
-    assert "teilweise gelöst" in internal.analysis.statement
+    assert "K > 0" in internal.analysis.statement
+    assert "teilweise gelöst" not in internal.analysis.statement
     _assert_balanced(latex)
     _assert_balanced(internal.latex_preamble)
 

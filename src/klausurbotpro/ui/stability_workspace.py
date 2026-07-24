@@ -125,10 +125,10 @@ class StabilityWorkspace(QWidget):
         for key, label in (
             ("summary", "Übersicht"),
             ("cases", "Kanonisches Polynom und Gradfälle"),
-            ("hurwitz", "Hurwitz-Matrix und Determinanten"),
+            ("hurwitz", "Hurwitz-Bedingungen und Rechenweg"),
             ("routh", "Routh-Schema"),
             ("region", "Stabilitätsbedingungen und Parameterbereich"),
-            ("short", "Numerische Kurzlösung"),
+            ("short", "Kurzlösung"),
             ("steps", "Worked Steps"),
             ("latex", "LaTeX-Lösung"),
             ("diagnostics", "Diagnosen"),

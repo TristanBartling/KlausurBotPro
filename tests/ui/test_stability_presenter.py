@@ -199,3 +199,33 @@ def test_golden_user_tabs_do_not_expose_sympy_relations_or_enum_values() -> None
     assert " & " not in user_text
     assert "oo" not in user_text
     assert "reduced_transfer_denominator" not in user_text
+
+
+def test_hurwitz_tabs_prioritize_explicit_conditions_and_exact_region() -> None:
+    application = QApplication.instance() or QApplication([])
+    assert isinstance(application, QApplication)
+    presenter = StabilityPresenter()
+    workspace = StabilityWorkspace(presenter)
+    workspace.polynomial_edit.setPlainText(
+        "s^3+(9+a)*s^2+(20+9*a)*s+(20*a+9*K)"
+    )
+    workspace.parameters_edit.setText("a,K")
+
+    workspace.analyze_button.click()
+
+    hurwitz_index = workspace.result_tabs.indexOf(workspace.result_edits["hurwitz"])
+    short_index = workspace.result_tabs.indexOf(workspace.result_edits["short"])
+    assert workspace.result_tabs.tabText(hurwitz_index) == "Hurwitz-Bedingungen und Rechenweg"
+    assert workspace.result_tabs.tabText(short_index) == "Kurzlösung"
+    details = presenter.state.hurwitz_details
+    assert details.index("Notwendige Bedingungen") < details.index("Hurwitz-Matrix")
+    assert details.index("Hurwitz-Matrix") < details.index("Hinreichende Bedingungen")
+    assert "a > -9" in details
+    assert "schwächer und redundant" in details
+    short = presenter.state.short_solution
+    assert short.index("Exaktes Stabilitätsgebiet") < short.index("Numerische Kontrolle")
+    assert "-20*a/9 < K < (a+4)*(a+5)" in short
+    internal_names = ("solver_conditions", "full_conditions", "GraphBandCell", "REDUNDANT_")
+    user_text = details + short + presenter.state.worked_steps
+    assert not any(name in user_text for name in internal_names)
+    workspace.close()

@@ -39,6 +39,7 @@ class Relation(StrEnum):
 class ConditionOrigin(StrEnum):
     COEFFICIENT = "coefficient"
     HURWITZ_DETERMINANT = "hurwitz_determinant"
+    CANCELLATION_FACTOR = "cancellation_factor"
     ROUTH_FIRST_COLUMN = "routh_first_column"
     ROUTH_DENOMINATOR_EXCLUSION = "routh_denominator_exclusion"
     DEGREE_CASE_GUARD = "degree_case_guard"

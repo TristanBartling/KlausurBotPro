@@ -37,6 +37,7 @@ class RouthCell:
     raw_denominator: ExactExpression
     derivation: str
     is_first_column: bool
+    calculation_latex: str = ""
 
 
 @dataclass(frozen=True, slots=True)
